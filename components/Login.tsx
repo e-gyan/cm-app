@@ -89,11 +89,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </button>
         </form>
 
-        <div className="mt-8 text-center">
-            <p className="text-xs text-gray-400">
-                Default Admin: <strong>Main Admin</strong> / <strong>2026</strong>
-            </p>
-        </div>
+    
       </div>
     </div>
   );

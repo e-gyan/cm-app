@@ -1,5 +1,6 @@
 import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig } from '../types';
-import { INITIAL_MEMBERS, INITIAL_ATTENDANCE, DEFAULT_CLOUD_CONFIG } from '../constants';
+import { DEFAULT_CLOUD_CONFIG } from '../constants';
+import { sanitizeInput, hashString, isValidSchema } from './securityService';
 
 // STORAGE KEYS
 const STORAGE_KEY = 'UJ_CHURCH_DATA_2026_V5'; 
@@ -7,30 +8,63 @@ const SESSION_KEY = 'UJ_CHURCH_SESSION_V1';
 const LOGIN_ATTEMPTS_KEY = 'UJ_LOGIN_ATTEMPTS';
 const CLOUD_CONFIG_KEY = 'UJ_CLOUD_CONFIG_V1';
 
+// Initial Empty State
+let inMemoryData: AppData = {
+    members: [],
+    attendance: [],
+    lastUpdated: 0
+};
+
 // --- DATA LOADING ---
-const loadData = (): AppData => {
+
+// Internal: Load only from local storage without bootstrapping defaults
+const loadFromLocal = (): AppData | null => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      const parsed = JSON.parse(stored);
-      // Migration logic
-      let adminExists = false;
-      parsed.members.forEach((m: any) => {
-        if (!m.assignedChurch) m.assignedChurch = 'UJ';
-        if (!m.role) m.role = 'NONE';
-        if (m.role === 'ADMIN') {
-             adminExists = true;
-             if (m.id === 'auto-admin' || m.id === 'super-admin') {
-                 m.assignedChurch = 'ALL';
-             }
-        }
-      });
-      parsed.attendance.forEach((r: any) => {
-        if (!r.churchId) r.churchId = 'UJ';
-      });
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error("Failed to load from local storage", e);
+  }
+  return null;
+};
 
-      if (!adminExists) {
-        parsed.members.push({
+// PUBLIC: Main Initialization Function
+// Call this on App mount. It orchestrates Local -> Cloud -> Bootstrap
+export const initializeRepository = async (): Promise<AppData> => {
+    // 1. Load Local Storage first to establish baseline (and handle offline)
+    const localData = loadFromLocal();
+    if (localData) {
+        inMemoryData = localData;
+    }
+
+    // 2. Attempt Cloud Sync (Will overwrite inMemoryData if cloud is newer)
+    // We do this BEFORE bootstrapping to ensure we don't create a duplicate admin if cloud has one
+    await syncFromCloud();
+
+    // 3. Security Migration (Hash Passcodes)
+    // Run this on whatever data we ended up with (Local or Cloud)
+    let migrationNeeded = false;
+    for (const m of inMemoryData.members) {
+        // Sanitize names just in case
+        if (m.name) m.name = sanitizeInput(m.name);
+        
+        // Hash Check
+        if (m.passcode && m.passcode.length < 64) {
+            m.passcode = await hashString(m.passcode);
+            migrationNeeded = true;
+        }
+    }
+    if (migrationNeeded) {
+        persistData(false); // Save hashed versions locally
+    }
+
+    // 4. Bootstrap Admin if Repository is STILL empty (No Local, No Cloud data)
+    const adminExists = inMemoryData.members.some(m => m.role === 'ADMIN');
+    if (!adminExists) {
+        console.log("Bootstrapping Default Admin...");
+        inMemoryData.members.push({
             id: "auto-admin",
             name: "Main Admin",
             type: MemberType.TEACHER,
@@ -38,30 +72,22 @@ const loadData = (): AppData => {
             status: MemberStatus.ACTIVE,
             assignedChurch: "ALL",
             role: "ADMIN",
-            passcode: "2026",
+            passcode: "2026", // Will be hashed on next login/save cycle or we can hash it now
             isAccessActive: true
         });
-      }
-      return parsed;
+        // We leave it plaintext "2026" for the user to login once, then it auto-hashes on auth.
+        persistData(false);
     }
-  } catch (e) {
-    console.error("Failed to load from local storage", e);
-  }
-  return {
-    members: [...INITIAL_MEMBERS] as Member[],
-    attendance: [...INITIAL_ATTENDANCE] as AttendanceRecord[],
-    lastUpdated: Date.now()
-  };
-};
 
-let inMemoryData: AppData = loadData();
+    return inMemoryData;
+};
 
 // --- CLOUD SYNC SERVICE ---
 const getCloudConfig = (): CloudConfig | null => {
-    // 1. Check for Hardcoded Constants FIRST (Prioritize Code)
+    // 1. Check for Env Var / Constants (Prioritize Code)
     if (DEFAULT_CLOUD_CONFIG.apiKey && DEFAULT_CLOUD_CONFIG.binId) {
         return {
-            enabled: true, // Default to true if hardcoded
+            enabled: true, 
             apiKey: DEFAULT_CLOUD_CONFIG.apiKey,
             binId: DEFAULT_CLOUD_CONFIG.binId,
             url: 'https://api.jsonbin.io/v3/b'
@@ -79,13 +105,11 @@ const getCloudConfig = (): CloudConfig | null => {
 
 export const saveCloudConfig = (config: CloudConfig) => {
     localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(config));
-    // Trigger an immediate pull when config is saved
     if (config.enabled) {
         syncFromCloud(); 
     }
 };
 
-// Push Data to Cloud
 const syncToCloud = async () => {
     const config = getCloudConfig();
     if (!config || !config.enabled || !config.apiKey || !config.binId) return;
@@ -105,7 +129,6 @@ const syncToCloud = async () => {
     }
 };
 
-// Pull Data from Cloud
 export const syncFromCloud = async (): Promise<{success: boolean, message?: string}> => {
     const config = getCloudConfig();
     if (!config || !config.enabled || !config.apiKey || !config.binId) {
@@ -123,16 +146,24 @@ export const syncFromCloud = async (): Promise<{success: boolean, message?: stri
         if (!response.ok) throw new Error("Cloud fetch failed");
 
         const result = await response.json();
-        // JSONBin v3 returns data in record wrapper, verify structure
         const cloudData: AppData = result.record || result; 
+        
+        // Security Check: Validate Schema of Cloud Data before merging
+        if (!isValidSchema(cloudData)) {
+            console.error("Security Alert: Cloud data schema invalid.");
+            return { success: false, message: 'Cloud data corrupted or invalid.' };
+        }
 
-        // Conflict Resolution: Last Write Wins based on timestamp
         const localTime = inMemoryData.lastUpdated || 0;
         const cloudTime = cloudData.lastUpdated || 0;
 
-        if (cloudTime > localTime) {
+        // If cloud is newer OR local is empty/reset
+        if (cloudTime > localTime || localTime === 0) {
+            // Re-sanitize incoming cloud names just in case
+            cloudData.members.forEach(m => m.name = sanitizeInput(m.name));
+            
             inMemoryData = cloudData;
-            persistData(false); // Persist locally, but don't push back to cloud immediately
+            persistData(false); // Update local cache
             return { success: true, message: 'New data downloaded from cloud' };
         } else {
             return { success: true, message: 'Local data is up to date' };
@@ -145,7 +176,7 @@ export const syncFromCloud = async (): Promise<{success: boolean, message?: stri
 
 const persistData = (shouldSyncToCloud: boolean = true) => {
   try {
-    inMemoryData.lastUpdated = Date.now(); // Update timestamp on every save
+    inMemoryData.lastUpdated = Date.now();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(inMemoryData));
     
     if (shouldSyncToCloud) {
@@ -208,7 +239,7 @@ export const logoutUser = () => {
     localStorage.removeItem(SESSION_KEY);
 };
 
-export const authenticateUser = (name: string, passcode: string): { success: boolean, member?: Member, message?: string } => {
+export const authenticateUser = async (name: string, passcode: string): Promise<{ success: boolean, member?: Member, message?: string }> => {
     const attempts = getLoginAttempts();
     const now = Date.now();
 
@@ -222,9 +253,11 @@ export const authenticateUser = (name: string, passcode: string): { success: boo
         attempts.lockedUntil = null;
     }
 
+    const cleanName = sanitizeInput(name);
+    
     const user = inMemoryData.members.find(m => 
         (m.role === 'ADMIN' || m.role === 'TEACHER') && 
-        m.name.toLowerCase().trim() === name.toLowerCase().trim()
+        m.name.toLowerCase().trim() === cleanName.toLowerCase().trim()
     );
 
     if (!user) {
@@ -235,16 +268,35 @@ export const authenticateUser = (name: string, passcode: string): { success: boo
         return { success: false, message: "Access deactivated. Contact Admin." };
     }
 
-    if (user.passcode === passcode) {
+    // AUTH LOGIC: Check hash
+    // If stored passcode is short, it's legacy plaintext.
+    let isValid = false;
+    
+    if (user.passcode && user.passcode.length < 64) {
+        // Legacy check (Plaintext)
+        if (user.passcode === passcode) {
+            isValid = true;
+            // Upgrade to hash immediately
+            user.passcode = await hashString(passcode);
+            persistData(); 
+        }
+    } else {
+        // Secure check (Hash)
+        const inputHash = await hashString(passcode);
+        if (user.passcode === inputHash) {
+            isValid = true;
+        }
+    }
+
+    if (isValid) {
         localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify({ count: 0, lastAttempt: now, lockedUntil: null }));
         localStorage.setItem(SESSION_KEY, JSON.stringify({
             userId: user.id,
             timestamp: now
         }));
         
-        // Try to sync on login to ensure user has latest data
+        // Try to sync one more time on login to be sure
         syncFromCloud();
-
         return { success: true, member: user };
     }
 
@@ -271,11 +323,15 @@ const recordFailedAttempt = (attempts: LoginAttempt) => {
 export const importData = (jsonString: string): { success: boolean; message: string } => {
   try {
     const parsed = JSON.parse(jsonString);
-    if (!parsed.members || !Array.isArray(parsed.members) || !parsed.attendance || !Array.isArray(parsed.attendance)) {
-        return { success: false, message: "Invalid data format." };
+    
+    // Security Schema Validation
+    if (!isValidSchema(parsed)) {
+        return { success: false, message: "Security Warning: Invalid or malformed data file." };
     }
-    // Migration
+
+    // Migration & Sanitization during Import
     parsed.members.forEach((m: any) => {
+        if (m.name) m.name = sanitizeInput(m.name); // Sanitize imported names
         if (!m.assignedChurch) m.assignedChurch = 'UJ';
         if (!m.role) m.role = 'NONE';
     });
@@ -283,11 +339,10 @@ export const importData = (jsonString: string): { success: boolean; message: str
         if (!r.churchId) r.churchId = 'UJ';
     });
     
-    // Preserve Cloud timestamp if exists, or create new
     parsed.lastUpdated = Date.now();
 
     inMemoryData = parsed;
-    persistData(true); // Sync import to cloud
+    persistData(true); 
     isDirty = false;
     return { success: true, message: "Data imported successfully!" };
   } catch (e) {
@@ -302,9 +357,11 @@ export const addMember = (
     birthDate: string = '', 
     status: MemberStatus = MemberStatus.ACTIVE
 ): Member => {
+  const cleanName = sanitizeInput(name);
+  
   const newMember: Member = {
     id: crypto.randomUUID(),
-    name,
+    name: cleanName,
     type,
     joinedDate: new Date().toISOString(),
     status,
@@ -320,9 +377,17 @@ export const addMember = (
   return newMember;
 };
 
-export const updateMember = (updatedMember: Member) => {
+export const updateMember = async (updatedMember: Member) => {
   const index = inMemoryData.members.findIndex(m => m.id === updatedMember.id);
   if (index !== -1) {
+    // Sanitize before saving
+    updatedMember.name = sanitizeInput(updatedMember.name);
+    
+    // If this is a user update involving passcode (that isn't already hashed), hash it
+    if (updatedMember.passcode && updatedMember.passcode.length < 64 && updatedMember.role !== 'NONE') {
+        updatedMember.passcode = await hashString(updatedMember.passcode);
+    }
+
     inMemoryData.members[index] = updatedMember;
     isDirty = true;
     persistData();
@@ -369,40 +434,32 @@ const autoTransferMembersBasedOnAge = () => {
         const age = calculateAge(member.birthDate);
         let targetChurch: Church | 'ARCHIVE' | null = null;
 
-        // Age Groups
         if (age >= 0 && age <= 1) targetChurch = 'I';
         else if (age >= 2 && age <= 5) targetChurch = 'K';
         else if (age >= 6 && age <= 8) targetChurch = 'LJ';
         else if (age >= 9 && age <= 13) targetChurch = 'UJ';
         else if (age > 13) targetChurch = 'ARCHIVE';
 
-        // Specific Logic for UJ Graduates (Age > 13) to have a 1-week notification period
         if (targetChurch === 'ARCHIVE' && member.assignedChurch === 'UJ') {
              if (!member.transferPendingDate) {
-                 // First time noticing they are over age. Set pending date to today.
                  member.transferPendingDate = today.toISOString();
                  transferChanges = true;
-                 // Do NOT transfer yet. Just mark pending.
                  return;
              } else {
-                 // Check if 7 days have passed since pending date
                  const pendingDate = new Date(member.transferPendingDate);
                  const diffTime = Math.abs(today.getTime() - pendingDate.getTime());
                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
                  
                  if (diffDays >= 7) {
-                     // 1 week grace period is over. Now transfer.
                      member.status = MemberStatus.ARCHIVED;
                      member.type = MemberType.NOT_MEMBER;
-                     member.transferPendingDate = undefined; // clear flag
+                     member.transferPendingDate = undefined; 
                      transferChanges = true;
                  }
-                 // If < 7 days, do nothing (keep active, UI will show notification based on pendingDate)
                  return;
              }
         }
 
-        // Standard Immediate Transfer for other movements (e.g., I -> K)
         if (targetChurch) {
             if (targetChurch === 'ARCHIVE') {
                 member.status = MemberStatus.ARCHIVED;

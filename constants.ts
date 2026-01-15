@@ -6,8 +6,8 @@ const ENV_API_KEY = (import.meta as any).env?.VITE_API_KEY || '';
 const ENV_BIN_ID = (import.meta as any).env?.VITE_BIN_ID || '';
 
 export const DEFAULT_CLOUD_CONFIG = {
-    apiKey: ENV_API_KEY || '$2a$10$ND0zIcPdo58JCZimZAcwRO.hL596gLZ3bxo/F0Po4bcSu.b0nvjEa', // e.g. '$2a$10$...'
-    binId: ENV_BIN_ID || '6968447b43b1c97be9314e21'    // e.g. '678...'
+    apiKey: ENV_API_KEY || '$2a$10$ND0zIcPdo58JCZimZAcwRO.hL596gLZ3bxo/F0Po4bcSu.b0nvjEa', // Pre-configured Key
+    binId: ENV_BIN_ID || '6968447b43b1c97be9314e21'    // Pre-configured Bin ID
 };
 
 export const getSundaysInYear = (year: number) => {
@@ -26,131 +26,10 @@ export const getSundaysInYear = (year: number) => {
   return sundays;
 };
 
-export const INITIAL_MEMBERS: Member[] = [
-  // --- SUPER ADMIN ---
-  {
-    "id": "super-admin",
-    "name": "Main Admin",
-    "type": MemberType.TEACHER,
-    "joinedDate": "2025-01-01",
-    "status": MemberStatus.ACTIVE,
-    "assignedChurch": "UJ",
-    "role": "ADMIN",
-    "passcode": "2026", // Will be auto-hashed on first load
-    "isAccessActive": true
-  },
-  // --- UJ CHURCH ---
-  {
-    "id": "init-0",
-    "name": "Maxeen Portuphy",
-    "type": MemberType.TEACHER,
-    "joinedDate": "2025-01-01",
-    "status": MemberStatus.ACTIVE,
-    "assignedChurch": "UJ",
-    "role": "TEACHER",
-    "passcode": "1234", // Will be auto-hashed on first load
-    "isAccessActive": true
-  },
-  {
-    "id": "init-1",
-    "name": "Emmanuel Gyan",
-    "type": MemberType.TEACHER,
-    "joinedDate": "2025-01-01",
-    "status": MemberStatus.ACTIVE,
-    "assignedChurch": "UJ"
-  },
-  {
-    "id": "init-2",
-    "name": "Beatrice Yeboah Adomako",
-    "type": MemberType.MEMBER,
-    "joinedDate": "2025-01-01",
-    "status": MemberStatus.ACTIVE,
-    "birthDate": "2014-05-09",
-    "assignedChurch": "UJ"
-  },
-  {
-    "id": "init-3",
-    "name": "Brilliant Tieku",
-    "type": MemberType.INCONSISTENT,
-    "joinedDate": "2025-01-01",
-    "status": MemberStatus.NOT_ACTIVE,
-    "birthDate": "",
-    "assignedChurch": "UJ"
-  },
-  {
-    "id": "init-4",
-    "name": "Derrick Zong",
-    "type": MemberType.MEMBER,
-    "joinedDate": "2025-01-01",
-    "status": MemberStatus.ACTIVE,
-    "birthDate": "2015-10-23",
-    "assignedChurch": "UJ"
-  },
-  // --- I CHURCH ---
-  {
-    "id": "i-1",
-    "name": "Sarah Smith",
-    "type": MemberType.TEACHER,
-    "joinedDate": "2026-01-01",
-    "status": MemberStatus.ACTIVE,
-    "assignedChurch": "I",
-    "role": "TEACHER",
-    "passcode": "1111", // Will be auto-hashed on first load
-    "isAccessActive": true
-  },
-  {
-    "id": "i-2",
-    "name": "John Doe",
-    "type": MemberType.MEMBER,
-    "joinedDate": "2026-01-01",
-    "status": MemberStatus.ACTIVE,
-    "assignedChurch": "I",
-    "birthDate": "2015-01-01"
-  },
-  // --- K CHURCH ---
-  {
-    "id": "k-1",
-    "name": "Kwame Nkrumah",
-    "type": MemberType.TEACHER,
-    "joinedDate": "2026-01-01",
-    "status": MemberStatus.ACTIVE,
-    "assignedChurch": "K"
-  },
-  {
-    "id": "k-2",
-    "name": "Abena Osei",
-    "type": MemberType.MEMBER,
-    "joinedDate": "2026-01-01",
-    "status": MemberStatus.ACTIVE,
-    "assignedChurch": "K"
-  },
-  // --- LJ CHURCH ---
-  {
-    "id": "lj-1",
-    "name": "Lisa Johnson",
-    "type": MemberType.TEACHER,
-    "joinedDate": "2026-01-01",
-    "status": MemberStatus.ACTIVE,
-    "assignedChurch": "LJ"
-  },
-  {
-    "id": "1abbcecc-7fc0-4d7c-99bd-c34c6261986f",
-    "name": "Stacy Sarpong",
-    "type": MemberType.FNF,
-    "joinedDate": "2026-01-12T16:28:14.162Z",
-    "status": MemberStatus.ACTIVE,
-    "assignedChurch": "UJ"
-  }
-];
+// DATA SOURCE CHANGE: 
+// We no longer fallback to hardcoded sample members. 
+// The app will initialize with an empty list (plus a default admin generated in storageService)
+// and attempt to pull live data from the Cloud immediately.
+export const INITIAL_MEMBERS: Member[] = []; 
 
-export const INITIAL_ATTENDANCE: AttendanceRecord[] = [
-  {
-    "date": "2026-01-04",
-    "churchId": "UJ",
-    "presentMemberIds": [
-      "init-0",
-      "init-1",
-      "init-2"
-    ]
-  }
-];
+export const INITIAL_ATTENDANCE: AttendanceRecord[] = [];

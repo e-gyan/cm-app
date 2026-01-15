@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getAppData, restoreSession, logoutUser, syncFromCloud } from './services/storageService';
+import { getAppData, restoreSession, logoutUser, syncFromCloud, initializeRepository } from './services/storageService';
 import { AppData, Church, Member, Role } from './types';
 import Dashboard from './components/Dashboard';
 import AttendanceTaker from './components/AttendanceTaker';
@@ -33,19 +33,22 @@ const App: React.FC = () => {
 
   // Initial load & Session Restore
   useEffect(() => {
-    refreshData();
-    const savedUser = restoreSession();
-    if (savedUser) {
-        setCurrentUser(savedUser);
-        if (savedUser.role === 'TEACHER') {
-            setActiveChurch(savedUser.assignedChurch);
+    const init = async () => {
+        // This ensures we try to fetch from cloud BEFORE showing anything
+        await initializeRepository();
+        
+        refreshData();
+        const savedUser = restoreSession();
+        if (savedUser) {
+            setCurrentUser(savedUser);
+            if (savedUser.role === 'TEACHER') {
+                setActiveChurch(savedUser.assignedChurch);
+            }
         }
-    }
-    
-    // Attempt Auto Sync on Load
-    handleCloudSync();
+        setIsLoading(false);
+    };
 
-    setIsLoading(false);
+    init();
   }, []);
 
   useEffect(() => {
@@ -81,8 +84,9 @@ const App: React.FC = () => {
 
   if (isLoading) {
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 text-indigo-600">
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 text-indigo-600 flex-col gap-4">
             <Loader2 className="animate-spin" size={48} />
+            <p className="text-sm font-medium text-gray-500 animate-pulse">Synchronizing with Cloud...</p>
         </div>
     );
   }
@@ -240,7 +244,6 @@ const App: React.FC = () => {
               </div>
               <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1.5 rounded-full text-xs font-bold text-indigo-700">
                   {isAdmin ? <UserCog size={14} /> : <Users size={14} />}
-                  {/* UPDATE: Show Teacher Name instead of "Teacher View" */}
                   {isAdmin ? 'Admin Mode' : currentUser.name}
               </div>
             </div>
