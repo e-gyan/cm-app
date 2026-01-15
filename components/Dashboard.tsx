@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
-import { AppData, MemberType, MemberStatus, Church, Member } from '../types';
+import { AppData, MemberType, MemberStatus, Church, Member, AttendanceRecord } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, Legend, AreaChart, Area
+  PieChart, Pie, Cell, Legend
 } from 'recharts';
 import { Users, TrendingUp, UserPlus, Calendar, Trophy, Clock, Target, Award, Users2, Building2 } from 'lucide-react';
 
@@ -12,27 +12,17 @@ interface DashboardProps {
   currentUser: Member;
 }
 
-const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
-const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode; colorFrom: string; colorTo: string; subtext?: string; trend?: string }> = ({ title, value, icon, colorFrom, colorTo, subtext, trend }) => (
-  <div className={`relative overflow-hidden bg-white p-6 rounded-3xl shadow-soft border border-gray-100 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 group`}>
-    <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${colorFrom} ${colorTo} opacity-10 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110`}></div>
-    
-    <div className="relative z-10 flex items-start justify-between">
-        <div>
-            <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${colorFrom} ${colorTo} text-white flex items-center justify-center shadow-lg shadow-indigo-100 mb-4`}>
-                {icon}
-            </div>
-            <h3 className="text-3xl font-extrabold text-gray-900 tracking-tight">{value}</h3>
-            <p className="text-sm font-bold text-gray-400 uppercase tracking-wider mt-1">{title}</p>
-            
-            {subtext && (
-                <div className="flex items-center gap-2 mt-4 bg-gray-50 w-fit px-3 py-1 rounded-full">
-                     <span className={`text-xs font-bold ${trend?.includes('+') ? 'text-green-600' : 'text-gray-500'}`}>{trend}</span>
-                     <span className="text-[10px] text-gray-400 font-medium">{subtext}</span>
-                </div>
-            )}
-        </div>
+const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode; color: string; subtext?: string }> = ({ title, value, icon, color, subtext }) => (
+  <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-4 hover:shadow-md transition-shadow">
+    <div className={`p-3 rounded-xl ${color} text-white shadow-sm`}>
+      {icon}
+    </div>
+    <div>
+      <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{title}</p>
+      <h3 className="text-2xl font-bold text-gray-800">{value}</h3>
+      {subtext && <p className="text-xs text-gray-400 mt-1">{subtext}</p>}
     </div>
   </div>
 );
@@ -88,262 +78,261 @@ const AdminDashboard: React.FC<{ data: AppData }> = ({ data }) => {
 
     const totalPop = churchStats.reduce((acc, curr) => acc + curr.population, 0);
     const totalAvg = churchStats.reduce((acc, curr) => acc + curr.avg, 0);
+    const totalStaff = data.members.filter(m => m.status === MemberStatus.ACTIVE && (m.type === MemberType.TEACHER || m.type === MemberType.HELPER || m.type === MemberType.VOLUNTEER)).length;
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-8 animate-in fade-in">
             {/* High Level Stats */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-3xl p-8 text-white shadow-xl shadow-indigo-200 lg:col-span-1 relative overflow-hidden">
-                    <div className="absolute -right-10 -top-10 w-40 h-40 bg-white opacity-10 rounded-full blur-2xl"></div>
-                    <p className="text-indigo-100 font-bold mb-2 uppercase tracking-wider text-xs">Total Population</p>
-                    <h2 className="text-5xl font-extrabold tracking-tight">{totalPop}</h2>
-                    <p className="text-sm text-indigo-200 mt-4 font-medium">Active Children across 4 churches</p>
+                <div className="bg-indigo-600 rounded-2xl p-6 text-white shadow-lg lg:col-span-1">
+                    <p className="text-indigo-100 font-medium mb-1">Total Population</p>
+                    <h2 className="text-4xl font-bold">{totalPop}</h2>
+                    <p className="text-sm text-indigo-200 mt-2">Active Children across 4 churches</p>
                 </div>
-                <div className="bg-white rounded-3xl p-8 shadow-soft border border-gray-100 lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-10">
-                     <div className="flex flex-col justify-center">
-                        <p className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-2">Global Avg Attendance</p>
-                        <div className="flex items-baseline gap-3">
-                            <h2 className="text-4xl font-extrabold text-gray-800">{totalAvg}</h2>
-                            <span className="text-sm text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded-lg">
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-8">
+                     <div>
+                        <p className="text-gray-500 font-bold text-xs uppercase tracking-wider mb-2">Global Avg Attendance</p>
+                        <div className="flex items-end gap-3">
+                            <h2 className="text-3xl font-bold text-gray-800">{totalAvg}</h2>
+                            <span className="text-sm text-green-600 font-medium mb-1 bg-green-50 px-2 py-0.5 rounded-full">
                                 {totalPop ? Math.round((totalAvg/totalPop)*100) : 0}% Rate
                             </span>
                         </div>
                      </div>
-                     <div className="flex flex-col justify-center border-l border-gray-100 pl-8">
-                        <p className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-2">Total Staff</p>
-                        <h2 className="text-4xl font-extrabold text-gray-800">
-                             {data.members.filter(m => (m.type === MemberType.TEACHER || m.type === MemberType.HELPER) && m.status === MemberStatus.ACTIVE).length}
-                        </h2>
+                     <div>
+                        <p className="text-gray-500 font-bold text-xs uppercase tracking-wider mb-2">Total Staff</p>
+                        <h2 className="text-3xl font-bold text-gray-800">{totalStaff}</h2>
                      </div>
-                     <div className="flex flex-col justify-center border-l border-gray-100 pl-8">
-                        <p className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-2">New Members (FNF)</p>
-                        <h2 className="text-4xl font-extrabold text-gray-800">
-                            {data.members.filter(m => m.type === MemberType.FNF && m.status === MemberStatus.ACTIVE).length}
-                        </h2>
+                     <div>
+                        <p className="text-gray-500 font-bold text-xs uppercase tracking-wider mb-2">Churches Active</p>
+                        <h2 className="text-3xl font-bold text-gray-800">4</h2>
                      </div>
                 </div>
             </div>
 
-            {/* CHURCH COMMAND CENTER GRID */}
-            <div className="flex items-center gap-3 mb-4 mt-8">
-                 <div className="p-2 bg-white rounded-lg shadow-sm">
-                    <Building2 size={20} className="text-indigo-600"/> 
-                 </div>
-                 <h3 className="text-xl font-extrabold text-gray-800">Church Command Center</h3>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+            {/* Church Breakdown */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {churchStats.map(stat => (
-                    <div key={stat.church} className="bg-white rounded-3xl shadow-soft border border-gray-100 overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
-                        <div className={`h-1.5 w-full ${
-                             stat.church === 'UJ' ? 'bg-indigo-500' : 
-                             stat.church === 'I' ? 'bg-emerald-500' :
-                             stat.church === 'K' ? 'bg-rose-500' : 'bg-amber-500'
-                        }`}></div>
-                        <div className="p-6">
-                            <div className="flex justify-between items-start mb-6">
-                                <h4 className="text-2xl font-bold text-gray-900">{stat.church}</h4>
-                                <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${stat.growth >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                                    {stat.growth > 0 ? '+' : ''}{stat.growth}%
-                                </span>
-                            </div>
-                            
-                            <div className="grid grid-cols-2 gap-3 mb-6">
-                                <div className="bg-gray-50 p-4 rounded-2xl">
-                                    <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">Population</p>
-                                    <p className="text-2xl font-extrabold text-gray-800">{stat.population}</p>
+                    <div key={stat.church} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all">
+                        <div className="flex justify-between items-start mb-6">
+                            <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold
+                                    ${stat.church === 'UJ' ? 'bg-indigo-600' : 
+                                      stat.church === 'I' ? 'bg-emerald-600' :
+                                      stat.church === 'K' ? 'bg-rose-600' : 'bg-amber-600'}
+                                `}>
+                                    {stat.church}
                                 </div>
-                                <div className="bg-gray-50 p-4 rounded-2xl">
-                                    <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">Last Sun</p>
-                                    <p className="text-2xl font-extrabold text-gray-800">{stat.lastAttendance}</p>
+                                <div>
+                                    <h3 className="text-lg font-bold text-gray-900">{stat.church} Church</h3>
+                                    <p className="text-xs text-gray-500">Population: {stat.population}</p>
                                 </div>
                             </div>
+                            <div className="text-right">
+                                <p className="text-sm font-bold text-gray-900">{stat.lastAttendance} Present</p>
+                                <p className={`text-xs font-medium ${stat.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    {stat.growth >= 0 ? '+' : ''}{stat.growth}% vs prev
+                                </p>
+                            </div>
+                        </div>
 
-                            <div className="flex items-center justify-between text-xs font-medium text-gray-500 border-t border-gray-100 pt-4">
-                                <span>Avg: <strong className="text-gray-900">{stat.avg}</strong></span>
-                                <span>Rate: <strong className="text-gray-900">{stat.rate}%</strong></span>
+                        <div className="space-y-4">
+                            <div>
+                                <div className="flex justify-between text-xs mb-1">
+                                    <span className="text-gray-500 font-medium">Avg Attendance</span>
+                                    <span className="text-gray-900 font-bold">{stat.avg}</span>
+                                </div>
+                                <div className="w-full bg-gray-100 rounded-full h-2">
+                                    <div className="bg-indigo-500 h-2 rounded-full" style={{ width: `${Math.min(100, (stat.avg / (stat.population || 1)) * 100)}%` }}></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div className="flex justify-between text-xs mb-1">
+                                    <span className="text-gray-500 font-medium">Retention Rate</span>
+                                    <span className="text-gray-900 font-bold">{stat.rate}%</span>
+                                </div>
+                                <div className="w-full bg-gray-100 rounded-full h-2">
+                                    <div className="bg-green-500 h-2 rounded-full" style={{ width: `${Math.min(100, stat.rate)}%` }}></div>
+                                </div>
                             </div>
                         </div>
                     </div>
                 ))}
             </div>
+        </div>
+    );
+};
 
-            {/* Comparison Chart */}
-            <div className="bg-white p-8 rounded-3xl shadow-soft border border-gray-100">
-                <h3 className="text-lg font-bold text-gray-800 mb-8">Comparative Analytics</h3>
-                <div className="h-80 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={churchStats} barSize={40} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-                            <XAxis dataKey="church" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12, fontWeight: 600}} dy={10}/>
-                            <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}}/>
-                            <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '16px', border:'none', boxShadow:'0 10px 15px -3px rgba(0, 0, 0, 0.1)', fontFamily: 'Inter'}}/>
-                            <Legend wrapperStyle={{paddingTop: '20px'}}/>
-                            <Bar dataKey="population" name="Total Members" fill="#e2e8f0" radius={[8, 8, 8, 8]} />
-                            <Bar dataKey="avg" name="Avg Attendance" fill="#6366f1" radius={[8, 8, 8, 8]} />
-                        </BarChart>
-                    </ResponsiveContainer>
+// --- SINGLE CHURCH DASHBOARD (For Teachers) ---
+
+const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ data, activeChurch }) => {
+    
+    // Compute Church Stats
+    const stats = useMemo(() => {
+        const members = data.members.filter(m => m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE);
+        const kids = members.filter(m => m.type !== MemberType.TEACHER && m.type !== MemberType.HELPER && m.type !== MemberType.VOLUNTEER);
+        const attendance = data.attendance
+            .filter(r => r.churchId === activeChurch)
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        
+        // Punctuality Leaderboard Logic (Current Month)
+        const currentMonth = new Date().getMonth();
+        const currentYear = new Date().getFullYear();
+        const monthlyRecords = attendance.filter(r => {
+            const d = new Date(r.date);
+            return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+        });
+
+        const punctualityScores: Record<string, number> = {};
+        monthlyRecords.forEach(r => {
+            r.punctualMemberIds?.forEach(id => {
+                punctualityScores[id] = (punctualityScores[id] || 0) + 1;
+            });
+        });
+
+        const punctualityLeaders = Object.entries(punctualityScores)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 3)
+            .map(([id, score]) => {
+                const m = data.members.find(mem => mem.id === id);
+                return { name: m?.name || 'Unknown', score, id, type: m?.type };
+            });
+
+
+        // Trend Data
+        const last5 = attendance.slice(-5).map(r => {
+            const count = r.presentMemberIds.filter(id => {
+                 const m = data.members.find(mem => mem.id === id);
+                 return m && m.type !== MemberType.TEACHER;
+            }).length;
+            const date = new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            return { name: date, count };
+        });
+
+        const avg = last5.length ? Math.round(last5.reduce((acc, curr) => acc + curr.count, 0) / last5.length) : 0;
+        const totalKids = kids.length;
+        const lastAtt = last5.length > 0 ? last5[last5.length - 1].count : 0;
+
+        return { 
+            totalMembers: totalKids, 
+            avgAttendance: avg, 
+            lastAttendance: lastAtt,
+            trendData: last5,
+            punctualityLeaders
+        };
+    }, [data, activeChurch]);
+
+    return (
+        <div className="space-y-6 animate-in fade-in">
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <StatCard 
+                    title="Active Members" 
+                    value={stats.totalMembers} 
+                    icon={<Users2 size={24} />} 
+                    color="bg-indigo-500"
+                    subtext="Registered Children"
+                />
+                <StatCard 
+                    title="Last Attendance" 
+                    value={stats.lastAttendance} 
+                    icon={<Calendar size={24} />} 
+                    color="bg-green-500"
+                    subtext={stats.trendData.length > 0 ? `vs ${stats.avgAttendance} avg` : 'No data yet'}
+                />
+                 <StatCard 
+                    title="Growth Trend" 
+                    value={stats.trendData.length > 0 ? `${stats.lastAttendance >= stats.avgAttendance ? '+' : ''}${stats.lastAttendance - stats.avgAttendance}` : '0'} 
+                    icon={<TrendingUp size={24} />} 
+                    color="bg-amber-500"
+                    subtext="Last session vs Average"
+                />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* CHART */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 lg:col-span-2">
+                    <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
+                        <ActivityIcon /> Attendance Trend (Last 5 Sessions)
+                    </h3>
+                    <div className="h-64">
+                         <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={stats.trendData}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                                <YAxis axisLine={false} tickLine={false} />
+                                <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                <Bar dataKey="count" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={40} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
                 </div>
+
+                {/* PUNCTUALITY LEADERBOARD - UJ ONLY (or all if desired, but request specified UJ) */}
+                {activeChurch === 'UJ' && (
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+                        <h3 className="font-bold text-gray-800 mb-1 flex items-center gap-2">
+                            <Trophy size={20} className="text-yellow-500" /> Early Birds
+                        </h3>
+                        <p className="text-xs text-gray-400 mb-6">Top Punctual Stars (This Month)</p>
+
+                        <div className="flex-1 space-y-4">
+                            {stats.punctualityLeaders.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center h-full text-gray-400 text-center p-4">
+                                    <Clock size={32} className="mb-2 opacity-20"/>
+                                    <p className="text-sm">No punctual records yet this month.</p>
+                                </div>
+                            ) : (
+                                stats.punctualityLeaders.map((leader, index) => (
+                                    <div key={leader.id} className="flex items-center gap-4 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                                        <div className={`
+                                            w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0
+                                            ${index === 0 ? 'bg-yellow-100 text-yellow-700' : index === 1 ? 'bg-gray-200 text-gray-700' : 'bg-orange-100 text-orange-700'}
+                                        `}>
+                                            #{index + 1}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="font-bold text-gray-800 text-sm truncate">{leader.name}</p>
+                                            <p className="text-[10px] text-gray-500 uppercase">{leader.type}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className="font-bold text-indigo-600">{leader.score}x</span>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                )}
+                
+                {activeChurch !== 'UJ' && (
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center items-center text-center text-gray-400">
+                        <Building2 size={48} className="mb-4 opacity-10" />
+                        <p>Additional metrics for {activeChurch} coming soon.</p>
+                    </div>
+                )}
+
             </div>
         </div>
     );
 }
 
-// --- SINGLE CHURCH DASHBOARD ---
-const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({ data, activeChurch }) => {
-  const churchMembers = useMemo(() => data.members.filter(m => m.assignedChurch === activeChurch), [data.members, activeChurch]);
-  const churchAttendance = useMemo(() => data.attendance.filter(a => a.churchId === activeChurch), [data.attendance, activeChurch]);
-
-  const stats = useMemo(() => {
-    // Exclude Staff
-    const activeMembers = churchMembers.filter(m => 
-      m.status === MemberStatus.ACTIVE && m.type !== MemberType.TEACHER && m.type !== MemberType.HELPER && m.type !== MemberType.VOLUNTEER
-    );
-    const staffIds = new Set(churchMembers.filter(m => m.type === MemberType.TEACHER || m.type === MemberType.HELPER || m.type === MemberType.VOLUNTEER).map(m => m.id));
-
-    const totalMembers = activeMembers.length;
-    const totalNew = activeMembers.filter(m => m.type === MemberType.FNF).length;
-    
-    const countNonStaff = (ids: string[]) => ids.filter(id => !staffIds.has(id)).length;
-    const totalAttendanceCount = churchAttendance.reduce((acc, curr) => acc + countNonStaff(curr.presentMemberIds), 0);
-    const avgAttendance = churchAttendance.length > 0 ? Math.round(totalAttendanceCount / churchAttendance.length) : 0;
-
-    // Growth
-    const sortedAttendance = [...churchAttendance].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    let growth = 0;
-    if (sortedAttendance.length >= 2) {
-      const last = countNonStaff(sortedAttendance[sortedAttendance.length - 1].presentMemberIds);
-      const prev = countNonStaff(sortedAttendance[sortedAttendance.length - 2].presentMemberIds);
-      if (prev === 0) growth = last > 0 ? 100 : 0;
-      else growth = Math.round(((last - prev) / prev) * 100);
-    }
-
-    return { totalMembers, totalNew, avgAttendance, growth, sortedAttendance, activeMembers };
-  }, [churchMembers, churchAttendance]);
-
-  // Composition Data
-  const categoryData = useMemo(() => {
-    const counts: Record<string, number> = {};
-    stats.activeMembers.forEach(m => { counts[m.type] = (counts[m.type] || 0) + 1; });
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [stats.activeMembers]);
-
-  // Chart Data (Last 5 weeks)
-  const chartData = useMemo(() => {
-      return stats.sortedAttendance.slice(-5).map(r => {
-          return {
-              name: new Date(r.date).toLocaleDateString(undefined, {month:'short', day:'numeric'}),
-              count: r.presentMemberIds.filter(id => {
-                 const m = data.members.find(mem => mem.id === id);
-                 return m && m.type !== MemberType.TEACHER && m.type !== MemberType.HELPER;
-              }).length
-          }
-      });
-  }, [stats.sortedAttendance, data.members]);
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard 
-            title="Active Members" 
-            value={stats.totalMembers} 
-            icon={<Users size={24} />} 
-            colorFrom="from-indigo-500" 
-            colorTo="to-indigo-600"
-            subtext="Registered"
-            trend="" 
-        />
-        <StatCard 
-            title="Avg. Attendance" 
-            value={stats.avgAttendance} 
-            icon={<Calendar size={24} />} 
-            colorFrom="from-emerald-400" 
-            colorTo="from-emerald-600"
-            subtext="Per Sunday"
-            trend=""
-        />
-        <StatCard 
-            title="New (FNF)" 
-            value={stats.totalNew} 
-            icon={<UserPlus size={24} />} 
-            colorFrom="from-amber-400" 
-            colorTo="to-orange-500"
-            subtext="Total Visitors"
-            trend=""
-        />
-        <StatCard 
-            title="Growth Trend" 
-            value={`${stats.growth > 0 ? '+' : ''}${stats.growth}%`} 
-            icon={<TrendingUp size={24} />} 
-            colorFrom={stats.growth >= 0 ? "from-green-500" : "from-red-500"}
-            colorTo={stats.growth >= 0 ? "to-green-600" : "to-red-600"}
-            subtext="vs last service"
-            trend={stats.growth > 0 ? "+" + stats.growth : stats.growth.toString()} 
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white p-8 rounded-3xl shadow-soft border border-gray-100 lg:col-span-2">
-            <h3 className="text-lg font-bold text-gray-800 mb-8">Recent Attendance Trend</h3>
-            <div className="h-80 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                        <defs>
-                            <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                            </linearGradient>
-                        </defs>
-                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12, fontWeight: 500}} dy={10}/>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-                        <Tooltip contentStyle={{borderRadius: '16px', border:'none', boxShadow:'0 10px 15px -3px rgba(0, 0, 0, 0.1)', fontFamily: 'Inter'}}/>
-                        <Area type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
-                    </AreaChart>
-                </ResponsiveContainer>
-            </div>
-        </div>
-
-        <div className="bg-white p-8 rounded-3xl shadow-soft border border-gray-100">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">Composition</h3>
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie 
-                    data={categoryData} 
-                    cx="50%" 
-                    cy="50%" 
-                    innerRadius={60} 
-                    outerRadius={80} 
-                    fill="#8884d8" 
-                    paddingAngle={5} 
-                    dataKey="value"
-                    cornerRadius={6}
-                  >
-                    {categoryData.map((entry, index) => ( <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} /> ))}
-                  </Pie>
-                  <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}/>
-                  <Legend verticalAlign="bottom" wrapperStyle={{paddingTop: '20px', fontSize: '12px'}}/>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+const ActivityIcon = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-500"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+)
 
 const Dashboard: React.FC<DashboardProps> = ({ data, activeChurch, currentUser }) => {
   const isAdmin = currentUser.role === 'ADMIN';
+  const showAdminView = isAdmin && activeChurch === 'ALL';
 
-  if (isAdmin) {
-      return (
-          <div className="space-y-6">
-              <AdminDashboard data={data} />
-          </div>
-      )
-  }
-
-  return <ChurchDashboard data={data} activeChurch={activeChurch} />;
+  return (
+    <div className="pb-20">
+      {showAdminView ? (
+          <AdminDashboard data={data} />
+      ) : (
+          <ChurchDashboard data={data} activeChurch={activeChurch} />
+      )}
+    </div>
+  );
 };
 
 export default Dashboard;

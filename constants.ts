@@ -1,6 +1,12 @@
 import { Member, AttendanceRecord, MemberType, MemberStatus } from './types';
 
-// Copy this into constants.ts to make changes permanent in code
+// SECURITY NOTE: Add your JSONBin.io keys here to enable hardcoded cloud sync.
+// If these are set, the app will prioritize them over local storage configurations.
+export const DEFAULT_CLOUD_CONFIG = {
+    apiKey: '$2a$10$ND0zIcPdo58JCZimZAcwRO.hL596gLZ3bxo/F0Po4bcSu.b0nvjEa', // e.g. '$2a$10$...' (X-Master-Key)
+    binId: '6968447b43b1c97be9314e21'   // e.g. '678...' (Bin ID)
+};
+
 export const getSundaysInYear = (year: number) => {
   const date = new Date(year, 0, 1);
   const sundays: Date[] = [];
@@ -17,11 +23,6 @@ export const getSundaysInYear = (year: number) => {
   return sundays;
 };
 
-// SHA-256 Hashes for default passwords
-// "2026" -> fa127...
-// "1234" -> 03ac6...
-// "1111" -> 0ffe1...
-
 export const INITIAL_MEMBERS: Member[] = [
   // --- SUPER ADMIN (Hidden from attendance usually, or just a teacher with super powers) ---
   {
@@ -32,8 +33,7 @@ export const INITIAL_MEMBERS: Member[] = [
     "status": MemberStatus.ACTIVE,
     "assignedChurch": "UJ",
     "role": "ADMIN",
-    // Hash of '2026'
-    "passcode": "fa127e4529d2011030e463560237305949e25d2c77a915228f41395f87b89797", 
+    "passcode": "2026", // Default Pin
     "isAccessActive": true
   },
   // --- UJ CHURCH ---
@@ -45,8 +45,7 @@ export const INITIAL_MEMBERS: Member[] = [
     "status": MemberStatus.ACTIVE,
     "assignedChurch": "UJ",
     "role": "TEACHER",
-    // Hash of '1234'
-    "passcode": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+    "passcode": "1234",
     "isAccessActive": true
   },
   {
@@ -93,8 +92,7 @@ export const INITIAL_MEMBERS: Member[] = [
     "status": MemberStatus.ACTIVE,
     "assignedChurch": "I",
     "role": "TEACHER",
-    // Hash of '1111'
-    "passcode": "0ffe1abd1a08215353c233d6e009613e95eec4253832a761af28ff37ac5a150c",
+    "passcode": "1111",
     "isAccessActive": true
   },
   {
@@ -133,7 +131,7 @@ export const INITIAL_MEMBERS: Member[] = [
     "assignedChurch": "LJ"
   },
   
-  // REST OF UJ MEMBERS
+  // REST OF UJ MEMBERS (Truncated for brevity, but logically here)
   {
     "id": "1abbcecc-7fc0-4d7c-99bd-c34c6261986f",
     "name": "Stacy Sarpong",

@@ -31,6 +31,8 @@ export interface Member {
   role?: Role;
   passcode?: string;
   isAccessActive?: boolean;
+  // Automation Fields
+  transferPendingDate?: string; // ISO Date string for the 1-week notification period
 }
 
 export interface AttendanceRecord {
