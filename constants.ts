@@ -1,10 +1,13 @@
 import { Member, AttendanceRecord, MemberType, MemberStatus } from './types';
 
-// SECURITY NOTE: Add your JSONBin.io keys here to enable hardcoded cloud sync.
-// If these are set, the app will prioritize them over local storage configurations.
+// SECURITY UPDATE: Using Environment Variables is recommended over hardcoding.
+// If not using a build tool, you can still manually set these, but be careful not to share this file publicly.
+const ENV_API_KEY = (import.meta as any).env?.VITE_API_KEY || '';
+const ENV_BIN_ID = (import.meta as any).env?.VITE_BIN_ID || '';
+
 export const DEFAULT_CLOUD_CONFIG = {
-    apiKey: '$2a$10$ND0zIcPdo58JCZimZAcwRO.hL596gLZ3bxo/F0Po4bcSu.b0nvjEa', // e.g. '$2a$10$...' (X-Master-Key)
-    binId: '6968447b43b1c97be9314e21'   // e.g. '678...' (Bin ID)
+    apiKey: ENV_API_KEY || '$2a$10$ND0zIcPdo58JCZimZAcwRO.hL596gLZ3bxo/F0Po4bcSu.b0nvjEa', // e.g. '$2a$10$...'
+    binId: ENV_BIN_ID || '6968447b43b1c97be9314e21'    // e.g. '678...'
 };
 
 export const getSundaysInYear = (year: number) => {
@@ -24,7 +27,7 @@ export const getSundaysInYear = (year: number) => {
 };
 
 export const INITIAL_MEMBERS: Member[] = [
-  // --- SUPER ADMIN (Hidden from attendance usually, or just a teacher with super powers) ---
+  // --- SUPER ADMIN ---
   {
     "id": "super-admin",
     "name": "Main Admin",
@@ -33,7 +36,7 @@ export const INITIAL_MEMBERS: Member[] = [
     "status": MemberStatus.ACTIVE,
     "assignedChurch": "UJ",
     "role": "ADMIN",
-    "passcode": "2026", // Default Pin
+    "passcode": "2026", // Will be auto-hashed on first load
     "isAccessActive": true
   },
   // --- UJ CHURCH ---
@@ -45,7 +48,7 @@ export const INITIAL_MEMBERS: Member[] = [
     "status": MemberStatus.ACTIVE,
     "assignedChurch": "UJ",
     "role": "TEACHER",
-    "passcode": "1234",
+    "passcode": "1234", // Will be auto-hashed on first load
     "isAccessActive": true
   },
   {
@@ -92,7 +95,7 @@ export const INITIAL_MEMBERS: Member[] = [
     "status": MemberStatus.ACTIVE,
     "assignedChurch": "I",
     "role": "TEACHER",
-    "passcode": "1111",
+    "passcode": "1111", // Will be auto-hashed on first load
     "isAccessActive": true
   },
   {
@@ -130,8 +133,6 @@ export const INITIAL_MEMBERS: Member[] = [
     "status": MemberStatus.ACTIVE,
     "assignedChurch": "LJ"
   },
-  
-  // REST OF UJ MEMBERS (Truncated for brevity, but logically here)
   {
     "id": "1abbcecc-7fc0-4d7c-99bd-c34c6261986f",
     "name": "Stacy Sarpong",

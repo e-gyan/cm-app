@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AppData, Member, MemberType, MemberStatus, Church, Role } from '../types';
 import { User, Users, Edit2, Archive, X, Save, GraduationCap, Undo2, HelpCircle, AlertCircle, Activity, Briefcase, ChevronDown, ChevronUp, Plus, Lock, Key, Heart, Hand, Trash2 } from 'lucide-react';
 import { updateMember, bulkArchiveMembers, addMember } from '../services/storageService';
+import { sanitizeInput } from '../services/securityService';
 
 interface MembersListProps {
   data: AppData;
@@ -71,20 +72,23 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
     setIsCreateModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name) return;
 
+    // Sanitize inputs
+    const cleanName = sanitizeInput(formData.name);
+    
     if (editingId) {
         // UPDATE EXISTING
         const original = data.members.find(m => m.id === editingId);
         if (original) {
-            updateMember({ ...original, ...formData } as Member);
+            await updateMember({ ...original, ...formData, name: cleanName } as Member);
         }
         setIsEditModalOpen(false);
     } else {
         // CREATE NEW
         addMember(
-            formData.name!, 
+            cleanName, 
             formData.type!, 
             formData.assignedChurch!, 
             formData.birthDate!, 
@@ -96,15 +100,15 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
     onUpdate();
   };
 
-  const archiveMember = (member: Member) => {
+  const archiveMember = async (member: Member) => {
     if (window.confirm(`Are you sure you want to archive ${member.name}?`)) {
-      updateMember({ ...member, status: MemberStatus.ARCHIVED });
+      await updateMember({ ...member, status: MemberStatus.ARCHIVED });
       onUpdate();
     }
   };
 
-  const restoreMember = (member: Member) => {
-     updateMember({ ...member, status: MemberStatus.ACTIVE });
+  const restoreMember = async (member: Member) => {
+     await updateMember({ ...member, status: MemberStatus.ACTIVE });
      onUpdate();
   };
 

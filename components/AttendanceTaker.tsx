@@ -3,6 +3,7 @@ import { AppData, Member, MemberType, MemberStatus, Church } from '../types';
 import { getSundaysInYear } from '../constants';
 import { Search, Plus, Check, Save, GraduationCap, User, Users, AlertCircle, HelpCircle, Clock, Trophy, X, Calendar, Heart, Hand, Briefcase, ArrowRightCircle, Medal, Crown } from 'lucide-react';
 import { addMember, saveAttendance } from '../services/storageService';
+import { sanitizeInput } from '../services/securityService';
 
 interface AttendanceTakerProps {
   data: AppData;
@@ -184,7 +185,11 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
 
   const handleAddFNF = () => {
     if (!newMemberName.trim()) return;
-    const newMember = addMember(newMemberName, MemberType.FNF, activeChurch, '');
+    
+    // Sanitize
+    const cleanName = sanitizeInput(newMemberName);
+
+    const newMember = addMember(cleanName, MemberType.FNF, activeChurch, '');
     const newSet = new Set(presentIds);
     newSet.add(newMember.id);
     setPresentIds(newSet);
