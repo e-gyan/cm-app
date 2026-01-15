@@ -71,7 +71,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
 
     await updateMember({
       ...original,
-      name: editName,
+      name: editName.trim(),
       type: editType,
       status: editStatus,
       birthDate: editBirthDate,
@@ -96,9 +96,9 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
   };
 
   const handleCreateMember = () => {
-    if(!newMemberData.name) return;
+    if(!newMemberData.name.trim()) return;
     addMember(
-        newMemberData.name, 
+        newMemberData.name.trim(), 
         newMemberData.type, 
         newMemberData.assignedChurch, 
         newMemberData.birthDate, 
@@ -632,7 +632,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
 
                         <button 
                             onClick={handleCreateMember}
-                            disabled={!newMemberData.name}
+                            disabled={!newMemberData.name.trim()}
                             className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-xl font-bold mt-4 disabled:opacity-50"
                         >
                             Create Record

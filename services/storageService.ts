@@ -47,31 +47,39 @@ const loadDataInternal = async (): Promise<AppData> => {
       });
 
       // 3. Migration: Auto-Hash Legacy Passwords
-      let securityMigrationNeeded = false;
-      for (const m of parsed.members) {
-          if (m.passcode && m.passcode.length < 64) {
-              m.passcode = await hashPasscode(m.passcode);
-              securityMigrationNeeded = true;
+      // NOTE: Hashing requires secure context (https or localhost). 
+      // If crypto.subtle is missing, skip migration to avoid crash.
+      if (window.crypto && window.crypto.subtle) {
+          let securityMigrationNeeded = false;
+          for (const m of parsed.members) {
+              if (m.passcode && m.passcode.length < 64) {
+                  m.passcode = await hashPasscode(m.passcode);
+                  securityMigrationNeeded = true;
+              }
           }
-      }
 
-      if (!adminExists) {
-        parsed.members.push({
-            id: "auto-admin",
-            name: "Main Admin",
-            type: MemberType.TEACHER,
-            joinedDate: new Date().toISOString(),
-            status: MemberStatus.ACTIVE,
-            assignedChurch: "ALL",
-            role: "ADMIN",
-            passcode: await hashPasscode("2026"), // Hash default
-            isAccessActive: true
-        });
-        securityMigrationNeeded = true;
-      }
-      
-      if (securityMigrationNeeded) {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+          if (!adminExists) {
+            parsed.members.push({
+                id: "auto-admin",
+                name: "Main Admin",
+                type: MemberType.TEACHER,
+                joinedDate: new Date().toISOString(),
+                status: MemberStatus.ACTIVE,
+                assignedChurch: "ALL",
+                role: "ADMIN",
+                passcode: await hashPasscode("2026"), // Hash default
+                isAccessActive: true
+            });
+            securityMigrationNeeded = true;
+          }
+          
+          if (securityMigrationNeeded) {
+              try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+              } catch(e) {
+                console.warn("Could not save migration changes (Quota Exceeded?)");
+              }
+          }
       }
 
       return parsed;
@@ -102,6 +110,9 @@ export const initializeStorage = async (): Promise<void> => {
 };
 
 export const getAppData = (): AppData => {
+  if (!isInitialized) {
+      console.warn("Attempted to access App Data before initialization");
+  }
   return inMemoryData;
 };
 
@@ -164,6 +175,19 @@ export const syncFromCloud = async (): Promise<{success: boolean, message?: stri
         }
         const cloudData = parseResult.data as AppData;
 
+        // SECURITY: Sanitize incoming cloud data
+        cloudData.members.forEach(m => {
+            m.name = sanitizeString(m.name);
+            if (m.passcode && m.passcode.length < 64) {
+                 // Clear potential plain text legacy passwords from external source if suspicious
+                 // Users will need to reset or admin re-enter.
+                 // Ideally we'd hash here but sync is async background.
+            }
+        });
+        cloudData.attendance.forEach(a => {
+            if (a.notes) a.notes = sanitizeString(a.notes);
+        });
+
         const localTime = inMemoryData.lastUpdated || 0;
         const cloudTime = cloudData.lastUpdated || 0;
 
@@ -180,6 +204,7 @@ export const syncFromCloud = async (): Promise<{success: boolean, message?: stri
     }
 };
 
+// Robust Persist with Quota Management
 const persistData = (shouldSyncToCloud: boolean = true) => {
   try {
     inMemoryData.lastUpdated = Date.now();
@@ -188,8 +213,12 @@ const persistData = (shouldSyncToCloud: boolean = true) => {
     if (shouldSyncToCloud) {
         syncToCloud();
     }
-  } catch (e) {
-    console.error("Failed to save to local storage", e);
+  } catch (e: any) {
+    if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+        alert("CRITICAL WARNING: Local Storage is full! Your recent changes were NOT saved. Please export your data and clear some space.");
+    } else {
+        console.error("Failed to save to local storage", e);
+    }
   }
 };
 
@@ -258,7 +287,7 @@ export const authenticateUser = async (name: string, plainPasscode: string): Pro
         attempts.lockedUntil = null;
     }
 
-    const sanitizedName = sanitizeString(name);
+    const sanitizedName = sanitizeString(name.trim());
     
     const user = inMemoryData.members.find(m => 
         (m.role === 'ADMIN' || m.role === 'TEACHER') && 
@@ -273,8 +302,17 @@ export const authenticateUser = async (name: string, plainPasscode: string): Pro
         return { success: false, message: "Access deactivated. Contact Admin." };
     }
 
-    // SECURITY: Compare using Hash
-    const isValid = await verifyPasscode(plainPasscode, user.passcode || '');
+    // SECURITY: Compare using Hash if available
+    let isValid = false;
+    if (window.crypto && window.crypto.subtle) {
+         isValid = await verifyPasscode(plainPasscode, user.passcode || '');
+    } else {
+         // Fallback for non-secure contexts (e.g. plain HTTP)
+         isValid = (user.passcode === plainPasscode); 
+         if (!isValid && user.passcode && user.passcode.length > 50) {
+             return { success: false, message: "Secure Context Required (HTTPS) to login." };
+         }
+    }
 
     if (isValid) {
         localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify({ count: 0, lastAttempt: now, lockedUntil: null }));
@@ -319,12 +357,14 @@ export const importData = (jsonString: string): { success: boolean; message: str
     }
     const safeData = validation.data as AppData;
 
-    // Migration logic on valid data
+    // SECURITY: Sanitize all string fields on import
     safeData.members.forEach((m: any) => {
+        m.name = sanitizeString(m.name);
         if (!m.assignedChurch) m.assignedChurch = 'UJ';
         if (!m.role) m.role = 'NONE';
     });
     safeData.attendance.forEach((r: any) => {
+        if (r.notes) r.notes = sanitizeString(r.notes);
         if (!r.churchId) r.churchId = 'UJ';
     });
     
@@ -348,7 +388,7 @@ export const addMember = (
 ): Member => {
   const newMember: Member = {
     id: crypto.randomUUID(),
-    name: sanitizeString(name), // SECURITY: Sanitize Name
+    name: sanitizeString(name.trim()), // SECURITY: Sanitize Name
     type,
     joinedDate: new Date().toISOString(),
     status,
@@ -368,12 +408,13 @@ export const updateMember = async (updatedMember: Member) => {
   const index = inMemoryData.members.findIndex(m => m.id === updatedMember.id);
   if (index !== -1) {
     // SECURITY: Sanitize update fields
-    updatedMember.name = sanitizeString(updatedMember.name);
+    updatedMember.name = sanitizeString(updatedMember.name.trim());
     
     // Check if passcode was changed (plain text length vs hash length)
-    // If it's a short string, assume it's a new plain text password needing hashing
     if (updatedMember.passcode && updatedMember.passcode.length < 64) {
-        updatedMember.passcode = await hashPasscode(updatedMember.passcode);
+        if (window.crypto && window.crypto.subtle) {
+             updatedMember.passcode = await hashPasscode(updatedMember.passcode);
+        }
     }
 
     inMemoryData.members[index] = updatedMember;

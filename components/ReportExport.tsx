@@ -164,15 +164,18 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
   
   // --- Cloud Sync Logic ---
   const handleSaveCloudConfig = async () => {
-      if (!apiKey || !binId) {
+      const trimmedKey = apiKey.trim();
+      const trimmedBin = binId.trim();
+
+      if (!trimmedKey || !trimmedBin) {
           setCloudMsg('Please enter both API Key and Bin ID');
           return;
       }
       
       saveCloudConfig({
           enabled: true,
-          apiKey,
-          binId,
+          apiKey: trimmedKey,
+          binId: trimmedBin,
           url: 'https://api.jsonbin.io/v3/b'
       });
       setIsCloudEnabled(true);

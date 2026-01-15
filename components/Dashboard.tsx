@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { AppData, MemberType, MemberStatus, Church, Member } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, Legend
+  PieChart, Pie, Cell, Legend, AreaChart, Area
 } from 'recharts';
 import { Users, TrendingUp, UserPlus, Calendar, Trophy, Clock, Target, Award, Users2, Building2 } from 'lucide-react';
 
@@ -12,17 +12,27 @@ interface DashboardProps {
   currentUser: Member;
 }
 
-const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
-const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode; color: string; subtext?: string }> = ({ title, value, icon, color, subtext }) => (
-  <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-4 hover:shadow-md transition-shadow">
-    <div className={`p-3 rounded-xl ${color} text-white shadow-sm`}>
-      {icon}
-    </div>
-    <div>
-      <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{title}</p>
-      <h3 className="text-2xl font-bold text-gray-800">{value}</h3>
-      {subtext && <p className="text-xs text-gray-400 mt-1">{subtext}</p>}
+const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode; colorFrom: string; colorTo: string; subtext?: string; trend?: string }> = ({ title, value, icon, colorFrom, colorTo, subtext, trend }) => (
+  <div className={`relative overflow-hidden bg-white p-6 rounded-3xl shadow-soft border border-gray-100 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 group`}>
+    <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${colorFrom} ${colorTo} opacity-10 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110`}></div>
+    
+    <div className="relative z-10 flex items-start justify-between">
+        <div>
+            <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${colorFrom} ${colorTo} text-white flex items-center justify-center shadow-lg shadow-indigo-100 mb-4`}>
+                {icon}
+            </div>
+            <h3 className="text-3xl font-extrabold text-gray-900 tracking-tight">{value}</h3>
+            <p className="text-sm font-bold text-gray-400 uppercase tracking-wider mt-1">{title}</p>
+            
+            {subtext && (
+                <div className="flex items-center gap-2 mt-4 bg-gray-50 w-fit px-3 py-1 rounded-full">
+                     <span className={`text-xs font-bold ${trend?.includes('+') ? 'text-green-600' : 'text-gray-500'}`}>{trend}</span>
+                     <span className="text-[10px] text-gray-400 font-medium">{subtext}</span>
+                </div>
+            )}
+        </div>
     </div>
   </div>
 );
@@ -80,33 +90,34 @@ const AdminDashboard: React.FC<{ data: AppData }> = ({ data }) => {
     const totalAvg = churchStats.reduce((acc, curr) => acc + curr.avg, 0);
 
     return (
-        <div className="space-y-8 animate-in fade-in">
+        <div className="space-y-8">
             {/* High Level Stats */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-indigo-600 rounded-2xl p-6 text-white shadow-lg lg:col-span-1">
-                    <p className="text-indigo-100 font-medium mb-1">Total Population</p>
-                    <h2 className="text-4xl font-bold">{totalPop}</h2>
-                    <p className="text-sm text-indigo-200 mt-2">Active Children across 4 churches</p>
+                <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-3xl p-8 text-white shadow-xl shadow-indigo-200 lg:col-span-1 relative overflow-hidden">
+                    <div className="absolute -right-10 -top-10 w-40 h-40 bg-white opacity-10 rounded-full blur-2xl"></div>
+                    <p className="text-indigo-100 font-bold mb-2 uppercase tracking-wider text-xs">Total Population</p>
+                    <h2 className="text-5xl font-extrabold tracking-tight">{totalPop}</h2>
+                    <p className="text-sm text-indigo-200 mt-4 font-medium">Active Children across 4 churches</p>
                 </div>
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-8">
-                     <div>
-                        <p className="text-gray-500 font-bold text-xs uppercase tracking-wider mb-2">Global Avg Attendance</p>
-                        <div className="flex items-end gap-3">
-                            <h2 className="text-3xl font-bold text-gray-800">{totalAvg}</h2>
-                            <span className="text-sm text-green-600 font-medium mb-1 bg-green-50 px-2 py-0.5 rounded-full">
+                <div className="bg-white rounded-3xl p-8 shadow-soft border border-gray-100 lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-10">
+                     <div className="flex flex-col justify-center">
+                        <p className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-2">Global Avg Attendance</p>
+                        <div className="flex items-baseline gap-3">
+                            <h2 className="text-4xl font-extrabold text-gray-800">{totalAvg}</h2>
+                            <span className="text-sm text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded-lg">
                                 {totalPop ? Math.round((totalAvg/totalPop)*100) : 0}% Rate
                             </span>
                         </div>
                      </div>
-                     <div>
-                        <p className="text-gray-500 font-bold text-xs uppercase tracking-wider mb-2">Total Staff</p>
-                        <h2 className="text-3xl font-bold text-gray-800">
+                     <div className="flex flex-col justify-center border-l border-gray-100 pl-8">
+                        <p className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-2">Total Staff</p>
+                        <h2 className="text-4xl font-extrabold text-gray-800">
                              {data.members.filter(m => (m.type === MemberType.TEACHER || m.type === MemberType.HELPER) && m.status === MemberStatus.ACTIVE).length}
                         </h2>
                      </div>
-                     <div>
-                        <p className="text-gray-500 font-bold text-xs uppercase tracking-wider mb-2">New Members (FNF)</p>
-                        <h2 className="text-3xl font-bold text-gray-800">
+                     <div className="flex flex-col justify-center border-l border-gray-100 pl-8">
+                        <p className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-2">New Members (FNF)</p>
+                        <h2 className="text-4xl font-extrabold text-gray-800">
                             {data.members.filter(m => m.type === MemberType.FNF && m.status === MemberStatus.ACTIVE).length}
                         </h2>
                      </div>
@@ -114,41 +125,43 @@ const AdminDashboard: React.FC<{ data: AppData }> = ({ data }) => {
             </div>
 
             {/* CHURCH COMMAND CENTER GRID */}
-            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <Building2 size={20} className="text-indigo-600"/> 
-                Church Command Center
-            </h3>
+            <div className="flex items-center gap-3 mb-4 mt-8">
+                 <div className="p-2 bg-white rounded-lg shadow-sm">
+                    <Building2 size={20} className="text-indigo-600"/> 
+                 </div>
+                 <h3 className="text-xl font-extrabold text-gray-800">Church Command Center</h3>
+            </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
                 {churchStats.map(stat => (
-                    <div key={stat.church} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow group">
-                        <div className={`h-2 w-full ${
+                    <div key={stat.church} className="bg-white rounded-3xl shadow-soft border border-gray-100 overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+                        <div className={`h-1.5 w-full ${
                              stat.church === 'UJ' ? 'bg-indigo-500' : 
                              stat.church === 'I' ? 'bg-emerald-500' :
                              stat.church === 'K' ? 'bg-rose-500' : 'bg-amber-500'
                         }`}></div>
-                        <div className="p-5">
-                            <div className="flex justify-between items-start mb-4">
-                                <h4 className="text-xl font-bold text-gray-800">{stat.church} Church</h4>
-                                <span className={`text-xs font-bold px-2 py-1 rounded-lg ${stat.growth >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                        <div className="p-6">
+                            <div className="flex justify-between items-start mb-6">
+                                <h4 className="text-2xl font-bold text-gray-900">{stat.church}</h4>
+                                <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${stat.growth >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                                     {stat.growth > 0 ? '+' : ''}{stat.growth}%
                                 </span>
                             </div>
                             
-                            <div className="grid grid-cols-2 gap-4 mb-4">
-                                <div className="bg-gray-50 p-3 rounded-lg">
-                                    <p className="text-[10px] text-gray-500 font-bold uppercase">Population</p>
-                                    <p className="text-xl font-bold text-gray-800">{stat.population}</p>
+                            <div className="grid grid-cols-2 gap-3 mb-6">
+                                <div className="bg-gray-50 p-4 rounded-2xl">
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">Population</p>
+                                    <p className="text-2xl font-extrabold text-gray-800">{stat.population}</p>
                                 </div>
-                                <div className="bg-gray-50 p-3 rounded-lg">
-                                    <p className="text-[10px] text-gray-500 font-bold uppercase">Last Sunday</p>
-                                    <p className="text-xl font-bold text-gray-800">{stat.lastAttendance}</p>
+                                <div className="bg-gray-50 p-4 rounded-2xl">
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">Last Sun</p>
+                                    <p className="text-2xl font-extrabold text-gray-800">{stat.lastAttendance}</p>
                                 </div>
                             </div>
 
-                            <div className="flex items-center justify-between text-xs text-gray-500 border-t pt-3">
-                                <span>Avg: <strong>{stat.avg}</strong></span>
-                                <span>Rate: <strong>{stat.rate}%</strong></span>
+                            <div className="flex items-center justify-between text-xs font-medium text-gray-500 border-t border-gray-100 pt-4">
+                                <span>Avg: <strong className="text-gray-900">{stat.avg}</strong></span>
+                                <span>Rate: <strong className="text-gray-900">{stat.rate}%</strong></span>
                             </div>
                         </div>
                     </div>
@@ -156,18 +169,18 @@ const AdminDashboard: React.FC<{ data: AppData }> = ({ data }) => {
             </div>
 
             {/* Comparison Chart */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <h3 className="text-lg font-bold text-gray-800 mb-6">Comparative Analytics</h3>
+            <div className="bg-white p-8 rounded-3xl shadow-soft border border-gray-100">
+                <h3 className="text-lg font-bold text-gray-800 mb-8">Comparative Analytics</h3>
                 <div className="h-80 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={churchStats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0"/>
-                            <XAxis dataKey="church" axisLine={false} tickLine={false} tick={{fill: '#6b7280'}}/>
-                            <YAxis axisLine={false} tickLine={false} tick={{fill: '#6b7280'}}/>
-                            <Tooltip cursor={{fill: '#f9fafb'}} contentStyle={{borderRadius: '12px', border:'none', boxShadow:'0 10px 15px -3px rgba(0, 0, 0, 0.1)'}}/>
+                        <BarChart data={churchStats} barSize={40} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                            <XAxis dataKey="church" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12, fontWeight: 600}} dy={10}/>
+                            <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}}/>
+                            <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '16px', border:'none', boxShadow:'0 10px 15px -3px rgba(0, 0, 0, 0.1)', fontFamily: 'Inter'}}/>
                             <Legend wrapperStyle={{paddingTop: '20px'}}/>
-                            <Bar dataKey="population" name="Total Members" fill="#e5e7eb" radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="avg" name="Avg Attendance" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="population" name="Total Members" fill="#e2e8f0" radius={[8, 8, 8, 8]} />
+                            <Bar dataKey="avg" name="Avg Attendance" fill="#6366f1" radius={[8, 8, 8, 8]} />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
@@ -176,7 +189,7 @@ const AdminDashboard: React.FC<{ data: AppData }> = ({ data }) => {
     );
 }
 
-// --- SINGLE CHURCH DASHBOARD (For Teachers/Admins Context) ---
+// --- SINGLE CHURCH DASHBOARD ---
 const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({ data, activeChurch }) => {
   const churchMembers = useMemo(() => data.members.filter(m => m.assignedChurch === activeChurch), [data.members, activeChurch]);
   const churchAttendance = useMemo(() => data.attendance.filter(a => a.churchId === activeChurch), [data.attendance, activeChurch]);
@@ -229,39 +242,87 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({ da
   }, [stats.sortedAttendance, data.members]);
 
   return (
-    <div className="space-y-6 animate-in fade-in">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Active Members" value={stats.totalMembers} icon={<Users size={24} />} color="bg-indigo-500" />
-        <StatCard title="Avg. Attendance" value={stats.avgAttendance} icon={<Calendar size={24} />} color="bg-emerald-500" />
-        <StatCard title="New (FNF)" value={stats.totalNew} icon={<UserPlus size={24} />} color="bg-amber-500" />
-        <StatCard title="Growth Trend" value={`${stats.growth > 0 ? '+' : ''}${stats.growth}%`} icon={<TrendingUp size={24} />} color={stats.growth >= 0 ? "bg-green-500" : "bg-red-500"} subtext="vs last service" />
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard 
+            title="Active Members" 
+            value={stats.totalMembers} 
+            icon={<Users size={24} />} 
+            colorFrom="from-indigo-500" 
+            colorTo="to-indigo-600"
+            subtext="Registered"
+            trend="" 
+        />
+        <StatCard 
+            title="Avg. Attendance" 
+            value={stats.avgAttendance} 
+            icon={<Calendar size={24} />} 
+            colorFrom="from-emerald-400" 
+            colorTo="from-emerald-600"
+            subtext="Per Sunday"
+            trend=""
+        />
+        <StatCard 
+            title="New (FNF)" 
+            value={stats.totalNew} 
+            icon={<UserPlus size={24} />} 
+            colorFrom="from-amber-400" 
+            colorTo="to-orange-500"
+            subtext="Total Visitors"
+            trend=""
+        />
+        <StatCard 
+            title="Growth Trend" 
+            value={`${stats.growth > 0 ? '+' : ''}${stats.growth}%`} 
+            icon={<TrendingUp size={24} />} 
+            colorFrom={stats.growth >= 0 ? "from-green-500" : "from-red-500"}
+            colorTo={stats.growth >= 0 ? "to-green-600" : "to-red-600"}
+            subtext="vs last service"
+            trend={stats.growth > 0 ? "+" + stats.growth : stats.growth.toString()} 
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-2">
-            <h3 className="text-lg font-bold text-gray-800 mb-6">Recent Attendance</h3>
-            <div className="h-64 w-full">
+        <div className="bg-white p-8 rounded-3xl shadow-soft border border-gray-100 lg:col-span-2">
+            <h3 className="text-lg font-bold text-gray-800 mb-8">Recent Attendance Trend</h3>
+            <div className="h-80 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="name" />
-                        <Tooltip />
-                        <Bar dataKey="count" fill="#4f46e5" radius={[4, 4, 0, 0]} name="Members" />
-                    </BarChart>
+                    <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                        <defs>
+                            <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                            </linearGradient>
+                        </defs>
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12, fontWeight: 500}} dy={10}/>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                        <Tooltip contentStyle={{borderRadius: '16px', border:'none', boxShadow:'0 10px 15px -3px rgba(0, 0, 0, 0.1)', fontFamily: 'Inter'}}/>
+                        <Area type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
+                    </AreaChart>
                 </ResponsiveContainer>
             </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div className="bg-white p-8 rounded-3xl shadow-soft border border-gray-100">
             <h3 className="text-lg font-bold text-gray-800 mb-4">Composition</h3>
-            <div className="h-64 w-full">
+            <div className="h-80 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={categoryData} cx="50%" cy="50%" innerRadius={40} outerRadius={60} fill="#8884d8" paddingAngle={5} dataKey="value">
+                  <Pie 
+                    data={categoryData} 
+                    cx="50%" 
+                    cy="50%" 
+                    innerRadius={60} 
+                    outerRadius={80} 
+                    fill="#8884d8" 
+                    paddingAngle={5} 
+                    dataKey="value"
+                    cornerRadius={6}
+                  >
                     {categoryData.map((entry, index) => ( <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} /> ))}
                   </Pie>
-                  <Tooltip />
-                  <Legend verticalAlign="bottom"/>
+                  <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}/>
+                  <Legend verticalAlign="bottom" wrapperStyle={{paddingTop: '20px', fontSize: '12px'}}/>
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -274,14 +335,9 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({ da
 const Dashboard: React.FC<DashboardProps> = ({ data, activeChurch, currentUser }) => {
   const isAdmin = currentUser.role === 'ADMIN';
 
-  // Admin sees Aggregate Dashboard regardless of context, but can switch context in other views
   if (isAdmin) {
       return (
-          <div className="space-y-4">
-              <div className="mb-2 flex items-center gap-2">
-                  <Target className="text-indigo-600"/>
-                  <h2 className="text-xl font-bold text-gray-800">HQ Overview</h2>
-              </div>
+          <div className="space-y-6">
               <AdminDashboard data={data} />
           </div>
       )
