@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { getAppData, restoreSession, logoutUser, syncFromCloud } from './services/storageService';
+import { getAppData, restoreSession, logoutUser, syncFromCloud, initializeStorage } from './services/storageService';
 import { AppData, Church, Member, Role } from './types';
 import Dashboard from './components/Dashboard';
 import AttendanceTaker from './components/AttendanceTaker';
 import ReportExport from './components/ReportExport';
 import MembersList from './components/MembersList';
 import Login from './components/Login';
-import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 
 enum View {
   DASHBOARD = 'Dashboard',
@@ -15,7 +15,45 @@ enum View {
   EXPORT = 'Export'
 }
 
-const App: React.FC = () => {
+// Global Error Boundary for Robustness
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-gray-800 p-4 text-center">
+            <div className="bg-red-50 p-4 rounded-full mb-4 text-red-600">
+                <AlertTriangle size={48} />
+            </div>
+            <h1 className="text-2xl font-bold mb-2">Something went wrong.</h1>
+            <p className="text-gray-600 mb-6">The application encountered an unexpected error.</p>
+            <button 
+                onClick={() => window.location.reload()}
+                className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-indigo-700"
+            >
+                Reload Application
+            </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+const AppContent: React.FC = () => {
   const [data, setData] = useState<AppData>({ members: [], attendance: [] });
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -33,19 +71,31 @@ const App: React.FC = () => {
 
   // Initial load & Session Restore
   useEffect(() => {
-    refreshData();
-    const savedUser = restoreSession();
-    if (savedUser) {
-        setCurrentUser(savedUser);
-        if (savedUser.role === 'TEACHER') {
-            setActiveChurch(savedUser.assignedChurch);
-        }
-    }
-    
-    // Attempt Auto Sync on Load
-    handleCloudSync();
+    const initApp = async () => {
+        try {
+            // CRITICAL: Wait for storage to initialize (migrations, hashing, loading)
+            await initializeStorage();
+            
+            // Restore Session
+            const savedUser = restoreSession();
+            if (savedUser) {
+                setCurrentUser(savedUser);
+                if (savedUser.role === 'TEACHER') {
+                    setActiveChurch(savedUser.assignedChurch);
+                }
+            }
 
-    setIsLoading(false);
+            // Sync
+            refreshData();
+            handleCloudSync(); // Background sync
+        } catch (e) {
+            console.error("Initialization failed", e);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    initApp();
   }, []);
 
   useEffect(() => {
@@ -81,8 +131,9 @@ const App: React.FC = () => {
 
   if (isLoading) {
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 text-indigo-600">
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 text-indigo-600 gap-4">
             <Loader2 className="animate-spin" size={48} />
+            <p className="text-sm font-medium animate-pulse">Initializing Secure Storage...</p>
         </div>
     );
   }
@@ -240,7 +291,6 @@ const App: React.FC = () => {
               </div>
               <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1.5 rounded-full text-xs font-bold text-indigo-700">
                   {isAdmin ? <UserCog size={14} /> : <Users size={14} />}
-                  {/* UPDATE: Show Teacher Name instead of "Teacher View" */}
                   {isAdmin ? 'Admin Mode' : currentUser.name}
               </div>
             </div>
@@ -253,6 +303,14 @@ const App: React.FC = () => {
         </div>
       </main>
     </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   );
 };
 

@@ -17,6 +17,11 @@ export const getSundaysInYear = (year: number) => {
   return sundays;
 };
 
+// SHA-256 Hashes for default passwords
+// "2026" -> fa127...
+// "1234" -> 03ac6...
+// "1111" -> 0ffe1...
+
 export const INITIAL_MEMBERS: Member[] = [
   // --- SUPER ADMIN (Hidden from attendance usually, or just a teacher with super powers) ---
   {
@@ -27,7 +32,8 @@ export const INITIAL_MEMBERS: Member[] = [
     "status": MemberStatus.ACTIVE,
     "assignedChurch": "UJ",
     "role": "ADMIN",
-    "passcode": "2026", // Default Pin
+    // Hash of '2026'
+    "passcode": "fa127e4529d2011030e463560237305949e25d2c77a915228f41395f87b89797", 
     "isAccessActive": true
   },
   // --- UJ CHURCH ---
@@ -39,7 +45,8 @@ export const INITIAL_MEMBERS: Member[] = [
     "status": MemberStatus.ACTIVE,
     "assignedChurch": "UJ",
     "role": "TEACHER",
-    "passcode": "1234",
+    // Hash of '1234'
+    "passcode": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
     "isAccessActive": true
   },
   {
@@ -86,7 +93,8 @@ export const INITIAL_MEMBERS: Member[] = [
     "status": MemberStatus.ACTIVE,
     "assignedChurch": "I",
     "role": "TEACHER",
-    "passcode": "1111",
+    // Hash of '1111'
+    "passcode": "0ffe1abd1a08215353c233d6e009613e95eec4253832a761af28ff37ac5a150c",
     "isAccessActive": true
   },
   {
@@ -125,7 +133,7 @@ export const INITIAL_MEMBERS: Member[] = [
     "assignedChurch": "LJ"
   },
   
-  // REST OF UJ MEMBERS (Truncated for brevity, but logically here)
+  // REST OF UJ MEMBERS
   {
     "id": "1abbcecc-7fc0-4d7c-99bd-c34c6261986f",
     "name": "Stacy Sarpong",

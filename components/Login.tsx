@@ -13,21 +13,24 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
 
-    // Simulate network delay for feel
-    setTimeout(() => {
-        const result = authenticateUser(name, passcode);
+    // Authentication is now async (Hashing)
+    try {
+        const result = await authenticateUser(name, passcode);
         if (result.success && result.member) {
             onLogin(result.member);
         } else {
             setError(result.message || 'Login failed');
-            setIsLoading(false);
         }
-    }, 500);
+    } catch (e) {
+        setError('An unexpected error occurred.');
+    } finally {
+        setIsLoading(false);
+    }
   };
 
   return (
@@ -85,7 +88,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
         <div className="mt-8 text-center">
             <p className="text-xs text-gray-400">
-                Default Admin: <strong>Main Admin</strong> / <strong>2026</strong>
+                Secure Login | 2026 Edition
             </p>
         </div>
       </div>

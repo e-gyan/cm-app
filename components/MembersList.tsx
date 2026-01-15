@@ -32,7 +32,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
       type: MemberType.MEMBER, 
       status: MemberStatus.ACTIVE,
       birthDate: '',
-      assignedChurch: activeChurch === 'ALL' ? 'UJ' : activeChurch // Default to UJ if Admin is in ALL mode
+      assignedChurch: activeChurch === 'ALL' ? 'UJ' : activeChurch
   });
   
   // EDIT STATE
@@ -55,18 +55,21 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
     setEditBirthDate(member.birthDate || '');
     setEditChurch(member.assignedChurch || 'UJ');
     
-    // Auth fields
-    setEditPasscode(member.passcode || '');
+    // Auth fields (Passcode is masked/hashed, so we show blank or placeholder)
+    setEditPasscode(''); // Don't show existing hash
     setEditAccessActive(member.isAccessActive || false);
     setEditRole(member.role || 'NONE');
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editingId) return;
     const original = data.members.find(m => m.id === editingId);
     if (!original) return;
+    
+    // Only update passcode if user typed something new
+    const finalPasscode = editPasscode.trim() ? editPasscode.trim() : original.passcode;
 
-    updateMember({
+    await updateMember({
       ...original,
       name: editName,
       type: editType,
@@ -74,7 +77,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
       birthDate: editBirthDate,
       assignedChurch: editChurch,
       role: editRole,
-      passcode: editPasscode,
+      passcode: finalPasscode,
       isAccessActive: editAccessActive
     });
     setEditingId(null);
@@ -105,15 +108,15 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
     onUpdate();
   };
 
-  const archiveMember = (member: Member) => {
+  const archiveMember = async (member: Member) => {
     if (window.confirm(`Are you sure you want to archive ${member.name}?`)) {
-      updateMember({ ...member, status: MemberStatus.ARCHIVED });
+      await updateMember({ ...member, status: MemberStatus.ARCHIVED });
       onUpdate();
     }
   };
 
-  const restoreMember = (member: Member) => {
-     updateMember({ ...member, status: MemberStatus.ACTIVE });
+  const restoreMember = async (member: Member) => {
+     await updateMember({ ...member, status: MemberStatus.ACTIVE });
      onUpdate();
   };
 
@@ -284,7 +287,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                                 {isEditing ? (
                                     <div className="flex flex-col gap-2">
                                         <div className="flex gap-2">
-                                            <input type="text" placeholder="PIN" className="w-16 p-1 border rounded text-xs text-center font-mono" value={editPasscode} onChange={e => setEditPasscode(e.target.value)} maxLength={4}/>
+                                            <input type="text" placeholder="New PIN" className="w-16 p-1 border rounded text-xs text-center font-mono" value={editPasscode} onChange={e => setEditPasscode(e.target.value)} maxLength={4}/>
                                             <select className="text-xs border rounded p-1 flex-1" value={editRole} onChange={e => setEditRole(e.target.value as Role)}>
                                                 <option value="TEACHER">Staff</option>
                                                 <option value="ADMIN">Admin</option>
@@ -354,8 +357,8 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                 </tbody>
               </table>
             </div>
-
-            {/* MOBILE CARD VIEW */}
+            
+             {/* MOBILE CARD VIEW */}
             <div className="md:hidden p-2 space-y-2">
               {members.map((member: Member) => {
                  const isEditing = editingId === member.id;
@@ -368,6 +371,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                                 <label className="text-xs text-gray-400 font-bold uppercase">Full Name</label>
                                 <input type="text" className="w-full p-2 border rounded" value={editName} onChange={e => setEditName(e.target.value)} />
                              </div>
+                             {/* ... (Previous input fields) ... */}
                              <div className="flex gap-2">
                                 <div className="flex-1">
                                     <label className="text-xs text-gray-400 font-bold uppercase">Date of Birth</label>
@@ -401,7 +405,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                                     <p className="text-xs font-bold text-indigo-600 mb-2 uppercase flex items-center gap-2"><Key size={12}/> System Access</p>
                                     <div className="flex gap-2 mb-2">
                                         <div className="flex-1">
-                                             <input type="text" placeholder="Passcode (4 digits)" className="w-full p-2 border rounded text-center font-mono tracking-widest" value={editPasscode} onChange={e => setEditPasscode(e.target.value)} maxLength={4}/>
+                                             <input type="text" placeholder="Set New PIN" className="w-full p-2 border rounded text-center font-mono tracking-widest" value={editPasscode} onChange={e => setEditPasscode(e.target.value)} maxLength={4}/>
                                         </div>
                                         <div className="flex-1">
                                             <select className="w-full p-2 border rounded" value={editRole} onChange={e => setEditRole(e.target.value as Role)}>
@@ -423,6 +427,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                              </div>
                           </div>
                       ) : (
+                          // ... (Existing Read-only Card View) ...
                           <div className="flex justify-between items-start">
                              <div className="flex items-start gap-3 flex-1">
                                 <div className={`mt-1 p-2 rounded-full shrink-0 ${badgeClass}`}><Icon size={16} /></div>
@@ -459,165 +464,184 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
       </div>
     );
   };
-
-  const getFilteredContent = () => {
-    let baseList = data.members;
-    const teacherTypes = [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER];
-
-    if (hubTab === 'TEACHERS') {
-        baseList = baseList.filter(m => teacherTypes.includes(m.type));
-    } else {
-        baseList = baseList.filter(m => !teacherTypes.includes(m.type));
-    }
-    
-    // Filter by Church: if activeChurch is ALL (Admin), show everything, otherwise filter
-    if (activeChurch !== 'ALL') {
-        baseList = baseList.filter(m => m.assignedChurch === activeChurch || (m.assignedChurch === 'ALL' && isAdmin && hubTab === 'TEACHERS'));
-    }
-
-    if (filter === 'ARCHIVED') {
-        const archivedMembers = baseList.filter(m => m.status === MemberStatus.ARCHIVED);
-        return <MemberTableSection title="Archived" members={archivedMembers} icon={Archive} colorClass="text-gray-500" badgeClass="bg-gray-100 text-gray-700" isTeacherSection={hubTab === 'TEACHERS'} />;
-    }
-
-    let membersToShow = baseList.filter(m => m.status !== MemberStatus.ARCHIVED);
-    if (filter !== 'ALL') {
-        membersToShow = membersToShow.filter(m => m.type === filter);
-        return <MemberTableSection title={`${filter}s`} members={membersToShow} icon={Users} colorClass="text-indigo-600" badgeClass="bg-indigo-100 text-indigo-700" isTeacherSection={hubTab === 'TEACHERS'} />;
-    }
-
-    if (hubTab === 'TEACHERS') {
-        return (
-            <div className="space-y-4">
-                 <MemberTableSection title="Teachers" members={membersToShow.filter(m => m.type === MemberType.TEACHER)} icon={GraduationCap} colorClass="text-purple-600" badgeClass="bg-purple-100 text-purple-700" isTeacherSection={true} />
-                 <MemberTableSection title="Helpers" members={membersToShow.filter(m => m.type === MemberType.HELPER)} icon={Heart} colorClass="text-pink-600" badgeClass="bg-pink-100 text-pink-700" isTeacherSection={true} />
-                 <MemberTableSection title="Volunteers" members={membersToShow.filter(m => m.type === MemberType.VOLUNTEER)} icon={Hand} colorClass="text-orange-600" badgeClass="bg-orange-100 text-orange-700" isTeacherSection={true} />
-            </div>
-        );
-    } else {
-        return (
-            <div className="space-y-4">
-                <MemberTableSection title="Members" members={membersToShow.filter(m => m.type === MemberType.MEMBER)} icon={User} colorClass="text-indigo-600" badgeClass="bg-indigo-100 text-indigo-700" />
-                <MemberTableSection title="Friends & Family" members={membersToShow.filter(m => m.type === MemberType.FNF)} icon={Users} colorClass="text-amber-600" badgeClass="bg-amber-100 text-amber-700" />
-                 <MemberTableSection title="Inconsistent" members={membersToShow.filter(m => m.type === MemberType.INCONSISTENT)} icon={AlertCircle} colorClass="text-rose-600" badgeClass="bg-rose-100 text-rose-700" />
-                 <MemberTableSection title="Not A Member" members={membersToShow.filter(m => m.type === MemberType.NOT_MEMBER)} icon={HelpCircle} colorClass="text-slate-600" badgeClass="bg-slate-100 text-slate-700" />
-            </div>
-        );
-    }
-  };
-
+  
   const getCreationRoleOptions = () => {
     if (hubTab === 'TEACHERS') {
-        return [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER];
-    } else {
-        return [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT, MemberType.NOT_MEMBER];
+      return [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER];
     }
+    return [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT, MemberType.NOT_MEMBER];
   };
 
+  const getFilteredContent = () => {
+    let baseMembers = data.members;
+    
+    // 1. Filter by Church Context
+    if (activeChurch !== 'ALL') {
+      baseMembers = baseMembers.filter(m => m.assignedChurch === activeChurch);
+    }
+
+    // 2. Filter by Tab (Members vs Staff)
+    const staffTypes = [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER];
+    if (hubTab === 'TEACHERS') {
+      baseMembers = baseMembers.filter(m => staffTypes.includes(m.type));
+    } else {
+      baseMembers = baseMembers.filter(m => !staffTypes.includes(m.type));
+    }
+
+    // 3. Filter by Status/Type dropdown
+    if (filter === 'ARCHIVED') {
+        baseMembers = baseMembers.filter(m => m.status === MemberStatus.ARCHIVED);
+    } else if (filter !== 'ALL') {
+        baseMembers = baseMembers.filter(m => m.type === filter && m.status !== MemberStatus.ARCHIVED);
+    } else {
+        baseMembers = baseMembers.filter(m => m.status !== MemberStatus.ARCHIVED);
+    }
+
+    // 4. Sort alphabetically
+    baseMembers.sort((a, b) => a.name.localeCompare(b.name));
+    
+    const renderSection = (title: string, type: MemberType, icon: any, color: string, badge: string, isTeacher = false) => {
+        const sectionMembers = baseMembers.filter(m => m.type === type);
+        if (sectionMembers.length === 0) return null;
+        
+        return (
+            <MemberTableSection 
+                key={type}
+                title={title} 
+                members={sectionMembers} 
+                icon={icon} 
+                colorClass={color} 
+                badgeClass={badge}
+                isTeacherSection={isTeacher}
+            />
+        );
+    };
+
+    if (hubTab === 'TEACHERS') {
+        return (
+            <div className="space-y-6">
+                {renderSection("Teachers & Leaders", MemberType.TEACHER, GraduationCap, "text-purple-600", "bg-purple-100 text-purple-700", true)}
+                {renderSection("Helpers", MemberType.HELPER, Heart, "text-pink-600", "bg-pink-100 text-pink-700", true)}
+                {renderSection("Volunteers", MemberType.VOLUNTEER, Hand, "text-orange-600", "bg-orange-100 text-orange-700", true)}
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            {renderSection("Regular Members", MemberType.MEMBER, User, "text-indigo-600", "bg-indigo-100 text-indigo-700")}
+            {renderSection("Friends & Family (New)", MemberType.FNF, Users, "text-amber-600", "bg-amber-100 text-amber-700")}
+            {renderSection("Inconsistent / Inactive", MemberType.INCONSISTENT, AlertCircle, "text-rose-600", "bg-rose-100 text-rose-700")}
+            {renderSection("Not A Member", MemberType.NOT_MEMBER, HelpCircle, "text-gray-600", "bg-gray-100 text-gray-700")}
+        </div>
+    );
+  };
+  
   return (
-    <div className="space-y-6 relative pb-20">
-      <div className="flex items-center justify-between mb-4">
-         <div>
-            <h2 className="text-xl font-bold text-gray-800">People Hub: {activeChurch}</h2>
-            <p className="text-sm text-gray-500">Manage teachers and members.</p>
-         </div>
-         <div className="flex bg-gray-100 p-1 rounded-lg">
-            <button onClick={() => setHubTab('MEMBERS')} className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${hubTab === 'MEMBERS' ? 'bg-white shadow text-indigo-600' : 'text-gray-500'}`}>
-                <span className="flex items-center gap-2"><User size={16}/> Members</span>
+      <div className="space-y-6 relative pb-20">
+          {/* Header Controls (unchanged) */}
+           <div className="flex items-center justify-between mb-4">
+             <div>
+                <h2 className="text-xl font-bold text-gray-800">People Hub: {activeChurch}</h2>
+                <p className="text-sm text-gray-500">Manage teachers and members.</p>
+             </div>
+             <div className="flex bg-gray-100 p-1 rounded-lg">
+                <button onClick={() => setHubTab('MEMBERS')} className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${hubTab === 'MEMBERS' ? 'bg-white shadow text-indigo-600' : 'text-gray-500'}`}>
+                    <span className="flex items-center gap-2"><User size={16}/> Members</span>
+                </button>
+                <button onClick={() => setHubTab('TEACHERS')} className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${hubTab === 'TEACHERS' ? 'bg-white shadow text-purple-600' : 'text-gray-500'}`}>
+                    <span className="flex items-center gap-2"><Briefcase size={16}/> Staff</span>
+                </button>
+             </div>
+          </div>
+
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide">Filtering {hubTab.toLowerCase()}</h3>
+            <div className="flex bg-gray-50 rounded-lg p-1 overflow-x-auto max-w-full w-full sm:w-auto">
+              {['ALL', ...getCreationRoleOptions(), 'ARCHIVED'].map((f) => (
+                 <button key={f} onClick={() => { setFilter(f); setSelectedIds(new Set()); }} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${filter === f ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
+                    {f === 'ALL' ? 'Active' : f}
+                  </button>
+              ))}
+            </div>
+          </div>
+
+          {selectedIds.size > 0 && filter !== 'ARCHIVED' && isAdmin && (
+            <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-4 w-[90%] md:w-auto justify-between md:justify-start">
+              <span className="font-medium whitespace-nowrap">{selectedIds.size} selected</span>
+              <div className="h-4 w-px bg-gray-700 hidden md:block"></div>
+              <button onClick={handleBulkArchive} className="flex items-center gap-2 hover:text-red-300 transition-colors font-medium text-red-200 whitespace-nowrap"><Archive size={18} /> Bulk Archive</button>
+              <button onClick={() => setSelectedIds(new Set())} className="ml-2 p-1 hover:bg-gray-700 rounded-full transition-colors"><X size={16} /></button>
+            </div>
+          )}
+
+          {getFilteredContent()}
+
+          {isAdmin && !isCreateModalOpen && (
+            <button 
+                onClick={openCreateModal}
+                className="fixed bottom-8 right-8 bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-full shadow-lg transition-transform hover:scale-110 z-40"
+                title="Create New Member/Teacher"
+            >
+                <Plus size={24} />
             </button>
-            <button onClick={() => setHubTab('TEACHERS')} className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${hubTab === 'TEACHERS' ? 'bg-white shadow text-purple-600' : 'text-gray-500'}`}>
-                <span className="flex items-center gap-2"><Briefcase size={16}/> Staff</span>
-            </button>
-         </div>
-      </div>
+          )}
 
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide">Filtering {hubTab.toLowerCase()}</h3>
-        <div className="flex bg-gray-50 rounded-lg p-1 overflow-x-auto max-w-full w-full sm:w-auto">
-          {['ALL', ...getCreationRoleOptions(), 'ARCHIVED'].map((f) => (
-             <button key={f} onClick={() => { setFilter(f); setSelectedIds(new Set()); }} className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${filter === f ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
-                {f === 'ALL' ? 'Active' : f}
-              </button>
-          ))}
-        </div>
-      </div>
-      
-      {selectedIds.size > 0 && filter !== 'ARCHIVED' && isAdmin && (
-        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-4 w-[90%] md:w-auto justify-between md:justify-start">
-          <span className="font-medium whitespace-nowrap">{selectedIds.size} selected</span>
-          <div className="h-4 w-px bg-gray-700 hidden md:block"></div>
-          <button onClick={handleBulkArchive} className="flex items-center gap-2 hover:text-red-300 transition-colors font-medium text-red-200 whitespace-nowrap"><Archive size={18} /> Bulk Archive</button>
-          <button onClick={() => setSelectedIds(new Set())} className="ml-2 p-1 hover:bg-gray-700 rounded-full transition-colors"><X size={16} /></button>
-        </div>
-      )}
-
-      {getFilteredContent()}
-
-      {isAdmin && !isCreateModalOpen && (
-        <button 
-            onClick={openCreateModal}
-            className="fixed bottom-8 right-8 bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-full shadow-lg transition-transform hover:scale-110 z-40"
-            title="Create New Member/Teacher"
-        >
-            <Plus size={24} />
-        </button>
-      )}
-
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-in fade-in zoom-in-95">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-xl font-bold text-gray-800">Create New {hubTab === 'TEACHERS' ? 'Teacher/Staff' : 'Member'}</h3>
-                    <button onClick={() => setIsCreateModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
-                </div>
-
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                        <input type="text" className="w-full p-3 border border-gray-200 rounded-xl" placeholder="e.g., John Doe" value={newMemberData.name} onChange={e => setNewMemberData({...newMemberData, name: e.target.value})} />
+          {isCreateModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-in fade-in zoom-in-95">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-bold text-gray-800">Create New {hubTab === 'TEACHERS' ? 'Teacher/Staff' : 'Member'}</h3>
+                        <button onClick={() => setIsCreateModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Role Category</label>
-                            <select className="w-full p-3 border border-gray-200 rounded-xl" value={newMemberData.type} onChange={e => setNewMemberData({...newMemberData, type: e.target.value as MemberType})}>
-                                {getCreationRoleOptions().map(t => <option key={t} value={t}>{t}</option>)}
-                            </select>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                            <input type="text" className="w-full p-3 border border-gray-200 rounded-xl" placeholder="e.g., John Doe" value={newMemberData.name} onChange={e => setNewMemberData({...newMemberData, name: e.target.value})} />
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Church</label>
-                            <select className="w-full p-3 border border-gray-200 rounded-xl" value={newMemberData.assignedChurch} onChange={e => setNewMemberData({...newMemberData, assignedChurch: e.target.value as Church})}>
-                                {['UJ', 'I', 'K', 'LJ'].map(c => <option key={c} value={c}>{c}</option>)}
-                                {hubTab === 'TEACHERS' && isAdmin && <option value="ALL">ALL (Admin)</option>}
-                            </select>
-                        </div>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
-                            <input type="date" className="w-full p-3 border border-gray-200 rounded-xl" value={newMemberData.birthDate} onChange={e => setNewMemberData({...newMemberData, birthDate: e.target.value})} />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Role Category</label>
+                                <select className="w-full p-3 border border-gray-200 rounded-xl" value={newMemberData.type} onChange={e => setNewMemberData({...newMemberData, type: e.target.value as MemberType})}>
+                                    {getCreationRoleOptions().map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Church</label>
+                                <select className="w-full p-3 border border-gray-200 rounded-xl" value={newMemberData.assignedChurch} onChange={e => setNewMemberData({...newMemberData, assignedChurch: e.target.value as Church})}>
+                                    {['UJ', 'I', 'K', 'LJ'].map(c => <option key={c} value={c}>{c}</option>)}
+                                    {hubTab === 'TEACHERS' && isAdmin && <option value="ALL">ALL (Admin)</option>}
+                                </select>
+                            </div>
                         </div>
-                        <div>
-                             <label className="block text-sm font-medium text-gray-700 mb-1">Membership Status</label>
-                             <select className="w-full p-3 border border-gray-200 rounded-xl" value={newMemberData.status} onChange={e => setNewMemberData({...newMemberData, status: e.target.value as MemberStatus})}>
-                                {Object.values(MemberStatus).map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                        </div>
-                    </div>
 
-                    <button 
-                        onClick={handleCreateMember}
-                        disabled={!newMemberData.name}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-xl font-bold mt-4 disabled:opacity-50"
-                    >
-                        Create Record
-                    </button>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+                                <input type="date" className="w-full p-3 border border-gray-200 rounded-xl" value={newMemberData.birthDate} onChange={e => setNewMemberData({...newMemberData, birthDate: e.target.value})} />
+                            </div>
+                            <div>
+                                 <label className="block text-sm font-medium text-gray-700 mb-1">Membership Status</label>
+                                 <select className="w-full p-3 border border-gray-200 rounded-xl" value={newMemberData.status} onChange={e => setNewMemberData({...newMemberData, status: e.target.value as MemberStatus})}>
+                                    {Object.values(MemberStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={handleCreateMember}
+                            disabled={!newMemberData.name}
+                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-xl font-bold mt-4 disabled:opacity-50"
+                        >
+                            Create Record
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
-      )}
-    </div>
+          )}
+      </div>
   );
 };
 
