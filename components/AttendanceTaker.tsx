@@ -20,11 +20,11 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const [presentIds, setPresentIds] = useState<Set<string>>(new Set());
   const [punctualIds, setPunctualIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<string>('ALL');
+  const [filterType, setFilterType] = useState<string>('CM');
   const [newMemberName, setNewMemberName] = useState('');
   const [isAddingFNF, setIsAddingFNF] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [leaderboardTimeframe, setLeaderboardTimeframe] = useState<'MONTH' | 'ALL'>('MONTH');
+  const [leaderboardTimeframe, setLeaderboardTimeframe] = useState<'MONTH' | 'CM'>('MONTH');
   const [successMsg, setSuccessMsg] = useState('');
   
   // Toggle for Admins to switch between taking Member Attendance (per church) vs Staff Attendance (all)
@@ -211,7 +211,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
           (m.type === MemberType.TEACHER || m.type === MemberType.HELPER || m.type === MemberType.VOLUNTEER)
       );
   } else {
-      if (activeChurch === 'ALL') {
+      if (activeChurch === 'CM') {
           membersToList = [];
       } else {
           membersToList = data.members.filter(m => 
@@ -224,7 +224,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
 
   const filteredMembers = membersToList.filter(m => {
     const matchesSearch = m.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType = filterType === 'ALL' || m.type === filterType;
+    const matchesType = filterType === 'CM' || m.type === filterType;
     return matchesSearch && matchesType;
   });
 
@@ -287,7 +287,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
 
       let relevantRecords = data.attendance.filter(r => {
           const rDate = new Date(r.date);
-          const isMonthMatch = leaderboardTimeframe === 'ALL' || (rDate.getMonth() === currentMonth && rDate.getFullYear() === currentYear);
+          const isMonthMatch = leaderboardTimeframe === 'CM' || (rDate.getMonth() === currentMonth && rDate.getFullYear() === currentYear);
           
           if (attendanceMode === 'STAFF') {
               // For staff, we look at all records from all churches
@@ -340,16 +340,16 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
           <div className="p-2 bg-gray-100 flex justify-center border-b border-gray-200">
              <div className="bg-white p-1 rounded-lg shadow-sm flex">
                  <button 
-                    onClick={() => { setAttendanceMode('MEMBERS'); setFilterType('ALL'); }}
+                    onClick={() => { setAttendanceMode('MEMBERS'); setFilterType('CM'); }}
                     className={`px-4 py-2 text-sm font-bold rounded-md transition-colors flex items-center gap-2 ${attendanceMode === 'MEMBERS' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
                  >
                     <Users size={16}/> Members ({activeChurch})
                  </button>
                  <button 
-                    onClick={() => { setAttendanceMode('STAFF'); setFilterType('ALL'); }}
+                    onClick={() => { setAttendanceMode('STAFF'); setFilterType('CM'); }}
                     className={`px-4 py-2 text-sm font-bold rounded-md transition-colors flex items-center gap-2 ${attendanceMode === 'STAFF' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
                  >
-                    <Briefcase size={16}/> Staff (ALL)
+                    <Briefcase size={16}/> Staff (CM)
                  </button>
              </div>
           </div>
@@ -386,7 +386,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                 </button>
            )}
            
-           {attendanceMode === 'MEMBERS' && activeChurch !== 'ALL' && (
+           {attendanceMode === 'MEMBERS' && activeChurch !== 'CM' && (
                <button 
                 onClick={() => setIsAddingFNF(!isAddingFNF)}
                 className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors flex-1 md:flex-none whitespace-nowrap"
@@ -454,8 +454,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
 
         <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
             <button
-                onClick={() => setFilterType('ALL')}
-                className={`px-3 py-1 rounded-full text-xs font-medium border ${filterType === 'ALL' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}
+                onClick={() => setFilterType('CM')}
+                className={`px-3 py-1 rounded-full text-xs font-medium border ${filterType === 'CM' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}
             >
                 All
             </button>
@@ -501,7 +501,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 bg-gray-50/50">
-        {activeChurch === 'ALL' && attendanceMode === 'MEMBERS' && (
+        {activeChurch === 'CM' && attendanceMode === 'MEMBERS' && (
              <div className="flex items-center justify-center h-full text-gray-400 p-8 text-center">
                  <p>Select a specific church branch from the menu to take member attendance.</p>
              </div>
@@ -592,8 +592,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                               This Month
                           </button>
                           <button 
-                            onClick={() => setLeaderboardTimeframe('ALL')}
-                            className={`flex-1 text-xs font-bold py-1.5 rounded-md transition-all ${leaderboardTimeframe === 'ALL' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}
+                            onClick={() => setLeaderboardTimeframe('CM')}
+                            className={`flex-1 text-xs font-bold py-1.5 rounded-md transition-all ${leaderboardTimeframe === 'CM' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}
                           >
                               All Time
                           </button>

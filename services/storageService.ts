@@ -57,7 +57,7 @@ export const initializeRepository = async (): Promise<AppData> => {
         }
     }
     if (migrationNeeded) {
-        persistData(false); // Save hashed versions locally
+        persistData(false); // Save hashed versions locally (initial was false)
     }
 
     // 4. Bootstrap Admin if Repository is STILL empty (No Local, No Cloud data)
@@ -70,7 +70,7 @@ export const initializeRepository = async (): Promise<AppData> => {
             type: MemberType.TEACHER,
             joinedDate: new Date().toISOString(),
             status: MemberStatus.ACTIVE,
-            assignedChurch: "ALL",
+            assignedChurch: "CM",
             role: "ADMIN",
             passcode: "2026", // Will be hashed on next login/save cycle or we can hash it now
             isAccessActive: true
@@ -426,7 +426,7 @@ const autoTransferMembersBasedOnAge = () => {
     const today = new Date();
 
     inMemoryData.members.forEach(member => {
-        if (member.assignedChurch === 'ALL') return;
+        if (member.assignedChurch === 'CM') return;
         if (member.status !== MemberStatus.ACTIVE) return;
         if (member.type !== MemberType.MEMBER) return;
         if (!member.birthDate) return;
@@ -481,7 +481,7 @@ const autoTransferMembersBasedOnAge = () => {
 };
 
 const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
-  if (churchId === 'ALL') return;
+  if (churchId === 'CM') return;
 
   const sortedAttendance = inMemoryData.attendance
     .filter(r => r.churchId === churchId)
@@ -551,7 +551,7 @@ export const saveAttendance = (date: string, churchId: Church, presentIds: strin
   }
   isDirty = true;
   persistData();
-  if (churchId !== 'ALL') {
+  if (churchId !== 'CM') {
       checkAndAutoUpdateMemberStatus(churchId);
   }
   autoTransferMembersBasedOnAge();

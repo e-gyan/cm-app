@@ -22,7 +22,7 @@ const App: React.FC = () => {
   
   // GLOBAL CONTEXT STATE
   const [currentUser, setCurrentUser] = useState<Member | null>(null);
-  const [activeChurch, setActiveChurch] = useState<Church>('ALL');
+  const [activeChurch, setActiveChurch] = useState<Church>('CM');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   

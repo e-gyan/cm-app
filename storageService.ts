@@ -44,7 +44,7 @@ const loadData = (): AppData => {
         if (m.role === 'ADMIN') {
              adminExists = true;
              if (m.id === 'auto-admin' || m.id === 'super-admin') {
-                 m.assignedChurch = 'ALL';
+                 m.assignedChurch = 'CM';
              }
         }
     });
@@ -56,7 +56,7 @@ const loadData = (): AppData => {
             type: MemberType.TEACHER,
             joinedDate: new Date().toISOString(),
             status: MemberStatus.ACTIVE,
-            assignedChurch: "ALL",
+            assignedChurch: "CM",
             role: "ADMIN",
             passcode: "2026", // Plaintext initially, will be hashed on auth or next save cycle logic
             isAccessActive: true
@@ -433,7 +433,7 @@ const autoTransferMembersBasedOnAge = () => {
     const today = new Date();
 
     inMemoryData.members.forEach(member => {
-        if (member.assignedChurch === 'ALL') return;
+        if (member.assignedChurch === 'CM') return;
         if (member.status !== MemberStatus.ACTIVE) return;
         if (member.type !== MemberType.MEMBER) return;
         if (!member.birthDate) return;
@@ -488,7 +488,7 @@ const autoTransferMembersBasedOnAge = () => {
 };
 
 const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
-  if (churchId === 'ALL') return;
+  if (churchId === 'CM') return;
 
   const sortedAttendance = inMemoryData.attendance
     .filter(r => r.churchId === churchId)
@@ -556,7 +556,7 @@ export const saveAttendance = (date: string, churchId: Church, presentIds: strin
   }
   isDirty = true;
   persistData();
-  if (churchId !== 'ALL') {
+  if (churchId !== 'CM') {
       checkAndAutoUpdateMemberStatus(churchId);
   }
   autoTransferMembersBasedOnAge();

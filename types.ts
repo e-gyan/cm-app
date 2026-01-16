@@ -15,7 +15,7 @@ export enum MemberStatus {
   TRANSFERRED = 'Transferred'
 }
 
-export type Church = 'UJ' | 'I' | 'K' | 'LJ' | 'ALL';
+export type Church = 'UJ' | 'I' | 'K' | 'LJ' | 'CM';
 
 export type Role = 'ADMIN' | 'TEACHER' | 'NONE';
 

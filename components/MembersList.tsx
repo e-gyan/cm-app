@@ -20,7 +20,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
 
   // Tabs for the Central Hub
   const [hubTab, setHubTab] = useState<'MEMBERS' | 'TEACHERS'>('MEMBERS');
-  const [filter, setFilter] = useState<'ALL' | 'ARCHIVED' | string>('ALL');
+  const [filter, setFilter] = useState<'CM' | 'ARCHIVED' | string>('CM');
   
   // SELECTION STATE
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -35,7 +35,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
       type: MemberType.MEMBER,
       status: MemberStatus.ACTIVE,
       birthDate: '',
-      assignedChurch: activeChurch === 'ALL' ? 'UJ' : activeChurch,
+      assignedChurch: activeChurch === 'CM' ? 'UJ' : activeChurch,
       role: 'NONE',
       passcode: '',
       isAccessActive: false
@@ -64,7 +64,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
         type: hubTab === 'TEACHERS' ? MemberType.TEACHER : MemberType.MEMBER,
         status: MemberStatus.ACTIVE,
         birthDate: '',
-        assignedChurch: activeChurch === 'ALL' ? 'UJ' : activeChurch,
+        assignedChurch: activeChurch === 'CM' ? 'UJ' : activeChurch,
         role: 'NONE',
         passcode: '',
         isAccessActive: false
@@ -370,9 +370,9 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
         baseList = baseList.filter(m => !teacherTypes.includes(m.type));
     }
     
-    // Filter by Church: if activeChurch is ALL (Admin), show everything, otherwise filter
-    if (activeChurch !== 'ALL') {
-        baseList = baseList.filter(m => m.assignedChurch === activeChurch || (m.assignedChurch === 'ALL' && isAdmin && hubTab === 'TEACHERS'));
+    // Filter by Church: if activeChurch is CM (Admin), show everything, otherwise filter
+    if (activeChurch !== 'CM') {
+        baseList = baseList.filter(m => m.assignedChurch === activeChurch || (m.assignedChurch === 'CM' && isAdmin && hubTab === 'TEACHERS'));
     }
 
     if (filter === 'ARCHIVED') {
@@ -381,7 +381,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
     }
 
     let membersToShow = baseList.filter(m => m.status !== MemberStatus.ARCHIVED);
-    if (filter !== 'ALL') {
+    if (filter !== 'CM') {
         membersToShow = membersToShow.filter(m => m.type === filter);
         return <MemberTableSection title={`${filter}s`} members={membersToShow} icon={Users} colorClass="text-indigo-600" badgeClass="bg-indigo-100 text-indigo-700" isTeacherSection={hubTab === 'TEACHERS'} />;
     }
@@ -440,7 +440,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                     <label className="block text-sm font-bold text-gray-700 mb-1">Assigned Church</label>
                     <select className="w-full p-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" value={formData.assignedChurch} onChange={e => setFormData({...formData, assignedChurch: e.target.value as Church})}>
                         {['UJ', 'I', 'K', 'LJ'].map(c => <option key={c} value={c}>{c}</option>)}
-                        {isAdmin && <option value="ALL">ALL (Admin)</option>}
+                        {isAdmin && <option value="CM">CM (Admin)</option>}
                     </select>
                 </div>
             </div>
@@ -513,9 +513,9 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
         <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide">Filtering {hubTab.toLowerCase()}</h3>
         <div className="flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto">
-          {['ALL', ...getCreationRoleOptions(), 'ARCHIVED'].map((f) => (
+          {['CM', ...getCreationRoleOptions(), 'ARCHIVED'].map((f) => (
              <button key={f} onClick={() => { setFilter(f); setSelectedIds(new Set()); }} className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${filter === f ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
-                {f === 'ALL' ? 'Active' : f}
+                {f === 'CM' ? 'Active' : f}
               </button>
           ))}
         </div>

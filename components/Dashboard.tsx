@@ -91,7 +91,7 @@ const AdminDashboard: React.FC<{ data: AppData }> = ({ data }) => {
                 </div>
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-8">
                      <div>
-                        <p className="text-gray-500 font-bold text-xs uppercase tracking-wider mb-2">Global Avg Attendance</p>
+                        <p className="text-gray-500 font-bold text-xs uppercase tracking-wider mb-2">Overall Avg Attendance</p>
                         <div className="flex items-end gap-3">
                             <h2 className="text-3xl font-bold text-gray-800">{totalAvg}</h2>
                             <span className="text-sm text-green-600 font-medium mb-1 bg-green-50 px-2 py-0.5 rounded-full">
@@ -322,7 +322,7 @@ const ActivityIcon = () => (
 
 const Dashboard: React.FC<DashboardProps> = ({ data, activeChurch, currentUser }) => {
   const isAdmin = currentUser.role === 'ADMIN';
-  const showAdminView = isAdmin && activeChurch === 'ALL';
+  const showAdminView = isAdmin && activeChurch === 'CM';
 
   return (
     <div className="pb-20">
