@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AppData, MemberType, Church, Member } from '../types';
-import { Copy, FileText, CheckCircle, Database, Download, Upload, AlertCircle, RefreshCw, Cloud, Lock, Code } from 'lucide-react';
+import { Copy, FileText, CheckCircle, Database, Download, Upload, AlertCircle, RefreshCw, Cloud, Lock, Code, MessageCircle } from 'lucide-react';
 import { getSundaysInYear, DEFAULT_CLOUD_CONFIG } from '../constants';
 import { importData, saveCloudConfig, syncFromCloud } from '../services/storageService';
 
@@ -136,6 +136,12 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     setTimeout(() => setCopiedReport(false), 2000);
   };
 
+  const handleOpenWhatsApp = () => {
+      const text = generateReport();
+      const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+  };
+
   // --- Data Management Logic ---
 
   const handleDownloadBackup = () => {
@@ -269,15 +275,22 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
               value={reportText}
               className="w-full h-96 p-4 bg-gray-50 border border-gray-200 rounded-xl font-mono text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none shadow-inner"
             />
-            <div className="absolute top-4 right-4">
+            <div className="absolute top-4 right-4 flex flex-col sm:flex-row gap-2">
+              <button
+                onClick={handleOpenWhatsApp}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg shadow-sm transition-all font-medium bg-[#25D366] text-white hover:bg-[#128C7E] active:scale-95"
+                title="Open in WhatsApp"
+              >
+                 <MessageCircle size={16} /> <span className="hidden sm:inline">WhatsApp</span>
+              </button>
               <button
                 onClick={handleCopyReport}
                 className={`
-                  flex items-center gap-2 px-4 py-2 rounded-lg shadow-sm transition-all font-medium
-                  ${copiedReport ? 'bg-green-600 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700'}
+                  flex items-center gap-2 px-4 py-2 rounded-lg shadow-sm transition-all font-medium active:scale-95
+                  ${copiedReport ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50'}
                 `}
               >
-                {copiedReport ? <><CheckCircle size={16} /> Copied</> : <><Copy size={16} /> Copy Text</>}
+                {copiedReport ? <><CheckCircle size={16} /> <span className="hidden sm:inline">Copied</span></> : <><Copy size={16} /> <span className="hidden sm:inline">Copy Text</span></>}
               </button>
             </div>
           </div>
