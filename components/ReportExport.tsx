@@ -94,13 +94,13 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     report += `------------------\n`;
     report += `Total Present: ${accountingCount}\n\n`; // Only showing Accounting Count
 
-    if (activeChurch === 'UJ' && punctualMembers.length > 0) {
+    /*if (activeChurch === 'UJ' && punctualMembers.length > 0) {
       report += `*🏆 EARLY BIRDS (PUNCTUAL)*\n`;
       punctualMembers.forEach((m, idx) => {
         report += `🥇 ${m.name}\n`;
       });
       report += `\n`;
-    }
+    }*/
 
     report += `*MEMBERS (${members.length})*\n`;
     if (members.length > 0) {

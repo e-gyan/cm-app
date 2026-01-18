@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppData, Member, MemberType, MemberStatus, Church } from '../types';
 import { getSundaysInYear } from '../constants';
-import { Search, Plus, Check, Save, GraduationCap, User, Users, AlertCircle, HelpCircle, Clock, Trophy, X, Calendar, Heart, Hand, Briefcase, ArrowRightCircle, Medal, Crown } from 'lucide-react';
+import { Search, Plus, Check, Save, GraduationCap, User, Users, AlertCircle, HelpCircle, Clock, Trophy, X, Calendar, Heart, Hand, Briefcase, ArrowRightCircle, Crown, UserPlus, Users2 } from 'lucide-react';
 import { addMember, saveAttendance } from '../services/storageService';
 import { sanitizeInput } from '../services/securityService';
 
@@ -27,13 +27,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const [leaderboardTimeframe, setLeaderboardTimeframe] = useState<'MONTH' | 'CM'>('MONTH');
   const [successMsg, setSuccessMsg] = useState('');
   
-  // Toggle for Admins to switch between taking Member Attendance (per church) vs Staff Attendance (all)
   const [attendanceMode, setAttendanceMode] = useState<'MEMBERS' | 'STAFF'>('MEMBERS');
-
-  // Punctuality feature: Enabled for UJ Members AND Global Staff
   const enablePunctuality = (attendanceMode === 'MEMBERS' && activeChurch === 'UJ') || attendanceMode === 'STAFF';
-
-  // Generate Sundays for 2026
   const sundays2026 = useMemo(() => getSundaysInYear(2026), []);
 
   useEffect(() => {
@@ -60,29 +55,19 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
       if (attendanceMode === 'STAFF') {
           const allPresent = new Set<string>();
           const allPunctual = new Set<string>();
-          
           data.attendance.filter(r => r.date === selectedDate).forEach(record => {
-              // Get Present Staff
               record.presentMemberIds.forEach(id => {
                   const m = data.members.find(mem => mem.id === id);
-                  if (m && (m.type === MemberType.TEACHER || m.type === MemberType.HELPER || m.type === MemberType.VOLUNTEER)) {
-                      allPresent.add(id);
-                  }
+                  if (m && ['Teacher','Helper','Volunteer'].includes(m.type)) allPresent.add(id);
               });
-              // Get Punctual Staff
-              if (record.punctualMemberIds) {
-                  record.punctualMemberIds.forEach(id => {
-                      const m = data.members.find(mem => mem.id === id);
-                      if (m && (m.type === MemberType.TEACHER || m.type === MemberType.HELPER || m.type === MemberType.VOLUNTEER)) {
-                          allPunctual.add(id);
-                      }
-                  });
-              }
+              record.punctualMemberIds?.forEach(id => {
+                  const m = data.members.find(mem => mem.id === id);
+                  if (m && ['Teacher','Helper','Volunteer'].includes(m.type)) allPunctual.add(id);
+              });
           });
           setPresentIds(allPresent);
           setPunctualIds(allPunctual);
       } else {
-          // Normal Member Mode
           const record = data.attendance.find(r => r.date === selectedDate && r.churchId === activeChurch);
           if (record) {
             setPresentIds(new Set(record.presentMemberIds));
@@ -99,7 +84,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
     const newSet = new Set(presentIds);
     if (newSet.has(id)) {
       newSet.delete(id);
-      // If removed from present, remove from punctual too
       const newPunctual = new Set(punctualIds);
       if (newPunctual.has(id)) {
           newPunctual.delete(id);
@@ -118,9 +102,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
     if (newPunctual.has(id)) {
       newPunctual.delete(id);
     } else {
-      if (newPunctual.size >= 3) {
-        return; // Limit reached
-      }
+      if (newPunctual.size >= 3) return;
       newPunctual.add(id);
       if (!presentIds.has(id)) {
         const newPresent = new Set(presentIds);
@@ -136,65 +118,46 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
 
     if (attendanceMode === 'STAFF') {
         const churches: Church[] = ['UJ', 'I', 'K', 'LJ'];
-        
         churches.forEach(church => {
             const existingRecord = data.attendance.find(r => r.date === selectedDate && r.churchId === church);
-            
-            // 1. Preserve Existing MEMBERS (Non-Staff)
-            const existingMembersPresent = existingRecord 
-                ? existingRecord.presentMemberIds.filter(id => {
+            const existingMembersPresent: string[] = existingRecord ? existingRecord.presentMemberIds.filter(id => {
                     const m = data.members.find(mem => mem.id === id);
-                    return m && m.type !== MemberType.TEACHER && m.type !== MemberType.HELPER && m.type !== MemberType.VOLUNTEER;
-                }) 
-                : [];
-            
-            const existingMembersPunctual = existingRecord 
-                ? (existingRecord.punctualMemberIds || []).filter(id => {
+                    return m && !['Teacher','Helper','Volunteer'].includes(m.type);
+                }) : [];
+            const existingMembersPunctual: string[] = existingRecord ? (existingRecord.punctualMemberIds || []).filter(id => {
                     const m = data.members.find(mem => mem.id === id);
-                    return m && m.type !== MemberType.TEACHER && m.type !== MemberType.HELPER && m.type !== MemberType.VOLUNTEER;
-                }) 
-                : [];
+                    return m && !['Teacher','Helper','Volunteer'].includes(m.type);
+                }) : [];
 
-            // 2. Get New STAFF for this church
             const staffPresentForThisChurch = Array.from(presentIds).filter(id => {
                 const m = data.members.find(mem => mem.id === id);
                 return m && m.assignedChurch === church;
             });
-
             const staffPunctualForThisChurch = Array.from(punctualIds).filter(id => {
                 const m = data.members.find(mem => mem.id === id);
                 return m && m.assignedChurch === church;
             });
 
-            // 3. Merge
-            const mergedPresent = [...existingMembersPresent, ...staffPresentForThisChurch];
-            const mergedPunctual = [...existingMembersPunctual, ...staffPunctualForThisChurch];
-            
-            saveAttendance(selectedDate, church, mergedPresent, mergedPunctual);
+            saveAttendance(selectedDate, church, [...existingMembersPresent, ...staffPresentForThisChurch], [...existingMembersPunctual, ...staffPunctualForThisChurch]);
         });
-
-        setSuccessMsg(`Staff attendance & punctuality synced!`);
+        setSuccessMsg(`Staff synced!`);
     } else {
-        saveAttendance(selectedDate, activeChurch, Array.from(presentIds) as string[], Array.from(punctualIds) as string[]);
-        setSuccessMsg(`Attendance for ${activeChurch} saved!`);
+        saveAttendance(selectedDate, activeChurch, Array.from(presentIds), Array.from(punctualIds));
+        setSuccessMsg(`Saved!`);
     }
-    
     onUpdate();
-    setTimeout(() => setSuccessMsg(''), 3000);
+    setTimeout(() => setSuccessMsg(''), 2000);
   };
 
   const handleAddFNF = () => {
     if (!newMemberName.trim()) return;
-    
-    // Sanitize
     const cleanName = sanitizeInput(newMemberName);
-
     const newMember = addMember(cleanName, MemberType.FNF, activeChurch, '');
     const newSet = new Set(presentIds);
     newSet.add(newMember.id);
     setPresentIds(newSet);
     if (selectedDate && attendanceMode === 'MEMBERS') {
-        saveAttendance(selectedDate, activeChurch, Array.from(newSet) as string[], Array.from(punctualIds) as string[]);
+        saveAttendance(selectedDate, activeChurch, Array.from(newSet), Array.from(punctualIds));
     }
     setNewMemberName('');
     setIsAddingFNF(false);
@@ -202,24 +165,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   };
   
   // --- LIST GENERATION ---
-  
   let membersToList: Member[] = [];
-
   if (attendanceMode === 'STAFF') {
-      membersToList = data.members.filter(m => 
-          (m.status === MemberStatus.ACTIVE) &&
-          (m.type === MemberType.TEACHER || m.type === MemberType.HELPER || m.type === MemberType.VOLUNTEER)
-      );
+      membersToList = data.members.filter(m => m.status === MemberStatus.ACTIVE && ['Teacher','Helper','Volunteer'].includes(m.type));
   } else {
-      if (activeChurch === 'CM') {
-          membersToList = [];
-      } else {
-          membersToList = data.members.filter(m => 
-            (m.status === MemberStatus.ACTIVE || m.status === MemberStatus.NOT_ACTIVE) &&
-            m.assignedChurch === activeChurch &&
-            (m.type !== MemberType.TEACHER && m.type !== MemberType.HELPER && m.type !== MemberType.VOLUNTEER)
-          );
-      }
+      if (activeChurch === 'CM') membersToList = [];
+      else membersToList = data.members.filter(m => ['Active','Not Active'].includes(m.status) && m.assignedChurch === activeChurch && !['Teacher','Helper','Volunteer'].includes(m.type));
   }
 
   const filteredMembers = membersToList.filter(m => {
@@ -229,58 +180,27 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   });
 
   const sortedMembers = [...filteredMembers].sort((a, b) => {
-    // Prioritize pending transfer at top
     if (a.transferPendingDate && !b.transferPendingDate) return -1;
     if (!a.transferPendingDate && b.transferPendingDate) return 1;
-
-    if (enablePunctuality) {
-        const aPunctual = punctualIds.has(a.id);
-        const bPunctual = punctualIds.has(b.id);
-        if (aPunctual !== bPunctual) return aPunctual ? -1 : 1;
-    }
-    const aPresent = presentIds.has(a.id);
-    const bPresent = presentIds.has(b.id);
-    if (aPresent !== bPresent) return aPresent ? -1 : 1;
     
-    const priority = { [MemberType.TEACHER]: 0, [MemberType.HELPER]: 1, [MemberType.VOLUNTEER]: 2, [MemberType.MEMBER]: 3 };
-    const aP = priority[a.type] ?? 9;
-    const bP = priority[b.type] ?? 9;
-    if (aP !== bP) return aP - bP;
-
+    // Sort logic: Punctual > Present > Type > Name
+    if (enablePunctuality) {
+        const aP = punctualIds.has(a.id);
+        const bP = punctualIds.has(b.id);
+        if (aP !== bP) return aP ? -1 : 1;
+    }
+    const aP = presentIds.has(a.id);
+    const bP = presentIds.has(b.id);
+    if (aP !== bP) return aP ? -1 : 1;
+    
     return a.name.localeCompare(b.name);
   });
 
-  const getMemberIcon = (type: MemberType) => {
-    switch (type) {
-        case MemberType.TEACHER: return <GraduationCap size={14} />;
-        case MemberType.HELPER: return <Heart size={14} />;
-        case MemberType.VOLUNTEER: return <Hand size={14} />;
-        case MemberType.FNF: return <Users size={14} />;
-        case MemberType.INCONSISTENT: return <AlertCircle size={14} />;
-        case MemberType.NOT_MEMBER: return <HelpCircle size={14} />;
-        default: return <User size={14} />;
-    }
-  }
-
-  const getMemberStyle = (type: MemberType) => {
-    switch (type) {
-        case MemberType.TEACHER: return 'bg-purple-100 text-purple-700';
-        case MemberType.HELPER: return 'bg-pink-100 text-pink-700';
-        case MemberType.VOLUNTEER: return 'bg-orange-100 text-orange-700';
-        case MemberType.FNF: return 'bg-amber-100 text-amber-700';
-        case MemberType.INCONSISTENT: return 'bg-rose-100 text-rose-700';
-        case MemberType.NOT_MEMBER: return 'bg-slate-100 text-slate-700';
-        default: return 'bg-indigo-100 text-indigo-700';
-    }
-  }
-
-  // Count logic
   const displayCount = filteredMembers.filter(m => presentIds.has(m.id)).length;
   const graduatingMembers = sortedMembers.filter(m => m.transferPendingDate);
   
-  // --- LEADERBOARD LOGIC ---
+  // Leaderboard Calc
   const leaderboardData = useMemo(() => {
-      // 1. Filter Records based on context (Member vs Staff) and Timeframe (Month vs All)
       const now = new Date();
       const currentMonth = now.getMonth();
       const currentYear = now.getFullYear();
@@ -288,351 +208,238 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
       let relevantRecords = data.attendance.filter(r => {
           const rDate = new Date(r.date);
           const isMonthMatch = leaderboardTimeframe === 'CM' || (rDate.getMonth() === currentMonth && rDate.getFullYear() === currentYear);
-          
-          if (attendanceMode === 'STAFF') {
-              // For staff, we look at all records from all churches
-              return isMonthMatch;
-          } else {
-              // For members, only specific church
-              return r.churchId === activeChurch && isMonthMatch;
-          }
+          return attendanceMode === 'STAFF' ? isMonthMatch : (r.churchId === activeChurch && isMonthMatch);
       });
 
-      // 2. Count Punctuality
       const scores: Record<string, number> = {};
       relevantRecords.forEach(r => {
-          if (r.punctualMemberIds) {
-              r.punctualMemberIds.forEach(id => {
-                  const m = data.members.find(mem => mem.id === id);
-                  // Ensure we are only counting people relevant to current view mode
-                  if (m) {
-                      const isStaff = m.type === MemberType.TEACHER || m.type === MemberType.HELPER || m.type === MemberType.VOLUNTEER;
-                      const isModeMatch = attendanceMode === 'STAFF' ? isStaff : !isStaff;
-                      
-                      if (isModeMatch) {
-                          scores[id] = (scores[id] || 0) + 1;
-                      }
+          r.punctualMemberIds?.forEach(id => {
+              const m = data.members.find(mem => mem.id === id);
+              if (m) {
+                  const isStaff = ['Teacher','Helper','Volunteer'].includes(m.type);
+                  if ((attendanceMode === 'STAFF' && isStaff) || (attendanceMode === 'MEMBERS' && !isStaff)) {
+                      scores[id] = (scores[id] || 0) + 1;
                   }
-              });
-          }
+              }
+          });
       });
 
-      // 3. Sort and Format
       return Object.entries(scores)
           .sort(([, a], [, b]) => b - a)
-          .map(([id, score], index) => {
-              const m = data.members.find(mem => mem.id === id);
-              return { 
-                  rank: index + 1,
-                  id, 
-                  name: m?.name || 'Unknown', 
-                  type: m?.type || 'Unknown',
-                  count: score 
-              };
-          });
-  }, [data.attendance, data.members, activeChurch, attendanceMode, leaderboardTimeframe]);
+          .slice(0, 10) // Top 10
+          .map(([id, score], index) => ({ rank: index + 1, id, name: data.members.find(mem => mem.id === id)?.name || 'Unknown', count: score }));
+  }, [data.attendance, activeChurch, attendanceMode, leaderboardTimeframe, data.members]);
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[calc(100vh-100px)] md:h-[calc(100vh-140px)] relative overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-140px)] gap-4">
       
-      {/* ADMIN TOGGLE */}
-      {isAdmin && (
-          <div className="p-2 bg-gray-100 flex justify-center border-b border-gray-200">
-             <div className="bg-white p-1 rounded-lg shadow-sm flex">
-                 <button 
-                    onClick={() => { setAttendanceMode('MEMBERS'); setFilterType('CM'); }}
-                    className={`px-4 py-2 text-sm font-bold rounded-md transition-colors flex items-center gap-2 ${attendanceMode === 'MEMBERS' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-                 >
-                    <Users size={16}/> Members ({activeChurch})
-                 </button>
-                 <button 
-                    onClick={() => { setAttendanceMode('STAFF'); setFilterType('CM'); }}
-                    className={`px-4 py-2 text-sm font-bold rounded-md transition-colors flex items-center gap-2 ${attendanceMode === 'STAFF' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-                 >
-                    <Briefcase size={16}/> Staff (CM)
-                 </button>
+      {/* 1. TOP BAR: Date & Save & Mode */}
+      <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-20">
+        
+        {/* Date Selector */}
+        <div className="relative w-full md:w-64">
+             <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+                <Calendar size={18} />
              </div>
-          </div>
-      )}
-
-      {/* Header Controls */}
-      <div className="p-3 md:p-6 border-b border-gray-100 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
-        <div className="flex flex-col gap-1 w-full md:w-auto">
-          <label className="text-[10px] uppercase font-bold text-gray-400">Service Date</label>
-          <select 
-            value={selectedDate} 
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5"
-          >
-            {sundays2026.map(d => {
-              const strDate = d.toISOString().split('T')[0];
-              const todayStr = new Date().toISOString().split('T')[0];
-              const isToday = strDate === todayStr;
-              return <option key={strDate} value={strDate}>{isToday ? '👉 ' : ''}{d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'})}</option>
-            })}
-          </select>
+             <select 
+                value={selectedDate} 
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-slate-50 border border-slate-200 text-slate-800 text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-10 p-3 appearance-none cursor-pointer hover:bg-slate-100 transition-colors"
+             >
+                {sundays2026.map(d => {
+                const strDate = d.toISOString().split('T')[0];
+                const isToday = strDate === new Date().toISOString().split('T')[0];
+                return <option key={strDate} value={strDate}>{isToday ? 'Today, ' : ''}{d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric'})}</option>
+                })}
+            </select>
         </div>
 
+        {/* Action Buttons */}
         <div className="flex items-center gap-2 w-full md:w-auto">
-           {/* LEADERBOARD BUTTON */}
+           {isAdmin && (
+             <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
+                 <button onClick={() => { setAttendanceMode('MEMBERS'); setFilterType('CM'); }} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${attendanceMode === 'MEMBERS' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-500'}`}>Members</button>
+                 <button onClick={() => { setAttendanceMode('STAFF'); setFilterType('CM'); }} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${attendanceMode === 'STAFF' ? 'bg-white shadow-sm text-purple-700' : 'text-slate-500'}`}>Staff</button>
+             </div>
+           )}
+
            {enablePunctuality && (
-                <button 
-                    onClick={() => setShowLeaderboard(true)}
-                    className="flex items-center justify-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors flex-1 md:flex-none"
-                    title="Punctuality Leaderboard"
-                >
-                    <Trophy size={18} />
-                    <span className="hidden sm:inline">Leaderboard</span>
+                <button onClick={() => setShowLeaderboard(true)} className="p-3 text-amber-600 bg-amber-50 rounded-xl hover:bg-amber-100 transition-colors border border-amber-100" title="Leaderboard">
+                    <Trophy size={20} />
                 </button>
            )}
            
            {attendanceMode === 'MEMBERS' && activeChurch !== 'CM' && (
-               <button 
-                onClick={() => setIsAddingFNF(!isAddingFNF)}
-                className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors flex-1 md:flex-none whitespace-nowrap"
-                >
-                <Plus size={16} /> Add FNF
-                </button>
+               <button onClick={() => setIsAddingFNF(!isAddingFNF)} className="p-3 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-100" title="Add FNF">
+                    <UserPlus size={20} />
+               </button>
            )}
+          
           <button 
             onClick={handleSave}
-            className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-md transition-all active:scale-95 flex-1 md:flex-none whitespace-nowrap"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-all active:scale-95"
           >
-            <Save size={16} /> Save
+            <Save size={18} /> <span>Save</span>
           </button>
         </div>
       </div>
 
-      {isAddingFNF && attendanceMode === 'MEMBERS' && (
-        <div className="px-6 py-4 bg-amber-50 border-b border-amber-100 flex flex-col md:flex-row gap-3 items-center animate-in fade-in slide-in-from-top-2">
-          <input 
-            type="text" 
-            placeholder={`Enter Visitor Full Name`} 
-            value={newMemberName}
-            onChange={(e) => setNewMemberName(e.target.value)}
-            className="w-full md:flex-1 p-2 border border-amber-200 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-400"
-            autoFocus
-            onKeyDown={(e) => e.key === 'Enter' && handleAddFNF()}
-          />
-          <button onClick={handleAddFNF} className="w-full md:w-auto px-4 py-2 bg-amber-500 text-white rounded-md">Add</button>
+      {/* 2. SECOND BAR: Filters & Search */}
+      <div className="bg-white/80 backdrop-blur-md rounded-3xl p-2 shadow-sm border border-slate-100 sticky top-0 z-10 shrink-0">
+         <div className="flex flex-col gap-2">
+            <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+                <input
+                    type="text"
+                    className="w-full pl-10 pr-4 py-2 bg-transparent border-none text-sm focus:ring-0 placeholder:text-slate-400"
+                    placeholder={`Search ${filteredMembers.length} names...`}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
+            </div>
+            
+            {/* Horizontal Filter Scroll */}
+            <div className="flex gap-2 overflow-x-auto pb-2 px-2 no-scrollbar">
+                <button onClick={() => setFilterType('CM')} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${filterType === 'CM' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>All</button>
+                {(attendanceMode === 'STAFF' ? [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER] : [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT]).map(type => (
+                    <button key={type} onClick={() => setFilterType(type)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterType === type ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>{type}</button>
+                ))}
+            </div>
+
+            {/* Stats Row */}
+            <div className="flex justify-between items-center px-3 pt-2 border-t border-slate-100">
+                <div className="text-xs font-semibold text-slate-400">{filteredMembers.length} List</div>
+                <div className="flex gap-4">
+                     {enablePunctuality && (
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md">
+                            <Clock size={12}/> {punctualIds.size}/3
+                        </div>
+                     )}
+                     <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">
+                        <Check size={12}/> {displayCount} Present
+                     </div>
+                </div>
+            </div>
+         </div>
+      </div>
+
+      {isAddingFNF && (
+        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 flex gap-2 animate-in slide-in-from-top-2">
+          <input type="text" placeholder="Visitor Name" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} className="flex-1 p-2 border border-amber-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white" autoFocus onKeyDown={(e) => e.key === 'Enter' && handleAddFNF()}/>
+          <button onClick={handleAddFNF} className="px-4 bg-amber-500 text-white rounded-xl font-bold">Add</button>
         </div>
       )}
 
-      {/* Graduation / Transfer Notification Banner */}
-      {graduatingMembers.length > 0 && (
-          <div className="px-4 py-3 bg-blue-50 border-b border-blue-100 flex items-start gap-3">
-              <div className="p-1 bg-blue-100 text-blue-600 rounded-full mt-0.5">
-                  <ArrowRightCircle size={16} />
-              </div>
-              <div className="text-sm text-blue-800">
-                  <span className="font-bold">Heads up!</span> The following members have turned 13 and will transfer next Sunday: 
-                  <span className="font-bold ml-1">
-                      {graduatingMembers.map(m => m.name).join(', ')}
-                  </span>.
-              </div>
-          </div>
-      )}
+      {/* 3. MAIN GRID (Scrollable) */}
+      <div className="flex-1 overflow-y-auto pr-1 pb-10">
+         {activeChurch === 'CM' && attendanceMode === 'MEMBERS' ? (
+             <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                 <Users2 size={48} className="mb-4 opacity-20"/>
+                 <p className="font-medium">Select a branch to take attendance</p>
+             </div>
+         ) : (
+             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                 {sortedMembers.map(member => {
+                    const isPresent = presentIds.has(member.id);
+                    const isPunctual = punctualIds.has(member.id);
+                    const isGraduating = !!member.transferPendingDate;
+                    
+                    return (
+                        <div 
+                            key={member.id}
+                            onClick={() => handleToggle(member.id)}
+                            className={`
+                                relative p-4 rounded-2xl cursor-pointer transition-all duration-200 select-none group border
+                                ${isPresent 
+                                    ? 'bg-indigo-600 border-indigo-600 shadow-lg shadow-indigo-200 transform scale-[1.01]' 
+                                    : 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md'
+                                }
+                            `}
+                        >
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h4 className={`font-bold text-lg leading-tight ${isPresent ? 'text-white' : 'text-slate-800'}`}>{member.name}</h4>
+                                    <p className={`text-xs font-medium mt-1 uppercase tracking-wider ${isPresent ? 'text-indigo-200' : 'text-slate-400'}`}>
+                                        {member.type} {isGraduating && '• Graduating'}
+                                    </p>
+                                </div>
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${isPresent ? 'bg-white text-indigo-600' : 'bg-slate-100 text-slate-300'}`}>
+                                    <Check size={14} strokeWidth={4} />
+                                </div>
+                            </div>
+                            
+                            {/* Actions / Badges */}
+                            <div className="mt-4 flex items-center gap-2">
+                                {enablePunctuality && (
+                                    <button 
+                                        onClick={(e) => handlePunctualToggle(e, member.id)}
+                                        disabled={!isPunctual && punctualIds.size >= 3}
+                                        className={`p-1.5 rounded-lg transition-all ${
+                                            isPunctual 
+                                                ? 'bg-amber-400 text-white shadow-sm' 
+                                                : isPresent 
+                                                    ? 'bg-indigo-500 text-indigo-300 hover:bg-indigo-400 hover:text-white' 
+                                                    : 'bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-500'
+                                        } ${(!isPunctual && punctualIds.size >= 3) ? 'opacity-30 cursor-not-allowed' : ''}`}
+                                    >
+                                        <Trophy size={16} fill={isPunctual ? "currentColor" : "none"} />
+                                    </button>
+                                )}
+                                {isGraduating && (
+                                    <div className={`px-2 py-1 rounded-lg text-[10px] font-bold ${isPresent ? 'bg-indigo-500 text-white' : 'bg-blue-50 text-blue-600'}`}>
+                                        MOVING UP
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                 })}
+             </div>
+         )}
+      </div>
 
       {successMsg && (
-        <div className="px-6 py-2 bg-green-50 text-green-700 text-sm font-medium text-center border-b border-green-100 animate-in slide-in-from-top-2">
-          {successMsg}
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 z-50">
+            <Check size={18} className="text-green-400" />
+            <span className="font-bold">{successMsg}</span>
         </div>
       )}
 
-      {/* Filters */}
-      <div className="p-3 border-b border-gray-100 bg-gray-50 sticky top-0 z-10">
-        <div className="relative mb-2">
-           <Search className="absolute left-3 top-2 h-4 w-4 text-gray-400" />
-           <input
-            type="text"
-            className="block w-full pl-9 pr-3 py-1.5 border border-gray-200 rounded-lg text-sm"
-            placeholder="Search name..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-            <button
-                onClick={() => setFilterType('CM')}
-                className={`px-3 py-1 rounded-full text-xs font-medium border ${filterType === 'CM' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600'}`}
-            >
-                All
-            </button>
-            {(attendanceMode === 'STAFF' 
-                ? [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER] 
-                : [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT, MemberType.NOT_MEMBER]
-            ).map(type => (
-                <button
-                    key={type}
-                    onClick={() => setFilterType(type)}
-                    className={`px-3 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${filterType === type ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600'}`}
-                >
-                    {type}
-                </button>
-            ))}
-        </div>
-        
-        {/* PUNCTUALITY COUNTER - SHOW FOR UJ & STAFF */}
-        {enablePunctuality && (
-             <div className="mt-3 flex items-center justify-between bg-orange-50 border border-orange-100 px-3 py-2 rounded-lg">
-                <div className="flex items-center gap-2">
-                    <Trophy size={14} className="text-orange-600"/>
-                    <span className="text-xs font-bold text-orange-800 uppercase tracking-wide">
-                        Punctual ({attendanceMode === 'STAFF' ? 'Staff' : 'Members'})
-                    </span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <span className={`text-xs font-bold ${punctualIds.size >= 3 ? 'text-red-600' : 'text-orange-700'}`}>
-                        {punctualIds.size} / 3
-                    </span>
-                    {punctualIds.size >= 3 && <span className="text-[9px] bg-red-100 text-red-600 px-1.5 rounded-sm font-bold">MAX</span>}
-                </div>
-             </div>
-        )}
-        
-        <div className="text-[10px] text-gray-500 flex justify-between pt-1 mt-1 border-t border-gray-200">
-            <span>{filteredMembers.length} records</span>
-            <span className="font-semibold text-indigo-600 flex items-center gap-1">
-                <Check size={10}/> 
-                {displayCount} Present
-            </span>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-2 bg-gray-50/50">
-        {activeChurch === 'CM' && attendanceMode === 'MEMBERS' && (
-             <div className="flex items-center justify-center h-full text-gray-400 p-8 text-center">
-                 <p>Select a specific church branch from the menu to take member attendance.</p>
-             </div>
-        )}
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pb-20 md:pb-0">
-          {sortedMembers.map(member => {
-            const isPresent = presentIds.has(member.id);
-            const isPunctual = punctualIds.has(member.id);
-            const isTransferPending = !!member.transferPendingDate;
-            
-            // Auto Disable Punctual Button if limit reached and this user isn't one of them
-            const disablePunctualBtn = !isPunctual && punctualIds.size >= 3;
-            
-            return (
-              <div 
-                key={member.id}
-                onClick={() => handleToggle(member.id)}
-                className={`
-                  cursor-pointer p-3 rounded-lg border flex items-center justify-between transition-all select-none
-                  ${isTransferPending ? 'bg-blue-50 border-blue-200' : isPunctual ? 'bg-orange-50 border-orange-200' : isPresent ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-white border-gray-100 hover:bg-gray-50'}
-                `}
-              >
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0 ${isPunctual ? 'bg-orange-100 text-orange-600' : getMemberStyle(member.type)}`}>
-                    {isPunctual ? <Trophy size={14} /> : getMemberIcon(member.type)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className={`text-sm font-medium truncate ${isPresent ? 'text-indigo-900' : 'text-gray-900'}`}>{member.name}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <p className="text-[10px] text-gray-500 uppercase tracking-wider truncate">{member.type}</p>
-                      {attendanceMode === 'STAFF' && <span className="text-[10px] bg-gray-200 px-1 rounded">{member.assignedChurch}</span>}
-                      {isTransferPending && <span className="text-[10px] bg-blue-100 text-blue-700 px-1 rounded">Graduating</span>}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {enablePunctuality && (
-                      <button
-                        onClick={(e) => {
-                            if (!disablePunctualBtn) handlePunctualToggle(e, member.id);
-                            else e.stopPropagation();
-                        }}
-                        disabled={disablePunctualBtn}
-                        className={`p-2 rounded-full transition-colors ${
-                            isPunctual 
-                            ? 'bg-orange-500 text-white shadow-sm' 
-                            : disablePunctualBtn 
-                                ? 'bg-gray-50 text-gray-200 cursor-not-allowed' 
-                                : 'bg-gray-100 text-gray-400 hover:text-orange-500 hover:bg-orange-50'
-                        }`}
-                      >
-                        <Clock size={14} />
-                      </button>
-                  )}
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isPresent ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-400'}`}>
-                    <Check size={16} />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* LEADERBOARD MODAL */}
+      {/* Leaderboard Modal */}
       {showLeaderboard && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-md h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95">
-                  <div className="p-5 border-b bg-gradient-to-r from-orange-50 to-amber-50">
-                      <div className="flex items-center justify-between mb-2">
-                          <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                              <Trophy size={24} className="text-amber-500 fill-amber-500"/>
-                              Early Birds
-                          </h3>
-                          <button onClick={() => setShowLeaderboard(false)} className="p-2 hover:bg-white/50 rounded-full text-gray-500"><X size={20}/></button>
-                      </div>
-                      <p className="text-xs text-amber-800 font-medium opacity-80 mb-3">
-                          Ranking for {attendanceMode === 'STAFF' ? 'Staff' : `${activeChurch} Members`}
-                      </p>
-                      
-                      <div className="flex bg-white/60 p-1 rounded-lg backdrop-blur-sm border border-amber-100">
-                          <button 
-                            onClick={() => setLeaderboardTimeframe('MONTH')}
-                            className={`flex-1 text-xs font-bold py-1.5 rounded-md transition-all ${leaderboardTimeframe === 'MONTH' ? 'bg-white shadow-sm text-amber-600' : 'text-gray-500'}`}
-                          >
-                              This Month
-                          </button>
-                          <button 
-                            onClick={() => setLeaderboardTimeframe('CM')}
-                            className={`flex-1 text-xs font-bold py-1.5 rounded-md transition-all ${leaderboardTimeframe === 'CM' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}
-                          >
-                              All Time
-                          </button>
-                      </div>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95">
+                  <div className="p-6 bg-gradient-to-br from-amber-400 to-orange-500 text-white relative overflow-hidden">
+                       <div className="relative z-10 flex justify-between items-center">
+                           <h3 className="text-2xl font-bold flex items-center gap-2"><Crown size={24}/> Leaderboard</h3>
+                           <button onClick={() => setShowLeaderboard(false)} className="p-2 bg-white/20 rounded-full hover:bg-white/30 transition-colors"><X size={20}/></button>
+                       </div>
+                       <p className="relative z-10 text-amber-100 text-sm mt-1">Celebrating our most punctual stars!</p>
+                       <div className="absolute -bottom-10 -right-10 text-white/10 rotate-12"><Trophy size={140} /></div>
+                  </div>
+                  
+                  <div className="p-2 flex gap-2 bg-slate-50 border-b border-slate-100">
+                      {(['MONTH', 'CM'] as const).map(t => (
+                          <button key={t} onClick={() => setLeaderboardTimeframe(t)} className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${leaderboardTimeframe === t ? 'bg-white shadow-sm text-amber-600' : 'text-slate-400 hover:bg-white'}`}>{t === 'MONTH' ? 'This Month' : 'All Time'}</button>
+                      ))}
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/50">
+                  <div className="overflow-y-auto p-4 space-y-3 flex-1">
                       {leaderboardData.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center h-full text-gray-400 text-center">
-                              <Calendar size={48} className="mb-2 opacity-20"/>
-                              <p>No punctual records found for this period.</p>
-                          </div>
+                          <div className="text-center py-10 text-slate-400"><p>No data yet.</p></div>
                       ) : (
-                          leaderboardData.map((item) => {
-                              let rankBadge;
-                              if (item.rank === 1) rankBadge = <div className="w-8 h-8 rounded-full bg-yellow-400 text-yellow-900 flex items-center justify-center font-bold shadow-sm ring-2 ring-white"><Crown size={14} className="fill-yellow-900"/></div>;
-                              else if (item.rank === 2) rankBadge = <div className="w-8 h-8 rounded-full bg-gray-300 text-gray-800 flex items-center justify-center font-bold shadow-sm ring-2 ring-white">2</div>;
-                              else if (item.rank === 3) rankBadge = <div className="w-8 h-8 rounded-full bg-orange-300 text-orange-900 flex items-center justify-center font-bold shadow-sm ring-2 ring-white">3</div>;
-                              else rankBadge = <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center font-bold text-xs">#{item.rank}</div>;
-
-                              return (
-                                  <div key={item.id} className="bg-white p-3 rounded-xl border border-gray-100 flex items-center gap-3 shadow-sm">
-                                      {rankBadge}
-                                      <div className="flex-1 min-w-0">
-                                          <p className="font-bold text-gray-800 truncate">{item.name}</p>
-                                          <p className="text-[10px] text-gray-400 uppercase tracking-wider">{item.type}</p>
-                                      </div>
-                                      <div className="px-3 py-1 bg-amber-50 text-amber-700 rounded-lg font-bold text-sm border border-amber-100">
-                                          {item.count}x
-                                      </div>
-                                  </div>
-                              );
-                          })
+                          leaderboardData.map((item, idx) => (
+                              <div key={item.id} className="flex items-center gap-4 p-3 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${idx===0 ? 'bg-yellow-100 text-yellow-700' : idx===1 ? 'bg-slate-200 text-slate-700' : idx===2 ? 'bg-orange-100 text-orange-700' : 'bg-slate-50 text-slate-400'}`}>#{item.rank}</div>
+                                  <div className="flex-1 font-bold text-slate-800">{item.name}</div>
+                                  <div className="px-3 py-1 bg-amber-50 text-amber-700 rounded-lg font-bold text-xs">{item.count}x</div>
+                              </div>
+                          ))
                       )}
                   </div>
               </div>
           </div>
       )}
-
     </div>
   );
 };
