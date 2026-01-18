@@ -6,7 +6,7 @@ import AttendanceTaker from './components/AttendanceTaker';
 import ReportExport from './components/ReportExport';
 import MembersList from './components/MembersList';
 import Login from './components/Login';
-import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw, Zap } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw, Zap, ChevronDown } from 'lucide-react';
 
 enum View {
   DASHBOARD = 'Dashboard',
@@ -18,13 +18,13 @@ enum View {
 const App: React.FC = () => {
   const [data, setData] = useState<AppData>({ members: [], attendance: [] });
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // GLOBAL CONTEXT STATE
   const [currentUser, setCurrentUser] = useState<Member | null>(null);
   const [activeChurch, setActiveChurch] = useState<Church>('CM');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showMobileChurchMenu, setShowMobileChurchMenu] = useState(false);
   
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const savedState = localStorage.getItem('sidebarState');
@@ -104,7 +104,6 @@ const App: React.FC = () => {
     <button
       onClick={() => {
         setCurrentView(view);
-        setIsMobileMenuOpen(false);
       }}
       className={`
         w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-200 group relative overflow-hidden
@@ -120,22 +119,29 @@ const App: React.FC = () => {
     </button>
   );
 
+  const MobileNavItem = ({ view, icon: Icon, label }: { view: View; icon: React.ElementType; label: string }) => (
+    <button
+      onClick={() => setCurrentView(view)}
+      className={`
+        flex flex-col items-center justify-center w-full py-2 gap-1 active:scale-95 transition-transform
+        ${currentView === view ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}
+      `}
+    >
+      <div className={`p-1 rounded-xl transition-colors ${currentView === view ? 'bg-indigo-50' : 'bg-transparent'}`}>
+        <Icon size={24} strokeWidth={currentView === view ? 2.5 : 2} />
+      </div>
+      <span className={`text-[10px] font-bold tracking-tight ${currentView === view ? 'text-indigo-700' : 'text-slate-500'}`}>{label}</span>
+    </button>
+  );
+
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
       
-      {/* Mobile Menu Backdrop */}
-      {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 md:hidden animate-in fade-in" 
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* Sidebar Navigation */}
+      {/* Sidebar Navigation (Desktop Only) */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 bg-white border-r border-slate-100 shadow-xl shadow-slate-200/50 transform transition-all duration-300 ease-out md:relative md:translate-x-0
-        ${isMobileMenuOpen ? 'translate-x-0 w-72' : '-translate-x-full'}
-        ${isSidebarCollapsed ? 'md:w-24' : 'md:w-72'}
+        hidden md:flex flex-col
+        bg-white border-r border-slate-100 shadow-xl shadow-slate-200/50 transition-all duration-300 ease-out z-50
+        ${isSidebarCollapsed ? 'w-24' : 'w-72'}
       `}>
         <div className="h-full flex flex-col p-6">
           
@@ -233,25 +239,70 @@ const App: React.FC = () => {
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         {/* Mobile Header */}
-        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 md:hidden flex items-center justify-between sticky top-0 z-30">
-          <div className="flex items-center gap-3">
-             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
-                 {activeChurch.substring(0,2)}
-             </div>
-             <div>
-                 <h1 className="font-bold text-slate-800 text-sm leading-tight">{activeChurch} Church</h1>
-                 <p className="text-xs text-slate-500">{currentView}</p>
-             </div>
-          </div>
-          <button 
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="p-2 text-slate-600 rounded-xl hover:bg-slate-100 active:scale-95 transition-transform"
-          >
-            {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
+        <header className="bg-white/90 backdrop-blur-md border-b border-slate-200 px-4 py-3 md:hidden flex items-center justify-between sticky top-0 z-30">
+          {/* Brand / Admin Switcher */}
+           <div className="relative">
+              <button 
+                onClick={() => isAdmin && setShowMobileChurchMenu(!showMobileChurchMenu)}
+                className="flex items-center gap-3 active:opacity-70 transition-opacity"
+                disabled={!isAdmin}
+              >
+                 <div className={`
+                    w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-sm
+                    ${activeChurch === 'UJ' ? 'bg-indigo-600' : 
+                      activeChurch === 'I' ? 'bg-emerald-500' :
+                      activeChurch === 'K' ? 'bg-rose-500' : 'bg-amber-500'}
+                 `}>
+                     {activeChurch.substring(0,2)}
+                 </div>
+                 <div className="text-left">
+                     <h1 className="font-bold text-slate-800 text-sm leading-tight flex items-center gap-1">
+                        {activeChurch} Church
+                        {isAdmin && <ChevronDown size={14} className={`text-slate-400 transition-transform ${showMobileChurchMenu ? 'rotate-180' : ''}`}/>}
+                     </h1>
+                     <p className="text-[10px] text-slate-500 font-medium">Ministry System</p>
+                 </div>
+              </button>
+
+              {/* Mobile Church Switcher Dropdown */}
+              {showMobileChurchMenu && isAdmin && (
+                  <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowMobileChurchMenu(false)}></div>
+                  <div className="absolute top-full left-0 mt-2 w-52 bg-white rounded-xl shadow-xl border border-slate-100 p-2 z-20 flex flex-col gap-1 animate-in fade-in zoom-in-95 origin-top-left">
+                      {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(church => (
+                        <button
+                            key={church}
+                            onClick={() => { setActiveChurch(church); setShowMobileChurchMenu(false); }}
+                            className={`flex items-center gap-3 p-3 rounded-lg text-sm transition-all ${activeChurch === church ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}`}
+                        >
+                            <div className={`w-2 h-2 rounded-full ${activeChurch === church ? 'bg-indigo-600' : 'bg-slate-300'}`}></div>
+                            {church} Church
+                        </button>
+                      ))}
+                  </div>
+                  </>
+              )}
+           </div>
+
+           {/* Mobile Header Actions (Sync & Logout) */}
+           <div className="flex items-center gap-1">
+                <button 
+                    onClick={handleCloudSync}
+                    className={`p-2 rounded-full ${isSyncing ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400 hover:bg-slate-100 hover:text-indigo-600'}`}
+                    disabled={isSyncing}
+                >
+                    <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} />
+                </button>
+                <button 
+                    onClick={handleLogout}
+                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full"
+                >
+                    <LogOut size={20} />
+                </button>
+           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-10 scroll-smooth">
+        <div className="flex-1 overflow-y-auto p-4 md:p-10 scroll-smooth pb-24 md:pb-10">
           <div className="max-w-7xl mx-auto space-y-8">
             
             {/* Desktop Header */}
@@ -280,6 +331,14 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Mobile Bottom Navigation */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 px-4 py-1 pb-safe flex justify-around items-center shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.05)]">
+            <MobileNavItem view={View.DASHBOARD} icon={LayoutDashboard} label="Home" />
+            <MobileNavItem view={View.ATTENDANCE} icon={CalendarCheck} label="Attendance" />
+            <MobileNavItem view={View.MEMBERS} icon={Users} label="People" />
+            <MobileNavItem view={View.EXPORT} icon={Share2} label="Reports" />
+        </nav>
       </main>
     </div>
   );

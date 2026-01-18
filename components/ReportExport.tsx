@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AppData, MemberType, Church, Member } from '../types';
-import { Copy, FileText, CheckCircle, Database, Download, Upload, AlertCircle, RefreshCw, Cloud, Lock, Code, MessageCircle } from 'lucide-react';
+import { Copy, FileText, CheckCircle, Database, Download, Upload, AlertCircle, RefreshCw, Cloud, Lock, Code, MessageCircle, BookOpen, Compass, GitBranch, ArrowRight } from 'lucide-react';
 import { getSundaysInYear, DEFAULT_CLOUD_CONFIG } from '../constants';
 import { importData, saveCloudConfig, syncFromCloud } from '../services/storageService';
 
@@ -14,7 +14,7 @@ interface ReportExportProps {
 const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurch, currentUser }) => {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [copiedReport, setCopiedReport] = useState(false);
-  const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'DATA' | 'CLOUD'>('WHATSAPP');
+  const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'DATA' | 'CLOUD' | 'HELP'>('WHATSAPP');
   const [importMsg, setImportMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);
   
   // Cloud Sync State
@@ -245,6 +245,12 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
             <span className="flex items-center gap-2"><Cloud size={16}/> Cloud Sync</span>
             </button>
         )}
+        <button
+          onClick={() => setActiveTab('HELP')}
+          className={`pb-2 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap outline-none ${activeTab === 'HELP' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <span className="flex items-center gap-2"><BookOpen size={16}/> System Guide</span>
+        </button>
       </div>
 
       {activeTab === 'WHATSAPP' && (
@@ -295,6 +301,106 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'HELP' && (
+         <div className="space-y-8 animate-in fade-in">
+             <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl p-8 text-white relative overflow-hidden">
+                 <div className="relative z-10">
+                     <h2 className="text-3xl font-bold mb-2">System Guide</h2>
+                     <p className="text-indigo-100 max-w-lg">A comprehensive overview of the Children's Ministry Attendance System, designed for transparency and operational excellence.</p>
+                 </div>
+                 <BookOpen className="absolute -bottom-6 -right-6 text-white opacity-10" size={160} />
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                     <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-lg">
+                         <Compass className="text-indigo-600" /> Core Modules
+                     </h3>
+                     <ul className="space-y-4">
+                         <li>
+                             <strong className="block text-gray-900 text-sm">Dashboard</strong>
+                             <p className="text-xs text-gray-500 mt-1">
+                                 The health monitor of the ministry. It displays real-time attendance percentages, growth trends, and retention rates. 
+                                 <span className="block mt-1 text-indigo-600">Metric: Average Attendance over last 5 weeks.</span>
+                             </p>
+                         </li>
+                         <li>
+                             <strong className="block text-gray-900 text-sm">Attendance Taker</strong>
+                             <p className="text-xs text-gray-500 mt-1">
+                                 A streamlined interface for Sunday operations. Tap names to mark present. Toggle "Punctuality" (Trophy icon) to gamify early arrivals.
+                             </p>
+                         </li>
+                         <li>
+                             <strong className="block text-gray-900 text-sm">People Hub</strong>
+                             <p className="text-xs text-gray-500 mt-1">
+                                 The central CRM. Add new members, manage "Friends & Family" (FNF), and archive inactive records. Teachers have read-only access to specific branches.
+                             </p>
+                         </li>
+                     </ul>
+                 </div>
+
+                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                     <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-lg">
+                         <GitBranch className="text-purple-600" /> Automation Logic
+                     </h3>
+                     <p className="text-xs text-gray-500 mb-4">The system performs several background tasks every time data is saved to keep the registry clean.</p>
+                     
+                     <div className="space-y-3">
+                         <div className="p-3 bg-purple-50 rounded-xl">
+                             <span className="text-xs font-bold text-purple-700 uppercase">Auto-Promotion</span>
+                             <p className="text-xs text-gray-600 mt-1">
+                                 Kids are automatically moved between branches based on Date of Birth.
+                                 <br/>• Age 0-1 → I Church
+                                 <br/>• Age 2-5 → K Church
+                                 <br/>• Age 6-8 → LJ Church
+                                 <br/>• Age 9-13 → UJ Church
+                             </p>
+                         </div>
+                         <div className="p-3 bg-red-50 rounded-xl">
+                             <span className="text-xs font-bold text-red-700 uppercase">Retention Logic</span>
+                             <p className="text-xs text-gray-600 mt-1">
+                                 If a member is absent for <strong>10 consecutive weeks</strong>, they are automatically demoted to "Inconsistent".
+                                 Conversely, if an "Inconsistent" member attends <strong>7 weeks</strong> in a row, they are restored to "Active".
+                             </p>
+                         </div>
+                     </div>
+                 </div>
+             </div>
+
+             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                 <h3 className="font-bold text-gray-800 mb-6 text-lg">Primary User Journeys</h3>
+                 
+                 <div className="relative border-l-2 border-indigo-100 pl-8 space-y-8">
+                     <div className="relative">
+                         <div className="absolute -left-[39px] top-0 w-6 h-6 rounded-full bg-indigo-600 border-4 border-white shadow-sm"></div>
+                         <h4 className="font-bold text-gray-900">Sunday Morning Flow</h4>
+                         <p className="text-sm text-gray-500 mt-1">The typical workflow for a teacher.</p>
+                         <ol className="mt-3 space-y-2 text-sm text-gray-600 list-decimal ml-4">
+                             <li>Login using personal Access Code.</li>
+                             <li>Navigate to <strong>Attendance</strong> tab.</li>
+                             <li>Select "Today" from the date dropdown.</li>
+                             <li>Tap names as children arrive (Green Card = Present).</li>
+                             <li>Click "Save" periodically to sync data to the cloud.</li>
+                             <li>Navigate to <strong>Reports</strong> tab and click "WhatsApp" to send the summary to the group.</li>
+                         </ol>
+                     </div>
+
+                     <div className="relative">
+                         <div className="absolute -left-[39px] top-0 w-6 h-6 rounded-full bg-amber-500 border-4 border-white shadow-sm"></div>
+                         <h4 className="font-bold text-gray-900">New Visitor Workflow</h4>
+                         <p className="text-sm text-gray-500 mt-1">Handling first-time guests.</p>
+                         <ol className="mt-3 space-y-2 text-sm text-gray-600 list-decimal ml-4">
+                             <li>In <strong>Attendance</strong>, click the <span className="inline-block p-1 bg-indigo-50 rounded text-indigo-600"><Code size={10} className="inline"/> + User</span> button.</li>
+                             <li>Enter the child's name in the Quick Add box.</li>
+                             <li>This creates a temporary "FNF" (Friends & Family) record.</li>
+                             <li>Later, go to <strong>People Hub</strong>, find the record, click Edit, and add DOB to convert them to a full member.</li>
+                         </ol>
+                     </div>
+                 </div>
+             </div>
+         </div>
       )}
 
       {activeTab === 'CLOUD' && isAdmin && (
