@@ -73,8 +73,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
             setPresentIds(new Set(record.presentMemberIds));
             setPunctualIds(new Set(record.punctualMemberIds || []));
           } else {
-            setPresentIds(new Set());
-            setPunctualIds(new Set());
+            setPresentIds(new Set<string>());
+            setPunctualIds(new Set<string>());
           }
       }
     }
@@ -129,12 +129,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                     return m && !['Teacher','Helper','Volunteer'].includes(m.type);
                 }) : [];
 
-            // Fix: Use spread syntax instead of Array.from to ensure correct type inference (string[])
-            const staffPresentForThisChurch = [...presentIds].filter(id => {
+            // Fix: Use Array.from and explicit type to ensure correct type inference (string[])
+            const staffPresentForThisChurch = Array.from(presentIds).filter((id: string) => {
                 const m = data.members.find(mem => mem.id === id);
                 return m && m.assignedChurch === church;
             });
-            const staffPunctualForThisChurch = [...punctualIds].filter(id => {
+            const staffPunctualForThisChurch = Array.from(punctualIds).filter((id: string) => {
                 const m = data.members.find(mem => mem.id === id);
                 return m && m.assignedChurch === church;
             });
@@ -143,8 +143,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
         });
         setSuccessMsg(`Staff synced!`);
     } else {
-        // Fix: Use spread syntax instead of Array.from
-        saveAttendance(selectedDate, activeChurch, [...presentIds], [...punctualIds]);
+        // Fix: Use Array.from instead of spread
+        saveAttendance(selectedDate, activeChurch, Array.from(presentIds), Array.from(punctualIds));
         setSuccessMsg(`Saved!`);
     }
     onUpdate();
@@ -159,8 +159,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
     newSet.add(newMember.id);
     setPresentIds(newSet);
     if (selectedDate && attendanceMode === 'MEMBERS') {
-        // Fix: Use spread syntax instead of Array.from
-        saveAttendance(selectedDate, activeChurch, [...newSet], [...punctualIds]);
+        saveAttendance(selectedDate, activeChurch, Array.from(newSet), Array.from(punctualIds));
     }
     setNewMemberName('');
     setIsAddingFNF(false);

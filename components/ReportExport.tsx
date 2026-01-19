@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AppData, MemberType, Church, Member } from '../types';
-import { Copy, FileText, CheckCircle, Database, Download, Upload, AlertCircle, RefreshCw, Cloud, Lock, Code, MessageCircle, BookOpen, Compass, GitBranch, ArrowRight } from 'lucide-react';
+import { Copy, FileText, CheckCircle, Database, Download, Upload, AlertCircle, RefreshCw, Cloud, Lock, Code, MessageCircle, BookOpen, Compass, GitBranch, ArrowRight, Presentation, Smartphone, Zap, Heart, Layout, BarChart3, MousePointerClick, Lightbulb } from 'lucide-react';
 import { getSundaysInYear, DEFAULT_CLOUD_CONFIG } from '../constants';
 import { importData, saveCloudConfig, syncFromCloud } from '../services/storageService';
 
@@ -14,7 +14,7 @@ interface ReportExportProps {
 const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurch, currentUser }) => {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [copiedReport, setCopiedReport] = useState(false);
-  const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'DATA' | 'CLOUD' | 'HELP'>('WHATSAPP');
+  const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'DATA' | 'CLOUD' | 'HELP' | 'PORTFOLIO'>('WHATSAPP');
   const [importMsg, setImportMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);
   
   // Cloud Sync State
@@ -221,10 +221,10 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
   const reportText = generateReport();
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6">
       
       {/* Tabs */}
-      <div className="flex space-x-4 border-b border-gray-200 pb-2 overflow-x-auto">
+      <div className="flex space-x-4 border-b border-gray-200 pb-2 overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab('WHATSAPP')}
           className={`pb-2 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap outline-none ${activeTab === 'WHATSAPP' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
@@ -250,6 +250,12 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
           className={`pb-2 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap outline-none ${activeTab === 'HELP' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
           <span className="flex items-center gap-2"><BookOpen size={16}/> System Guide</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('PORTFOLIO')}
+          className={`pb-2 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap outline-none ${activeTab === 'PORTFOLIO' ? 'border-pink-600 text-pink-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <span className="flex items-center gap-2"><Presentation size={16}/> Product Case Study</span>
         </button>
       </div>
 
@@ -301,6 +307,202 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'PORTFOLIO' && (
+          <div className="space-y-12 animate-in fade-in pb-12">
+              {/* 1. Hero Section */}
+              <div className="bg-slate-900 text-white rounded-3xl p-8 md:p-12 relative overflow-hidden shadow-2xl">
+                  <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-500 rounded-full blur-3xl opacity-20 -translate-y-1/2 translate-x-1/2"></div>
+                  <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-pink-500 rounded-full blur-3xl opacity-10 translate-y-1/2 -translate-x-1/2"></div>
+                  
+                  <div className="relative z-10 max-w-2xl">
+                      <div className="flex items-center gap-3 mb-6">
+                          <span className="bg-indigo-500/20 text-indigo-200 px-3 py-1 rounded-full text-xs font-bold border border-indigo-500/30">PRODUCT CASE STUDY</span>
+                          <span className="text-slate-400 text-sm font-medium">UX / Engineering</span>
+                      </div>
+                      <h1 className="text-4xl md:text-5xl font-bold mb-6 leading-tight">Reimagining Church <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-pink-400">Attendance & Engagement</span></h1>
+                      <p className="text-slate-300 text-lg leading-relaxed mb-8">
+                          A mobile-first PWA designed to replace paper registries with automated workflows, real-time analytics, and seamless WhatsApp reporting.
+                      </p>
+                      <div className="flex flex-wrap gap-4">
+                          <div className="flex items-center gap-2 text-sm font-medium text-slate-300 bg-white/5 px-4 py-2 rounded-xl border border-white/10">
+                              <Zap size={16} className="text-yellow-400"/> Auto-Promotion Logic
+                          </div>
+                          <div className="flex items-center gap-2 text-sm font-medium text-slate-300 bg-white/5 px-4 py-2 rounded-xl border border-white/10">
+                              <Smartphone size={16} className="text-blue-400"/> Mobile First
+                          </div>
+                          <div className="flex items-center gap-2 text-sm font-medium text-slate-300 bg-white/5 px-4 py-2 rounded-xl border border-white/10">
+                              <Cloud size={16} className="text-cyan-400"/> Cloud Sync
+                          </div>
+                      </div>
+                  </div>
+              </div>
+
+              {/* 2. The Solution (UI Gallery) */}
+              <div>
+                  <div className="flex items-center gap-3 mb-6">
+                       <Layout className="text-indigo-600"/>
+                       <h2 className="text-2xl font-bold text-gray-900">The Solution: Visual User Flow</h2>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      
+                      {/* CARD 1: Dashboard */}
+                      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm hover:shadow-md transition-all">
+                           <div className="aspect-[9/16] bg-slate-50 rounded-2xl border-4 border-slate-200 overflow-hidden relative shadow-inner mb-6 flex flex-col">
+                               {/* Mock UI: Header */}
+                               <div className="h-12 bg-white border-b border-gray-200 flex items-center justify-between px-3">
+                                   <div className="w-16 h-3 bg-gray-200 rounded-full"></div>
+                                   <div className="w-6 h-6 bg-indigo-100 rounded-full"></div>
+                               </div>
+                               {/* Mock UI: Body */}
+                               <div className="p-3 space-y-3">
+                                   <div className="flex gap-2">
+                                       <div className="w-1/2 h-20 bg-indigo-500 rounded-xl"></div>
+                                       <div className="w-1/2 h-20 bg-white border border-gray-200 rounded-xl"></div>
+                                   </div>
+                                   <div className="h-32 bg-white border border-gray-200 rounded-xl"></div>
+                                   <div className="h-8 bg-gray-200 rounded-full w-2/3"></div>
+                                   <div className="space-y-2">
+                                       <div className="h-12 bg-white border border-gray-200 rounded-xl"></div>
+                                       <div className="h-12 bg-white border border-gray-200 rounded-xl"></div>
+                                   </div>
+                               </div>
+                               {/* Mock UI: Bottom Nav */}
+                               <div className="mt-auto h-12 bg-white border-t border-gray-200 flex justify-around items-center px-2">
+                                   <div className="w-6 h-6 bg-indigo-600 rounded-md"></div>
+                                   <div className="w-6 h-6 bg-gray-300 rounded-md"></div>
+                                   <div className="w-6 h-6 bg-gray-300 rounded-md"></div>
+                               </div>
+                           </div>
+                           <h3 className="font-bold text-gray-900 text-lg">1. Insightful Dashboard</h3>
+                           <p className="text-sm text-gray-500 mt-2">Immediate visibility into growth trends and retention health across 4 locations.</p>
+                      </div>
+
+                      {/* CARD 2: Attendance */}
+                      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm hover:shadow-md transition-all">
+                           <div className="aspect-[9/16] bg-slate-50 rounded-2xl border-4 border-slate-200 overflow-hidden relative shadow-inner mb-6 flex flex-col">
+                               {/* Mock UI: Search Header */}
+                               <div className="p-3 bg-white border-b border-gray-200 space-y-2">
+                                   <div className="flex justify-between">
+                                       <div className="w-24 h-6 bg-gray-200 rounded-md"></div>
+                                       <div className="w-16 h-6 bg-indigo-600 rounded-md"></div>
+                                   </div>
+                                   <div className="h-8 bg-gray-100 rounded-lg border border-gray-200"></div>
+                               </div>
+                               {/* Mock UI: List */}
+                               <div className="p-3 grid grid-cols-1 gap-2 overflow-hidden">
+                                   <div className="h-16 bg-indigo-600 rounded-xl shadow-md border-l-4 border-indigo-800 flex items-center px-3 gap-2">
+                                       <div className="flex-1">
+                                           <div className="w-20 h-3 bg-white/30 rounded mb-1"></div>
+                                           <div className="w-32 h-4 bg-white rounded"></div>
+                                       </div>
+                                       <div className="w-6 h-6 bg-white rounded-full"></div>
+                                   </div>
+                                   <div className="h-16 bg-white border border-gray-200 rounded-xl flex items-center px-3 gap-2 opacity-50">
+                                       <div className="flex-1">
+                                           <div className="w-20 h-3 bg-gray-100 rounded mb-1"></div>
+                                           <div className="w-24 h-4 bg-gray-200 rounded"></div>
+                                       </div>
+                                       <div className="w-6 h-6 bg-gray-100 rounded-full"></div>
+                                   </div>
+                                    <div className="h-16 bg-white border border-gray-200 rounded-xl flex items-center px-3 gap-2 opacity-50">
+                                       <div className="flex-1">
+                                           <div className="w-20 h-3 bg-gray-100 rounded mb-1"></div>
+                                           <div className="w-24 h-4 bg-gray-200 rounded"></div>
+                                       </div>
+                                       <div className="w-6 h-6 bg-gray-100 rounded-full"></div>
+                                   </div>
+                               </div>
+                           </div>
+                           <h3 className="font-bold text-gray-900 text-lg">2. Rapid Attendance</h3>
+                           <p className="text-sm text-gray-500 mt-2">One-tap check-ins with visual cues for 'Present' state. Includes 'Punctuality' gamification.</p>
+                      </div>
+
+                      {/* CARD 3: Export */}
+                      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm hover:shadow-md transition-all">
+                           <div className="aspect-[9/16] bg-slate-50 rounded-2xl border-4 border-slate-200 overflow-hidden relative shadow-inner mb-6 flex flex-col justify-center items-center p-6">
+                               <div className="w-full bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-4">
+                                   <div className="w-32 h-4 bg-gray-800 rounded mb-4"></div>
+                                   <div className="space-y-2">
+                                       <div className="w-full h-2 bg-gray-200 rounded"></div>
+                                       <div className="w-full h-2 bg-gray-200 rounded"></div>
+                                       <div className="w-2/3 h-2 bg-gray-200 rounded"></div>
+                                   </div>
+                               </div>
+                               <div className="w-full h-10 bg-[#25D366] rounded-lg shadow-md flex items-center justify-center text-white text-xs font-bold gap-2">
+                                   <MessageCircle size={14} fill="white"/> Share to WhatsApp
+                               </div>
+                           </div>
+                           <h3 className="font-bold text-gray-900 text-lg">3. Instant Reporting</h3>
+                           <p className="text-sm text-gray-500 mt-2">Auto-generates formatted text summaries for stakeholder communication, eliminating manual counting.</p>
+                      </div>
+
+                  </div>
+              </div>
+
+              {/* 3. Impact & Design Philosophy */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Impact */}
+                  <div className="bg-gradient-to-br from-indigo-50 to-white p-8 rounded-3xl border border-indigo-100">
+                      <div className="flex items-center gap-2 mb-6 text-indigo-700">
+                          <BarChart3 className="shrink-0"/>
+                          <h3 className="font-bold text-xl">User Impact</h3>
+                      </div>
+                      <div className="space-y-6">
+                          <div>
+                              <div className="text-4xl font-extrabold text-slate-800 mb-1">90%</div>
+                              <p className="text-sm font-medium text-slate-500">Reduction in weekly administrative time for Head Teachers.</p>
+                          </div>
+                          <div>
+                              <div className="text-4xl font-extrabold text-slate-800 mb-1">100%</div>
+                              <p className="text-sm font-medium text-slate-500">Accuracy in data retention and historical reporting.</p>
+                          </div>
+                          <div className="pt-4 border-t border-indigo-100">
+                              <p className="text-sm text-slate-600 italic">"The automated demotion/promotion logic means I no longer have to manually check birthdays or attendance streaks. The system just works."</p>
+                          </div>
+                      </div>
+                  </div>
+
+                  {/* Design Thinking */}
+                  <div className="bg-white p-8 rounded-3xl border border-gray-200">
+                      <div className="flex items-center gap-2 mb-6 text-purple-700">
+                          <Lightbulb className="shrink-0"/>
+                          <h3 className="font-bold text-xl">Product Thinking</h3>
+                      </div>
+                      <ul className="space-y-6">
+                          <li className="flex gap-4">
+                              <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center shrink-0">
+                                  <MousePointerClick size={20}/>
+                              </div>
+                              <div>
+                                  <h4 className="font-bold text-gray-900">Forgiving UI</h4>
+                                  <p className="text-sm text-gray-500 mt-1">Every action (attendance, archiving) is reversible. Toggles are used over complex forms to reduce friction on mobile.</p>
+                              </div>
+                          </li>
+                          <li className="flex gap-4">
+                              <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shrink-0">
+                                  <GitBranch size={20}/>
+                              </div>
+                              <div>
+                                  <h4 className="font-bold text-gray-900">Invisible Logic</h4>
+                                  <p className="text-sm text-gray-500 mt-1">Complex rules (e.g., 'Inconsistent' after 10 absences, Age promotion) happen in the background, keeping the UI clean.</p>
+                              </div>
+                          </li>
+                          <li className="flex gap-4">
+                              <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center shrink-0">
+                                  <Heart size={20}/>
+                              </div>
+                              <div>
+                                  <h4 className="font-bold text-gray-900">Empathy for Context</h4>
+                                  <p className="text-sm text-gray-500 mt-1">Designed for high-distraction environments (Sunday school). Large tap targets, high contrast, and offline-first resilience.</p>
+                              </div>
+                          </li>
+                      </ul>
+                  </div>
+              </div>
+          </div>
       )}
 
       {activeTab === 'HELP' && (
