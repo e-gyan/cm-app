@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppData, Member, MemberType, MemberStatus, Church } from '../types';
 import { getSundaysInYear } from '../constants';
-import { Search, Save, Check, Clock, Trophy, X, Calendar, UserPlus, Users2, Filter, Crown, ChevronDown } from 'lucide-react';
+import { Search, Save, Check, Clock, Trophy, X, Calendar, UserPlus, Users2, Filter, Crown, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { addMember, saveAttendance } from '../services/storageService';
 import { sanitizeInput } from '../services/securityService';
 
@@ -23,7 +23,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const [filterType, setFilterType] = useState<string>('All');
   
   // Internal Church Filter for Admins when activeChurch is 'CM'
-  const [internalChurchFilter, setInternalChurchFilter] = useState<Church>('UJ');
+  // Added 'All' as a valid option for the UI state
+  const [internalChurchFilter, setInternalChurchFilter] = useState<Church | 'All'>('UJ');
 
   const [newMemberName, setNewMemberName] = useState('');
   const [isAddingFNF, setIsAddingFNF] = useState(false);
@@ -34,10 +35,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const [attendanceMode, setAttendanceMode] = useState<'MEMBERS' | 'STAFF'>('MEMBERS');
 
   // Determine the effective church context
-  // If Admin (CM), use the internal filter. If Teacher, use their fixed activeChurch.
-  const effectiveChurch: Church = activeChurch === 'CM' ? internalChurchFilter : activeChurch;
+  const effectiveChurch = activeChurch === 'CM' ? internalChurchFilter : activeChurch;
 
-  const enablePunctuality = (attendanceMode === 'MEMBERS' && effectiveChurch === 'UJ') || attendanceMode === 'STAFF';
+  const enablePunctuality = (attendanceMode === 'MEMBERS' && (effectiveChurch === 'UJ' || effectiveChurch === 'All')) || attendanceMode === 'STAFF';
   const sundays2026 = useMemo(() => getSundaysInYear(2026), []);
 
   useEffect(() => {
@@ -62,45 +62,37 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   // Load attendance data when context changes
   useEffect(() => {
     if (selectedDate) {
-      if (attendanceMode === 'STAFF') {
-          // If Staff mode, load staff attendance for the effective church
-          const record = data.attendance.find(r => r.date === selectedDate && r.churchId === effectiveChurch);
-          
-          if (record) {
-             const staffPresent = record.presentMemberIds.filter(id => {
-                 const m = data.members.find(mem => mem.id === id);
-                 return m && ['Teacher','Helper','Volunteer'].includes(m.type);
-             });
-             const staffPunctual = (record.punctualMemberIds || []).filter(id => {
-                const m = data.members.find(mem => mem.id === id);
-                return m && ['Teacher','Helper','Volunteer'].includes(m.type);
-            });
-             setPresentIds(new Set(staffPresent));
-             setPunctualIds(new Set(staffPunctual));
-          } else {
-             setPresentIds(new Set());
-             setPunctualIds(new Set());
-          }
-      } else {
-          // Member Mode
-          const record = data.attendance.find(r => r.date === selectedDate && r.churchId === effectiveChurch);
-          if (record) {
-            const membersPresent = record.presentMemberIds.filter(id => {
-                const m = data.members.find(mem => mem.id === id);
-                return m && !['Teacher','Helper','Volunteer'].includes(m.type);
-            });
-            const membersPunctual = (record.punctualMemberIds || []).filter(id => {
-                const m = data.members.find(mem => mem.id === id);
-                return m && !['Teacher','Helper','Volunteer'].includes(m.type);
-            });
+      const branchesToLoad: Church[] = effectiveChurch === 'All' 
+        ? ['UJ', 'I', 'K', 'LJ'] 
+        : [effectiveChurch as Church];
 
-            setPresentIds(new Set(membersPresent));
-            setPunctualIds(new Set(membersPunctual));
-          } else {
-            setPresentIds(new Set<string>());
-            setPunctualIds(new Set<string>());
+      const combinedPresent = new Set<string>();
+      const combinedPunctual = new Set<string>();
+
+      branchesToLoad.forEach(churchId => {
+          const record = data.attendance.find(r => r.date === selectedDate && r.churchId === churchId);
+          if (record) {
+             const targetIds = record.presentMemberIds.filter(id => {
+                 const m = data.members.find(mem => mem.id === id);
+                 if (!m) return false;
+                 const isStaff = ['Teacher','Helper','Volunteer'].includes(m.type);
+                 return attendanceMode === 'STAFF' ? isStaff : !isStaff;
+             });
+
+             const targetPunctual = (record.punctualMemberIds || []).filter(id => {
+                const m = data.members.find(mem => mem.id === id);
+                if (!m) return false;
+                const isStaff = ['Teacher','Helper','Volunteer'].includes(m.type);
+                return attendanceMode === 'STAFF' ? isStaff : !isStaff;
+             });
+
+             targetIds.forEach(id => combinedPresent.add(id));
+             targetPunctual.forEach(id => combinedPunctual.add(id));
           }
-      }
+      });
+
+      setPresentIds(combinedPresent);
+      setPunctualIds(combinedPunctual);
     }
   }, [selectedDate, data.attendance, effectiveChurch, attendanceMode, data.members]);
 
@@ -126,7 +118,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
     if (newPunctual.has(id)) {
       newPunctual.delete(id);
     } else {
-      if (newPunctual.size >= 3) return;
+      // In 'All' mode, we might want to limit per church, but global limit is safer for UI
+      if (effectiveChurch !== 'All' && newPunctual.size >= 3) return; 
+      
       newPunctual.add(id);
       if (!presentIds.has(id)) {
         const newPresent = new Set(presentIds);
@@ -140,45 +134,63 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const handleSave = () => {
     if (!selectedDate) return;
 
-    // Load existing record for this date/church to preserve the "other" group (e.g. if we are editing Staff, don't wipe Members)
-    const existingRecord = data.attendance.find(r => r.date === selectedDate && r.churchId === effectiveChurch);
-    
-    let finalPresent: string[] = [];
-    let finalPunctual: string[] = [];
+    const branchesToSave: Church[] = effectiveChurch === 'All' 
+        ? ['UJ', 'I', 'K', 'LJ'] 
+        : [effectiveChurch as Church];
 
-    if (existingRecord) {
-        if (attendanceMode === 'STAFF') {
-            // Preserve existing Members
-            const existingMembers = existingRecord.presentMemberIds.filter(id => {
-                const m = data.members.find(mem => mem.id === id);
-                return m && !['Teacher','Helper','Volunteer'].includes(m.type);
-            });
-            const existingMembersPunctual = (existingRecord.punctualMemberIds || []).filter(id => {
-                const m = data.members.find(mem => mem.id === id);
-                return m && !['Teacher','Helper','Volunteer'].includes(m.type);
-            });
-            finalPresent = [...existingMembers, ...Array.from(presentIds)];
-            finalPunctual = [...existingMembersPunctual, ...Array.from(punctualIds)];
+    branchesToSave.forEach(churchId => {
+        // Load existing record to preserve the "other" group (e.g. if editing Staff, keep Members)
+        const existingRecord = data.attendance.find(r => r.date === selectedDate && r.churchId === churchId);
+        
+        // Filter the current UI state to find IDs belonging to THIS church
+        const currentBranchPresentIds: string[] = [...presentIds].filter(id => {
+            const m = data.members.find(mem => mem.id === id);
+            return m && m.assignedChurch === churchId;
+        });
+
+        const currentBranchPunctualIds: string[] = [...punctualIds].filter(id => {
+            const m = data.members.find(mem => mem.id === id);
+            return m && m.assignedChurch === churchId;
+        });
+
+        let finalPresent: string[] = [];
+        let finalPunctual: string[] = [];
+
+        if (existingRecord) {
+            if (attendanceMode === 'STAFF') {
+                // Preserve existing Members
+                const existingMembers = existingRecord.presentMemberIds.filter(id => {
+                    const m = data.members.find(mem => mem.id === id);
+                    return m && !['Teacher','Helper','Volunteer'].includes(m.type);
+                });
+                const existingMembersPunctual = (existingRecord.punctualMemberIds || []).filter(id => {
+                    const m = data.members.find(mem => mem.id === id);
+                    return m && !['Teacher','Helper','Volunteer'].includes(m.type);
+                });
+                finalPresent = [...existingMembers, ...currentBranchPresentIds];
+                finalPunctual = [...existingMembersPunctual, ...currentBranchPunctualIds];
+            } else {
+                // Preserve existing Staff
+                const existingStaff = existingRecord.presentMemberIds.filter(id => {
+                    const m = data.members.find(mem => mem.id === id);
+                    return m && ['Teacher','Helper','Volunteer'].includes(m.type);
+                });
+                const existingStaffPunctual = (existingRecord.punctualMemberIds || []).filter(id => {
+                    const m = data.members.find(mem => mem.id === id);
+                    return m && ['Teacher','Helper','Volunteer'].includes(m.type);
+                });
+                finalPresent = [...existingStaff, ...currentBranchPresentIds];
+                finalPunctual = [...existingStaffPunctual, ...currentBranchPunctualIds];
+            }
         } else {
-            // Preserve existing Staff
-            const existingStaff = existingRecord.presentMemberIds.filter(id => {
-                const m = data.members.find(mem => mem.id === id);
-                return m && ['Teacher','Helper','Volunteer'].includes(m.type);
-            });
-            const existingStaffPunctual = (existingRecord.punctualMemberIds || []).filter(id => {
-                const m = data.members.find(mem => mem.id === id);
-                return m && ['Teacher','Helper','Volunteer'].includes(m.type);
-            });
-            finalPresent = [...existingStaff, ...Array.from(presentIds)];
-            finalPunctual = [...existingStaffPunctual, ...Array.from(punctualIds)];
+            finalPresent = currentBranchPresentIds;
+            finalPunctual = currentBranchPunctualIds;
         }
-    } else {
-        finalPresent = Array.from(presentIds);
-        finalPunctual = Array.from(punctualIds);
-    }
 
-    saveAttendance(selectedDate, effectiveChurch, finalPresent, finalPunctual);
-    setSuccessMsg(`Saved for ${effectiveChurch}!`);
+        saveAttendance(selectedDate, churchId, finalPresent, finalPunctual);
+    });
+
+    setSuccessMsg(`Saved!`);
     onUpdate();
     setTimeout(() => setSuccessMsg(''), 2000);
   };
@@ -186,7 +198,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const handleAddFNF = () => {
     if (!newMemberName.trim()) return;
     const cleanName = sanitizeInput(newMemberName);
-    const newMember = addMember(cleanName, MemberType.FNF, effectiveChurch, '');
+    // If 'All' is selected, default new FNF to UJ (or ask user, but keeping simple for now)
+    const targetChurch = effectiveChurch === 'All' ? 'UJ' : effectiveChurch as Church;
+    
+    const newMember = addMember(cleanName, MemberType.FNF, targetChurch, '');
     const newSet = new Set(presentIds);
     newSet.add(newMember.id);
     setPresentIds(newSet);
@@ -198,10 +213,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   
   // --- LIST GENERATION ---
   let membersToList: Member[] = [];
+  const targetChurches = effectiveChurch === 'All' ? ['UJ', 'I', 'K', 'LJ'] : [effectiveChurch];
+
   if (attendanceMode === 'STAFF') {
-      membersToList = data.members.filter(m => m.status === MemberStatus.ACTIVE && m.assignedChurch === effectiveChurch && ['Teacher','Helper','Volunteer'].includes(m.type));
+      membersToList = data.members.filter(m => m.status === MemberStatus.ACTIVE && targetChurches.includes(m.assignedChurch) && ['Teacher','Helper','Volunteer'].includes(m.type));
   } else {
-      membersToList = data.members.filter(m => ['Active','Not Active'].includes(m.status) && m.assignedChurch === effectiveChurch && !['Teacher','Helper','Volunteer'].includes(m.type));
+      membersToList = data.members.filter(m => ['Active','Not Active'].includes(m.status) && targetChurches.includes(m.assignedChurch) && !['Teacher','Helper','Volunteer'].includes(m.type));
   }
 
   const filteredMembers = membersToList.filter(m => {
@@ -211,10 +228,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   });
 
   const sortedMembers = [...filteredMembers].sort((a, b) => {
+    // Sort by Church first if in 'All' view
+    if (effectiveChurch === 'All' && a.assignedChurch !== b.assignedChurch) {
+        return a.assignedChurch.localeCompare(b.assignedChurch);
+    }
+    
     if (a.transferPendingDate && !b.transferPendingDate) return -1;
     if (!a.transferPendingDate && b.transferPendingDate) return 1;
     
-    // Sort logic: Punctual > Present > Type > Name
     if (enablePunctuality) {
         const aP = punctualIds.has(a.id);
         const bP = punctualIds.has(b.id);
@@ -228,7 +249,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   });
 
   const displayCount = filteredMembers.filter(m => presentIds.has(m.id)).length;
-  const graduatingMembers = sortedMembers.filter(m => m.transferPendingDate);
   
   // Leaderboard Calc
   const leaderboardData = useMemo(() => {
@@ -239,7 +259,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
       let relevantRecords = data.attendance.filter(r => {
           const rDate = new Date(r.date);
           const isMonthMatch = leaderboardTimeframe === 'CM' || (rDate.getMonth() === currentMonth && rDate.getFullYear() === currentYear);
-          return r.churchId === effectiveChurch && isMonthMatch;
+          // Match church ID
+          const isChurchMatch = effectiveChurch === 'All' ? true : r.churchId === effectiveChurch;
+          return isChurchMatch && isMonthMatch;
       });
 
       const scores: Record<string, number> = {};
@@ -262,45 +284,43 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   }, [data.attendance, effectiveChurch, attendanceMode, leaderboardTimeframe, data.members]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] gap-4">
+    <div className="flex flex-col h-[calc(100vh-130px)] md:h-[calc(100vh-140px)] relative overflow-hidden">
       
-      {/* 1. TOP BAR: Date & Save & Mode */}
-      <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-20">
-        
-        {/* Top Row: Date & Main Actions */}
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4 w-full">
-             
-             <div className="flex flex-col md:flex-row gap-4 w-full">
-                {/* Admin Church Selector - Redesigned */}
+      {/* 1. TOP BAR: Compact for Mobile */}
+      <div className="shrink-0 space-y-3 z-20 pb-2">
+          
+          {/* Main Controls */}
+          <div className="bg-white rounded-3xl p-3 md:p-4 shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-3">
+            
+            <div className="flex gap-2 w-full items-center">
+                {/* Admin Church Selector */}
                 {activeChurch === 'CM' && (
-                    <div className="relative w-full md:w-48">
-                        <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-indigo-600">
-                            <Crown size={18} />
-                        </div>
-                         <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
-                            <ChevronDown size={16} />
+                    <div className="relative w-2/5 md:w-48 shrink-0">
+                        <div className="absolute inset-y-0 left-0 flex items-center pl-2 pointer-events-none text-indigo-600">
+                            <Crown size={16} />
                         </div>
                         <select
                             value={internalChurchFilter}
-                            onChange={(e) => setInternalChurchFilter(e.target.value as Church)}
-                            className="w-full bg-indigo-50 border border-indigo-100 text-indigo-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block pl-10 pr-10 p-3 appearance-none cursor-pointer transition-colors"
+                            onChange={(e) => setInternalChurchFilter(e.target.value as Church | 'All')}
+                            className="w-full bg-indigo-50 border border-indigo-100 text-indigo-900 text-xs md:text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block pl-8 p-3 appearance-none cursor-pointer"
                         >
+                            <option value="All">All Branches</option>
                             {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(church => (
-                                <option key={church} value={church}>{church} Church</option>
+                                <option key={church} value={church}>{church}</option>
                             ))}
                         </select>
                     </div>
                 )}
 
                  {/* Date Selector */}
-                <div className="relative w-full md:w-64">
+                <div className="relative flex-1">
                     <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
-                        <Calendar size={18} />
+                        <Calendar size={16} />
                     </div>
                     <select 
                         value={selectedDate} 
                         onChange={(e) => setSelectedDate(e.target.value)}
-                        className="bg-slate-50 border border-slate-200 text-slate-800 text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-10 p-3 appearance-none cursor-pointer hover:bg-slate-100 transition-colors"
+                        className="bg-slate-50 border border-slate-200 text-slate-800 text-xs md:text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-9 p-3 appearance-none cursor-pointer truncate"
                     >
                         {sundays2026.map(d => {
                         const strDate = d.toISOString().split('T')[0];
@@ -309,88 +329,84 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                         })}
                     </select>
                 </div>
-             </div>
 
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2 w-full md:w-auto mt-2 md:mt-0">
+                {/* Desktop Save Button (Hidden on Mobile) */}
+                <button 
+                    onClick={handleSave}
+                    className="hidden md:flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95"
+                >
+                    <Save size={18} /> <span>Save</span>
+                </button>
+            </div>
+            
+            {/* Desktop-only secondary actions */}
+            <div className="hidden md:flex items-center gap-2 w-full md:w-auto">
                 {isAdmin && (
                     <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
                         <button onClick={() => { setAttendanceMode('MEMBERS'); setFilterType('All'); }} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${attendanceMode === 'MEMBERS' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-500'}`}>Members</button>
                         <button onClick={() => { setAttendanceMode('STAFF'); setFilterType('All'); }} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${attendanceMode === 'STAFF' ? 'bg-white shadow-sm text-purple-700' : 'text-slate-500'}`}>Staff</button>
                     </div>
                 )}
-
                 {enablePunctuality && (
                         <button onClick={() => setShowLeaderboard(true)} className="p-3 text-amber-600 bg-amber-50 rounded-xl hover:bg-amber-100 transition-colors border border-amber-100" title="Leaderboard">
                             <Trophy size={20} />
                         </button>
                 )}
-                
                 {attendanceMode === 'MEMBERS' && (
                     <button onClick={() => setIsAddingFNF(!isAddingFNF)} className="p-3 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-100" title="Add FNF">
                             <UserPlus size={20} />
                     </button>
                 )}
-                
-                <button 
-                    onClick={handleSave}
-                    className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transition-all active:scale-95"
-                >
-                    <Save size={18} /> <span>Save</span>
-                </button>
             </div>
-        </div>
-      </div>
+          </div>
 
-      {/* 2. SECOND BAR: Filters & Search */}
-      <div className="bg-white/80 backdrop-blur-md rounded-3xl p-2 shadow-sm border border-slate-100 sticky top-0 z-10 shrink-0">
-         <div className="flex flex-col gap-2">
-            <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
-                <input
-                    type="text"
-                    className="w-full pl-10 pr-4 py-2 bg-transparent border-none text-sm focus:ring-0 placeholder:text-slate-400"
-                    placeholder={`Search ${filteredMembers.length} names...`}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                />
-            </div>
-            
-            {/* Horizontal Filter Scroll */}
-            <div className="flex gap-2 overflow-x-auto pb-2 px-2 no-scrollbar">
-                <button onClick={() => setFilterType('All')} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${filterType === 'All' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>All</button>
-                {(attendanceMode === 'STAFF' ? [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER] : [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT]).map(type => (
-                    <button key={type} onClick={() => setFilterType(type)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterType === type ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>{type}</button>
-                ))}
-            </div>
-
-            {/* Stats Row */}
-            <div className="flex justify-between items-center px-3 pt-2 border-t border-slate-100">
-                <div className="text-xs font-semibold text-slate-400">{filteredMembers.length} List • {effectiveChurch}</div>
-                <div className="flex gap-4">
-                     {enablePunctuality && (
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md">
-                            <Clock size={12}/> {punctualIds.size}/3
-                        </div>
-                     )}
-                     <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">
-                        <Check size={12}/> {displayCount} Present
-                     </div>
+          {/* Search & Filter Bar */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl md:rounded-3xl p-2 shadow-sm border border-slate-100">
+             <div className="flex flex-col gap-2">
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/>
+                    <input
+                        type="text"
+                        className="w-full pl-9 pr-4 py-2 bg-transparent border-none text-sm focus:ring-0 placeholder:text-slate-400"
+                        placeholder={`Search ${filteredMembers.length} names...`}
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
                 </div>
-            </div>
-         </div>
+                
+                {/* Horizontal Filter Scroll */}
+                <div className="flex gap-2 overflow-x-auto pb-1 px-1 no-scrollbar items-center">
+                    <button onClick={() => setFilterType('All')} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${filterType === 'All' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>All</button>
+                    {(attendanceMode === 'STAFF' ? [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER] : [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT]).map(type => (
+                        <button key={type} onClick={() => setFilterType(type)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterType === type ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>{type}</button>
+                    ))}
+                    <div className="md:hidden flex items-center gap-1 border-l pl-2 ml-1">
+                         {isAdmin && (
+                            <button onClick={() => { setAttendanceMode(attendanceMode === 'MEMBERS' ? 'STAFF' : 'MEMBERS'); }} className={`px-2 py-1 text-[10px] font-bold rounded border ${attendanceMode === 'STAFF' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-white text-slate-500'}`}>
+                                {attendanceMode === 'MEMBERS' ? 'Staff?' : 'Mems?'}
+                            </button>
+                         )}
+                    </div>
+                </div>
+             </div>
+          </div>
       </div>
 
       {isAddingFNF && (
-        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 flex gap-2 animate-in slide-in-from-top-2">
+        <div className="shrink-0 p-4 mb-2 bg-amber-50 rounded-2xl border border-amber-200 flex gap-2 animate-in slide-in-from-top-2">
           <input type="text" placeholder="Visitor Name" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} className="flex-1 p-2 border border-amber-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white" autoFocus onKeyDown={(e) => e.key === 'Enter' && handleAddFNF()}/>
           <button onClick={handleAddFNF} className="px-4 bg-amber-500 text-white rounded-xl font-bold">Add</button>
         </div>
       )}
 
-      {/* 3. MAIN GRID (Scrollable) */}
-      <div className="flex-1 overflow-y-auto pr-1 pb-10">
-             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {/* 2. MAIN GRID (Scrollable Area) - Fills remaining space */}
+      <div className="flex-1 overflow-y-auto pr-1 pb-24 md:pb-10">
+             {effectiveChurch === 'All' && filteredMembers.length > 0 && (
+                <div className="mb-2 text-center text-xs font-bold text-slate-400 uppercase tracking-widest">
+                    Viewing All Branches ({filteredMembers.length})
+                </div>
+             )}
+             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
                  {sortedMembers.map(member => {
                     const isPresent = presentIds.has(member.id);
                     const isPunctual = punctualIds.has(member.id);
@@ -411,9 +427,16 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                             <div className="flex justify-between items-start">
                                 <div>
                                     <h4 className={`font-bold text-lg leading-tight ${isPresent ? 'text-white' : 'text-slate-800'}`}>{member.name}</h4>
-                                    <p className={`text-xs font-medium mt-1 uppercase tracking-wider ${isPresent ? 'text-indigo-200' : 'text-slate-400'}`}>
-                                        {member.type} {isGraduating && '• Graduating'}
-                                    </p>
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                         <p className={`text-xs font-medium uppercase tracking-wider ${isPresent ? 'text-indigo-200' : 'text-slate-400'}`}>
+                                            {member.type}
+                                         </p>
+                                         {effectiveChurch === 'All' && (
+                                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isPresent ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                                 {member.assignedChurch}
+                                             </span>
+                                         )}
+                                    </div>
                                 </div>
                                 <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${isPresent ? 'bg-white text-indigo-600' : 'bg-slate-100 text-slate-300'}`}>
                                     <Check size={14} strokeWidth={4} />
@@ -425,14 +448,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                                 {enablePunctuality && (
                                     <button 
                                         onClick={(e) => handlePunctualToggle(e, member.id)}
-                                        disabled={!isPunctual && punctualIds.size >= 3}
+                                        disabled={!isPunctual && effectiveChurch !== 'All' && punctualIds.size >= 3}
                                         className={`p-1.5 rounded-lg transition-all ${
                                             isPunctual 
                                                 ? 'bg-amber-400 text-white shadow-sm' 
                                                 : isPresent 
                                                     ? 'bg-indigo-500 text-indigo-300 hover:bg-indigo-400 hover:text-white' 
                                                     : 'bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-500'
-                                        } ${(!isPunctual && punctualIds.size >= 3) ? 'opacity-30 cursor-not-allowed' : ''}`}
+                                        } ${(!isPunctual && effectiveChurch !== 'All' && punctualIds.size >= 3) ? 'opacity-30 cursor-not-allowed' : ''}`}
                                     >
                                         <Trophy size={16} fill={isPunctual ? "currentColor" : "none"} />
                                     </button>
@@ -448,17 +471,45 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                  })}
              </div>
       </div>
+      
+      {/* 3. MOBILE FLOATING ACTION BAR (Fixed above bottom nav) */}
+      <div className="md:hidden fixed bottom-20 left-4 right-4 z-40 flex items-center justify-between gap-3 p-2 bg-slate-900/90 backdrop-blur-xl rounded-full shadow-2xl border border-slate-700/50 animate-in slide-in-from-bottom-4">
+          <div className="flex items-center gap-2 pl-2">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  <CheckCircle2 size={14} /> 
+                  <span className="text-sm font-bold">{displayCount}</span>
+              </div>
+              {enablePunctuality && (
+                 <button onClick={() => setShowLeaderboard(true)} className="p-2 text-amber-400 hover:bg-white/10 rounded-full transition-colors">
+                    <Trophy size={20} />
+                 </button>
+              )}
+              {attendanceMode === 'MEMBERS' && (
+                 <button onClick={() => setIsAddingFNF(true)} className="p-2 text-indigo-400 hover:bg-white/10 rounded-full transition-colors">
+                    <UserPlus size={20} />
+                 </button>
+              )}
+          </div>
+          
+          <button 
+             onClick={handleSave}
+             className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-full font-bold shadow-lg active:scale-95 transition-transform"
+          >
+             <span>Save</span>
+             <Save size={16} />
+          </button>
+      </div>
 
       {successMsg && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 z-50">
-            <Check size={18} className="text-green-400" />
-            <span className="font-bold">{successMsg}</span>
+        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-800/90 backdrop-blur text-white px-8 py-4 rounded-2xl shadow-2xl flex flex-col items-center gap-2 animate-in fade-in zoom-in-95 z-50">
+            <CheckCircle2 size={32} className="text-green-400" />
+            <span className="font-bold text-lg">{successMsg}</span>
         </div>
       )}
 
       {/* Leaderboard Modal */}
       {showLeaderboard && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
               <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95">
                   <div className="p-6 bg-gradient-to-br from-amber-400 to-orange-500 text-white relative overflow-hidden">
                        <div className="relative z-10 flex justify-between items-center">

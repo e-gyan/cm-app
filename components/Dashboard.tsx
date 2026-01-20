@@ -4,7 +4,7 @@ import { updateTargets } from '../services/storageService';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
 } from 'recharts';
-import { Users, TrendingUp, Calendar, Trophy, Clock, ArrowUpRight, ArrowDownRight, Activity, Target, X, Save, Percent } from 'lucide-react';
+import { Users, TrendingUp, TrendingDown, Calendar, Trophy, Clock, ArrowUpRight, ArrowDownRight, Activity, Target, X, Save, Percent } from 'lucide-react';
 
 interface DashboardProps {
   data: AppData;
@@ -38,6 +38,33 @@ const StatCard: React.FC<{ title: string; value: string | number; icon: React.Re
     </div>
   </div>
 );
+
+const CustomChartTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-white p-4 rounded-2xl shadow-xl border border-slate-100 animate-in fade-in zoom-in-95">
+          <p className="text-slate-500 text-xs font-bold mb-2 uppercase tracking-wider">{label}</p>
+          <div className="flex items-center gap-3">
+              <div className="flex flex-col">
+                   <span className="text-2xl font-extrabold text-indigo-600 leading-none">{data.count}</span>
+                   <span className="text-[10px] font-bold text-slate-400">Attendees</span>
+              </div>
+              {data.growth !== 0 && (
+                  <div className={`flex flex-col items-end pl-3 border-l border-slate-100 ${data.growth > 0 ? 'text-green-600' : 'text-rose-500'}`}>
+                      <div className="flex items-center gap-0.5">
+                          {data.growth > 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                          <span className="text-sm font-bold">{Math.abs(data.growth)}%</span>
+                      </div>
+                      <span className="text-[10px] font-medium text-slate-400">vs prev</span>
+                  </div>
+              )}
+          </div>
+        </div>
+      );
+    }
+    return null;
+};
 
 // --- ADMIN DASHBOARD ---
 const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> = ({ data, onUpdateTargets }) => {
@@ -276,14 +303,28 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
             .filter(r => r.churchId === activeChurch)
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         
-        // Trend Data
-        const last5 = attendance.slice(-5).map(r => {
-            const count = r.presentMemberIds.filter(id => {
-                 const m = data.members.find(mem => mem.id === id);
-                 return m && !['Teacher','Helper','Volunteer'].includes(m.type);
-            }).length;
+        // Helper to get count from a record
+        const getCount = (r: any) => r.presentMemberIds.filter((id: string) => {
+             const m = data.members.find(mem => mem.id === id);
+             return m && !['Teacher','Helper','Volunteer'].includes(m.type);
+        }).length;
+
+        // Trend Data with Growth Calculation
+        const last5 = attendance.slice(-5).map((r, i) => {
+            const count = getCount(r);
             const date = new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            return { name: date, count };
+            
+            // Calculate growth compared to previous Sunday in the sorted list
+            let growth = 0;
+            const originalIndex = attendance.indexOf(r);
+            
+            if (originalIndex > 0) {
+                const prevRecord = attendance[originalIndex - 1];
+                const prevCount = getCount(prevRecord);
+                growth = prevCount === 0 ? (count > 0 ? 100 : 0) : Math.round(((count - prevCount) / prevCount) * 100);
+            }
+
+            return { name: date, count, growth };
         });
 
         // YTD Calculation
@@ -291,10 +332,7 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
         const ytd = attendance
             .filter(r => new Date(r.date).getFullYear() === currentYear)
             .reduce((sum, r) => {
-                return sum + r.presentMemberIds.filter(id => {
-                    const m = data.members.find(mem => mem.id === id);
-                    return m && !['Teacher','Helper','Volunteer'].includes(m.type);
-                }).length;
+                return sum + getCount(r);
             }, 0);
 
         const avg = last5.length ? Math.round(last5.reduce((acc, curr) => acc + curr.count, 0) / last5.length) : 0;
@@ -378,10 +416,7 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
                                 <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
-                                <Tooltip 
-                                    cursor={{stroke: '#4f46e5', strokeWidth: 1, strokeDasharray: '4 4'}} 
-                                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '12px' }} 
-                                />
+                                <Tooltip content={<CustomChartTooltip />} cursor={{stroke: '#4f46e5', strokeWidth: 1, strokeDasharray: '4 4'}} />
                                 <Area type="monotone" dataKey="count" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
                             </AreaChart>
                         </ResponsiveContainer>
