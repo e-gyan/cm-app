@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { authenticateUser } from '../services/storageService';
+import React, { useState, useEffect } from 'react';
+import { authenticateUser, getAppData } from '../services/storageService';
 import { Member } from '../types';
 import { ArrowRight, AlertCircle, Users, Sparkles } from 'lucide-react';
 import { sanitizeInput } from '../services/securityService';
@@ -13,6 +13,14 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [passcode, setPasscode] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Check if data is loaded or default
+  const [dataCount, setDataCount] = useState(0);
+
+  useEffect(() => {
+      const data = getAppData();
+      setDataCount(data.members.length);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,7 +72,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         </div>
 
         {/* Right Side - Form */}
-        <div className="w-full md:w-1/2 p-8 md:p-12 flex flex-col justify-center">
+        <div className="w-full md:w-1/2 p-8 md:p-12 flex flex-col justify-center relative">
+            
             <div className="max-w-sm mx-auto w-full">
                 <div className="text-center mb-10">
                     <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm md:hidden">
@@ -72,6 +81,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     </div>
                     <h2 className="text-2xl font-bold text-gray-900">Welcome Back</h2>
                     <p className="text-gray-500 mt-2">Please sign in to continue</p>
+                    {dataCount <= 1 && (
+                        <span className="inline-block mt-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded uppercase">
+                            Local Data Empty
+                        </span>
+                    )}
                 </div>
 
                 <form onSubmit={handleLogin} className="space-y-6">
@@ -79,7 +93,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                         <label className="text-sm font-semibold text-gray-700 ml-1">Full Name</label>
                         <input 
                             type="text" 
-                            placeholder="e.g. John Doe"
+                            placeholder="provide your name"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 focus:bg-white outline-none transition-all duration-200"
@@ -105,7 +119,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                             <span className="font-medium">{error}</span>
                         </div>
                     )}
-
+                    
                     <button 
                         type="submit"
                         disabled={isLoading}

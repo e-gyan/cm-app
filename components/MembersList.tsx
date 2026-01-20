@@ -526,7 +526,9 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                 <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide flex items-center gap-2">
                     <Building2 size={18}/> Church Filter
                 </h3>
-                <div className="flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto no-scrollbar">
+                
+                {/* Desktop: Horizontal Scroll */}
+                <div className="hidden md:flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto no-scrollbar">
                     {(['All', 'UJ', 'I', 'K', 'LJ'] as const).map((c) => (
                         <button 
                             key={c} 
@@ -537,6 +539,21 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                         </button>
                     ))}
                 </div>
+
+                {/* Mobile: Dropdown */}
+                <div className="md:hidden w-full relative">
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500"><ChevronDown size={16} /></div>
+                    <select
+                        value={churchFilter}
+                        onChange={(e) => { setChurchFilter(e.target.value as Church | 'All'); setSelectedIds(new Set()); }}
+                        className="w-full appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-bold rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    >
+                         <option value="All">All Branches</option>
+                         {(['UJ', 'I', 'K', 'LJ'] as const).map((c) => (
+                             <option key={c} value={c}>{c} Church</option>
+                         ))}
+                    </select>
+                </div>
             </div>
         )}
 
@@ -545,12 +562,30 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
             <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide flex items-center gap-2">
                 <Filter size={18}/> {hubTab === 'TEACHERS' ? 'Role' : 'Type'} Filter
             </h3>
-            <div className="flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto no-scrollbar">
-            {['CM', ...getCreationRoleOptions(), 'ARCHIVED'].map((f) => (
-                <button key={f} onClick={() => { setFilter(f); setSelectedIds(new Set()); }} className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${filter === f ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
-                    {f === 'CM' ? 'All Active' : f}
-                </button>
-            ))}
+            
+            {/* Desktop: Horizontal Scroll */}
+            <div className="hidden md:flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto no-scrollbar">
+                {['CM', ...getCreationRoleOptions(), 'ARCHIVED'].map((f) => (
+                    <button key={f} onClick={() => { setFilter(f); setSelectedIds(new Set()); }} className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${filter === f ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
+                        {f === 'CM' ? 'All Active' : f}
+                    </button>
+                ))}
+            </div>
+
+            {/* Mobile: Dropdown */}
+            <div className="md:hidden w-full relative">
+                 <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500"><ChevronDown size={16} /></div>
+                 <select
+                    value={filter}
+                    onChange={(e) => { setFilter(e.target.value); setSelectedIds(new Set()); }}
+                    className="w-full appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-bold rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                 >
+                    <option value="CM">All Active</option>
+                    {getCreationRoleOptions().map((f) => (
+                        <option key={f} value={f}>{f}</option>
+                    ))}
+                    <option value="ARCHIVED">Archived</option>
+                 </select>
             </div>
         </div>
       </div>
@@ -569,10 +604,10 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
       {canManage && !isCreateModalOpen && !isEditModalOpen && (
         <button 
             onClick={openCreateModal}
-            className="fixed bottom-8 right-8 bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-full shadow-lg transition-transform hover:scale-110 z-40 active:scale-95"
+            className="fixed bottom-24 right-4 md:bottom-8 md:right-8 bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-full shadow-lg shadow-indigo-300 transition-all hover:scale-110 z-40 active:scale-95 flex items-center justify-center"
             title="Create New Member/Teacher"
         >
-            <Plus size={24} />
+            <Plus size={28} />
         </button>
       )}
 

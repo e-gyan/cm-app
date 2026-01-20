@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { AppData, MemberType, MemberStatus, Church, Member } from '../types';
+import { updateTargets } from '../services/storageService';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
 } from 'recharts';
-import { Users, TrendingUp, Calendar, Trophy, Clock, ArrowUpRight, ArrowDownRight, Activity } from 'lucide-react';
+import { Users, TrendingUp, Calendar, Trophy, Clock, ArrowUpRight, ArrowDownRight, Activity, Target, X, Save, Percent } from 'lucide-react';
 
 interface DashboardProps {
   data: AppData;
@@ -11,7 +12,7 @@ interface DashboardProps {
   currentUser: Member;
 }
 
-const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode; colorClass: string; trend?: number; subtitle?: string }> = ({ title, value, icon, colorClass, trend, subtitle }) => (
+const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode; colorClass: string; trend?: number; subtitle?: string; target?: number; progressValue?: number }> = ({ title, value, icon, colorClass, trend, subtitle, target, progressValue }) => (
   <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-300 group">
     <div className="flex justify-between items-start mb-4">
         <div className={`p-3.5 rounded-2xl ${colorClass} text-white shadow-md group-hover:scale-110 transition-transform duration-300`}>
@@ -25,16 +26,32 @@ const StatCard: React.FC<{ title: string; value: string | number; icon: React.Re
         )}
     </div>
     <div>
-      <h3 className="text-3xl font-extrabold text-slate-800 tracking-tight">{value}</h3>
+      <h3 className="text-3xl font-extrabold text-slate-800 tracking-tight">{value} {target ? <span className="text-sm font-medium text-slate-400">/ {target}</span> : ''}</h3>
       <p className="text-sm text-slate-500 font-medium mt-1">{title}</p>
       {subtitle && <p className="text-xs text-slate-400 mt-2 font-medium">{subtitle}</p>}
+      
+      {target && typeof progressValue === 'number' && (
+          <div className="mt-3 w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${colorClass.replace('text-white', '')}`} style={{ width: `${Math.min(100, (progressValue / target) * 100)}%` }}></div>
+          </div>
+      )}
     </div>
   </div>
 );
 
 // --- ADMIN DASHBOARD ---
-const AdminDashboard: React.FC<{ data: AppData }> = ({ data }) => {
+const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> = ({ data, onUpdateTargets }) => {
     const churches: Church[] = ['UJ', 'I', 'K', 'LJ'];
+    const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
+    
+    // Local state for target editing
+    const [editTargets, setEditTargets] = useState<Record<string, number>>(data.targets || { UJ: 0, I: 0, K: 0, LJ: 0 });
+
+    const handleSaveTargets = () => {
+        updateTargets(editTargets);
+        setIsTargetModalOpen(false);
+        if (onUpdateTargets) onUpdateTargets();
+    };
 
     const churchStats = useMemo(() => {
         return churches.map(church => {
@@ -42,6 +59,18 @@ const AdminDashboard: React.FC<{ data: AppData }> = ({ data }) => {
             const attendance = data.attendance.filter(r => r.churchId === church);
             const sortedAttendance = [...attendance].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             
+            // YTD Calculation (Year To Date) - Cumulative
+            const currentYear = new Date().getFullYear();
+            const ytdAttendance = attendance
+                .filter(r => new Date(r.date).getFullYear() === currentYear)
+                .reduce((sum, r) => {
+                    return sum + r.presentMemberIds.filter(id => {
+                        const m = data.members.find(mem => mem.id === id);
+                        return m && !['Teacher','Helper','Volunteer'].includes(m.type);
+                    }).length;
+                }, 0);
+
+            // Average (Last 5 weeks mainly for trend, but not for YTD)
             const totalAtt = attendance.reduce((sum, r) => {
                  return sum + r.presentMemberIds.filter(id => {
                      const m = data.members.find(mem => mem.id === id);
@@ -72,12 +101,21 @@ const AdminDashboard: React.FC<{ data: AppData }> = ({ data }) => {
                 }
             }
 
-            return { church, population, avg, rate, lastAttendance, growth };
+            const target = data.targets?.[church] || 0;
+            // Target Achievement is now YTD vs Annual Target
+            const targetAchievement = target > 0 ? Math.round((ytdAttendance / target) * 100) : 0;
+
+            return { church, population, avg, rate, lastAttendance, growth, target, targetAchievement, ytdAttendance };
         });
     }, [data]);
 
     const totalPop = churchStats.reduce((acc, curr) => acc + curr.population, 0);
     const totalAvg = churchStats.reduce((acc, curr) => acc + curr.avg, 0);
+    const totalTarget = churchStats.reduce((acc, curr) => acc + curr.target, 0);
+    const totalYTD = churchStats.reduce((acc, curr) => acc + curr.ytdAttendance, 0);
+    
+    // Global Retention Rate (Avg Attendance / Total Population)
+    const globalRetention = totalPop > 0 ? Math.round((totalAvg / totalPop) * 100) : 0;
 
     return (
         <div className="space-y-6">
@@ -90,15 +128,23 @@ const AdminDashboard: React.FC<{ data: AppData }> = ({ data }) => {
                     <p className="text-indigo-200 text-sm mt-1 opacity-80">Across 4 Locations</p>
                 </div>
                 
-                <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 lg:col-span-3 flex flex-col justify-center">
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 lg:col-span-3 flex flex-col justify-center relative">
+                    <button 
+                        onClick={() => { setEditTargets(data.targets || { UJ: 0, I: 0, K: 0, LJ: 0 }); setIsTargetModalOpen(true); }}
+                        className="absolute top-6 right-6 p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors"
+                        title="Set Annual Targets"
+                    >
+                        <Target size={20} />
+                    </button>
+
                     <div className="flex items-center justify-between mb-6">
                         <div>
                              <h3 className="text-lg font-bold text-slate-800">Ministry Overview</h3>
-                             <p className="text-slate-500 text-sm">Combined performance metrics</p>
+                             <p className="text-slate-500 text-sm">Combined performance metrics ({new Date().getFullYear()})</p>
                         </div>
-                        <div className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-bold">Live Data</div>
+                        <div className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-bold mr-10 md:mr-0">Live Data</div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-8 divide-y md:divide-y-0 md:divide-x divide-slate-100">
                          <div className="px-4">
                             <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Avg Attendance</p>
                             <div className="flex items-baseline gap-2">
@@ -107,16 +153,24 @@ const AdminDashboard: React.FC<{ data: AppData }> = ({ data }) => {
                             </div>
                          </div>
                          <div className="px-4 pt-4 md:pt-0">
-                            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Retention Rate</p>
-                            <div className="flex items-center gap-3">
-                                <h2 className="text-4xl font-bold text-slate-800">{totalPop ? Math.round((totalAvg/totalPop)*100) : 0}%</h2>
-                                <div className="h-2 flex-1 bg-slate-100 rounded-full overflow-hidden">
-                                    <div className="h-full bg-green-500 rounded-full" style={{width: `${Math.min(100, (totalAvg/totalPop)*100)}%`}}></div>
-                                </div>
-                            </div>
+                             <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Retention Rate</p>
+                             <div className="flex items-baseline gap-2">
+                                <h2 className={`text-4xl font-bold ${globalRetention >= 70 ? 'text-green-600' : 'text-amber-600'}`}>{globalRetention}%</h2>
+                             </div>
+                             <p className="text-xs text-slate-400 mt-1">Avg vs Total Active</p>
                          </div>
                          <div className="px-4 pt-4 md:pt-0">
-                             <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Active Branches</p>
+                            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Annual Goal</p>
+                            <div className="flex items-center gap-3">
+                                <h2 className="text-4xl font-bold text-slate-800">{totalTarget > 0 ? Math.round((totalYTD/totalTarget)*100) : 0}%</h2>
+                                <div className="h-2 flex-1 bg-slate-100 rounded-full overflow-hidden flex">
+                                    <div className="h-full bg-blue-500 rounded-full" style={{width: `${Math.min(100, (totalYTD/totalTarget)*100)}%`}}></div>
+                                </div>
+                            </div>
+                            <p className="text-xs text-slate-400 mt-1">YTD: {totalYTD}</p>
+                         </div>
+                         <div className="px-4 pt-4 md:pt-0">
+                             <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Branches</p>
                              <div className="flex items-center gap-2">
                                 {churches.map(c => (
                                     <div key={c} className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${c==='UJ'?'bg-indigo-500':c==='I'?'bg-emerald-500':c==='K'?'bg-rose-500':'bg-amber-500'}`}>{c}</div>
@@ -141,29 +195,73 @@ const AdminDashboard: React.FC<{ data: AppData }> = ({ data }) => {
                                 </div>
                                 <div>
                                     <h3 className="text-xl font-bold text-slate-800">{stat.church} Church</h3>
-                                    <p className="text-sm text-slate-500 font-medium">{stat.population} Members</p>
+                                    <p className="text-sm text-slate-500 font-medium">{stat.population} Active Kids</p>
                                 </div>
                             </div>
                             <div className={`flex flex-col items-end ${stat.growth >= 0 ? 'text-green-600' : 'text-rose-600'}`}>
-                                <span className="text-2xl font-bold">{stat.lastAttendance}</span>
-                                <span className="text-xs font-bold bg-slate-50 px-2 py-0.5 rounded-md mt-1">
-                                    {stat.growth >= 0 ? '↑' : '↓'} {Math.abs(stat.growth)}%
-                                </span>
+                                <div className="text-right">
+                                    <span className="text-xs text-slate-400 font-bold uppercase block">Last Sunday</span>
+                                    <span className="text-2xl font-bold">{stat.lastAttendance}</span>
+                                </div>
                             </div>
                         </div>
-                        <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
-                            <div 
-                                className={`h-full rounded-full ${stat.church === 'UJ' ? 'bg-indigo-500' : stat.church === 'I' ? 'bg-emerald-500' : stat.church === 'K' ? 'bg-rose-500' : 'bg-amber-500'}`} 
-                                style={{ width: `${Math.min(100, stat.rate)}%` }}
-                            ></div>
-                        </div>
-                        <div className="flex justify-between mt-2 text-xs font-medium text-slate-400">
-                            <span>Attendance Rate</span>
-                            <span>{stat.rate}%</span>
+                        
+                        {/* Target Progress Bar */}
+                        <div className="space-y-3">
+                            <div>
+                                <div className="flex justify-between text-xs font-bold text-slate-500 mb-1">
+                                    <span>Annual Progress (YTD)</span>
+                                    <span>{stat.ytdAttendance} / {stat.target}</span>
+                                </div>
+                                <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                                    <div 
+                                        className={`h-full rounded-full ${stat.church === 'UJ' ? 'bg-indigo-500' : stat.church === 'I' ? 'bg-emerald-500' : stat.church === 'K' ? 'bg-rose-500' : 'bg-amber-500'}`} 
+                                        style={{ width: `${Math.min(100, (stat.ytdAttendance / (stat.target || 1)) * 100)}%` }}
+                                    ></div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 ))}
             </div>
+
+            {/* Target Modal */}
+            {isTargetModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-slate-800">Set Annual Targets</h3>
+                            <button onClick={() => setIsTargetModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X size={20}/></button>
+                        </div>
+                        <p className="text-xs text-slate-500 mb-4">Enter the cumulative attendance goal for the entire year (e.g., 2000 total visits).</p>
+                        <div className="space-y-4">
+                            {churches.map(c => (
+                                <div key={c} className="flex items-center gap-4">
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-sm
+                                        ${c === 'UJ' ? 'bg-indigo-600' : 
+                                        c === 'I' ? 'bg-emerald-500' :
+                                        c === 'K' ? 'bg-rose-500' : 'bg-amber-500'}
+                                    `}>
+                                        {c}
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{c} Annual Goal</label>
+                                        <input 
+                                            type="number" 
+                                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500" 
+                                            value={editTargets[c]} 
+                                            onChange={(e) => setEditTargets({...editTargets, [c]: parseInt(e.target.value) || 0})}
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <button onClick={handleSaveTargets} className="w-full mt-6 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 hover:shadow-xl hover:bg-indigo-700 transition-all active:scale-95 flex items-center justify-center gap-2">
+                            <Save size={18}/> Save Targets
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -188,28 +286,54 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
             return { name: date, count };
         });
 
+        // YTD Calculation
+        const currentYear = new Date().getFullYear();
+        const ytd = attendance
+            .filter(r => new Date(r.date).getFullYear() === currentYear)
+            .reduce((sum, r) => {
+                return sum + r.presentMemberIds.filter(id => {
+                    const m = data.members.find(mem => mem.id === id);
+                    return m && !['Teacher','Helper','Volunteer'].includes(m.type);
+                }).length;
+            }, 0);
+
         const avg = last5.length ? Math.round(last5.reduce((acc, curr) => acc + curr.count, 0) / last5.length) : 0;
         const lastAtt = last5.length > 0 ? last5[last5.length - 1].count : 0;
         const trend = avg > 0 ? Math.round(((lastAtt - avg) / avg) * 100) : 0;
+        
+        const target = data.targets?.[activeChurch] || 0;
+        
+        // Retention Rate
+        const retention = kids.length > 0 ? Math.round((avg / kids.length) * 100) : 0;
 
         return { 
             totalMembers: kids.length, 
             avgAttendance: avg, 
             lastAttendance: lastAtt,
             trendData: last5,
-            trend
+            trend,
+            target,
+            ytd,
+            retention
         };
     }, [data, activeChurch]);
 
     return (
         <div className="space-y-6">
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                 <StatCard 
                     title="Active Members" 
                     value={stats.totalMembers} 
                     icon={<Users size={24} />} 
                     colorClass="bg-indigo-600"
-                    subtitle="Registered Children"
+                    subtitle="Registered"
+                />
+                 <StatCard 
+                    title="Retention Rate" 
+                    value={`${stats.retention}%`}
+                    icon={<Percent size={24} />} 
+                    colorClass="bg-purple-600"
+                    subtitle="Avg / Active"
                 />
                 <StatCard 
                     title="Last Attendance" 
@@ -217,14 +341,16 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
                     icon={<Calendar size={24} />} 
                     colorClass="bg-emerald-500"
                     trend={stats.trend}
-                    subtitle={`vs ${stats.avgAttendance} average`}
+                    subtitle="vs Avg"
                 />
                  <StatCard 
-                    title="Avg Attendance" 
-                    value={stats.avgAttendance} 
-                    icon={<Activity size={24} />} 
-                    colorClass="bg-amber-500"
-                    subtitle="Last 5 sessions"
+                    title="Annual Progress" 
+                    value={stats.ytd}
+                    target={stats.target}
+                    progressValue={stats.ytd}
+                    icon={<Target size={24} />} 
+                    colorClass="bg-rose-500"
+                    subtitle="YTD Visits"
                 />
             </div>
 

@@ -58,6 +58,7 @@ export interface AppData {
   members: Member[];
   attendance: AttendanceRecord[];
   transactions: Transaction[];
+  targets?: Record<string, number>; // Stores attendance goals e.g. { "UJ": 50, "I": 20 }
   lastUpdated?: number; // Timestamp for sync conflict resolution
 }
 

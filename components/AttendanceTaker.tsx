@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppData, Member, MemberType, MemberStatus, Church } from '../types';
 import { getSundaysInYear } from '../constants';
-import { Search, Save, Check, Clock, Trophy, X, Calendar, UserPlus, Users2, Filter, Crown } from 'lucide-react';
+import { Search, Save, Check, Clock, Trophy, X, Calendar, UserPlus, Users2, Filter, Crown, ChevronDown } from 'lucide-react';
 import { addMember, saveAttendance } from '../services/storageService';
 import { sanitizeInput } from '../services/securityService';
 
@@ -268,27 +268,51 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
       <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-20">
         
         {/* Top Row: Date & Main Actions */}
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-             {/* Date Selector */}
-             <div className="relative w-full md:w-64">
-                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
-                    <Calendar size={18} />
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4 w-full">
+             
+             <div className="flex flex-col md:flex-row gap-4 w-full">
+                {/* Admin Church Selector - Redesigned */}
+                {activeChurch === 'CM' && (
+                    <div className="relative w-full md:w-48">
+                        <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-indigo-600">
+                            <Crown size={18} />
+                        </div>
+                         <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
+                            <ChevronDown size={16} />
+                        </div>
+                        <select
+                            value={internalChurchFilter}
+                            onChange={(e) => setInternalChurchFilter(e.target.value as Church)}
+                            className="w-full bg-indigo-50 border border-indigo-100 text-indigo-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block pl-10 pr-10 p-3 appearance-none cursor-pointer transition-colors"
+                        >
+                            {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(church => (
+                                <option key={church} value={church}>{church} Church</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+
+                 {/* Date Selector */}
+                <div className="relative w-full md:w-64">
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+                        <Calendar size={18} />
+                    </div>
+                    <select 
+                        value={selectedDate} 
+                        onChange={(e) => setSelectedDate(e.target.value)}
+                        className="bg-slate-50 border border-slate-200 text-slate-800 text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-10 p-3 appearance-none cursor-pointer hover:bg-slate-100 transition-colors"
+                    >
+                        {sundays2026.map(d => {
+                        const strDate = d.toISOString().split('T')[0];
+                        const isToday = strDate === new Date().toISOString().split('T')[0];
+                        return <option key={strDate} value={strDate}>{isToday ? 'Today, ' : ''}{d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric'})}</option>
+                        })}
+                    </select>
                 </div>
-                <select 
-                    value={selectedDate} 
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    className="bg-slate-50 border border-slate-200 text-slate-800 text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-10 p-3 appearance-none cursor-pointer hover:bg-slate-100 transition-colors"
-                >
-                    {sundays2026.map(d => {
-                    const strDate = d.toISOString().split('T')[0];
-                    const isToday = strDate === new Date().toISOString().split('T')[0];
-                    return <option key={strDate} value={strDate}>{isToday ? 'Today, ' : ''}{d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric'})}</option>
-                    })}
-                </select>
-            </div>
+             </div>
 
             {/* Action Buttons */}
-            <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="flex items-center gap-2 w-full md:w-auto mt-2 md:mt-0">
                 {isAdmin && (
                     <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
                         <button onClick={() => { setAttendanceMode('MEMBERS'); setFilterType('All'); }} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${attendanceMode === 'MEMBERS' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-500'}`}>Members</button>
@@ -316,27 +340,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                 </button>
             </div>
         </div>
-
-        {/* Admin Church Filters (Only if ActiveChurch is CM) */}
-        {activeChurch === 'CM' && (
-            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 border-t border-slate-100 pt-3">
-                 <span className="flex items-center text-xs font-bold text-slate-400 uppercase mr-1 whitespace-nowrap">Target:</span>
-                 {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(church => (
-                     <button
-                        key={church}
-                        onClick={() => setInternalChurchFilter(church)}
-                        className={`
-                            px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap
-                            ${internalChurchFilter === church 
-                                ? 'bg-slate-800 text-white shadow-md' 
-                                : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200'}
-                        `}
-                     >
-                         {church} Church
-                     </button>
-                 ))}
-            </div>
-        )}
       </div>
 
       {/* 2. SECOND BAR: Filters & Search */}

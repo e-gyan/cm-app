@@ -1,8 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { AppData, MemberType, Church, Member } from '../types';
-import { Copy, FileText, CheckCircle, Database, Download, Upload, AlertCircle, RefreshCw, Cloud, Lock, Code, MessageCircle, BookOpen, Compass, GitBranch, ArrowRight, ChevronDown, Calendar } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { AppData, MemberType, Church, Member, MemberStatus } from '../types';
+import { Copy, FileText, CheckCircle, Database, Download, Upload, AlertCircle, RefreshCw, Cloud, Lock, Code, MessageCircle, BookOpen, Compass, GitBranch, ArrowRight, ChevronDown, Calendar, Target, TrendingUp, Save } from 'lucide-react';
 import { getSundaysInYear, DEFAULT_CLOUD_CONFIG } from '../constants';
-import { importData, saveCloudConfig, syncFromCloud } from '../services/storageService';
+import { importData, saveCloudConfig, syncFromCloud, updateTargets } from '../services/storageService';
 
 interface ReportExportProps {
   data: AppData;
@@ -14,8 +14,11 @@ interface ReportExportProps {
 const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurch, currentUser }) => {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [copiedReport, setCopiedReport] = useState(false);
-  const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'DATA' | 'CLOUD' | 'HELP'>('WHATSAPP');
+  const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'KPI' | 'DATA' | 'CLOUD' | 'HELP'>('WHATSAPP');
   const [importMsg, setImportMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);
+  
+  // KPI/Target Edit State
+  const [editTargets, setEditTargets] = useState<Record<string, number>>(data.targets || { UJ: 0, I: 0, K: 0, LJ: 0 });
   
   // Cloud Sync State
   const [apiKey, setApiKey] = useState(DEFAULT_CLOUD_CONFIG.apiKey || '');
@@ -60,6 +63,61 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     }
   }, [sundays2026, selectedDate, isHardcoded]);
 
+  // Update edit targets when data changes
+  useEffect(() => {
+      if (data.targets) {
+          setEditTargets(data.targets);
+      }
+  }, [data.targets]);
+
+  // --- KPI Calculation Logic ---
+  const kpiStats = useMemo(() => {
+    if (!isAdmin) return [];
+    
+    return (['UJ', 'I', 'K', 'LJ'] as Church[]).map(church => {
+        // Calculate Avg Attendance (Last 5 weeks)
+        const attendance = data.attendance.filter(r => r.churchId === church);
+        const sortedAttendance = [...attendance].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        const last5 = sortedAttendance.slice(-5);
+        
+        // Avg Weekly
+        let totalAtt = 0;
+        last5.forEach(r => {
+             const kids = r.presentMemberIds.filter(id => {
+                 const m = data.members.find(mem => mem.id === id);
+                 return m && !['Teacher','Helper','Volunteer'].includes(m.type);
+             }).length;
+             totalAtt += kids;
+        });
+        const avg = last5.length ? Math.round(totalAtt / last5.length) : 0;
+        
+        // YTD Cumulative
+        const currentYear = new Date().getFullYear();
+        const ytd = attendance
+            .filter(r => new Date(r.date).getFullYear() === currentYear)
+            .reduce((sum, r) => {
+                return sum + r.presentMemberIds.filter(id => {
+                    const m = data.members.find(mem => mem.id === id);
+                    return m && !['Teacher','Helper','Volunteer'].includes(m.type);
+                }).length;
+            }, 0);
+
+        return {
+            church,
+            avg,
+            ytd,
+            target: editTargets[church] || 0
+        };
+    });
+  }, [data, editTargets, isAdmin]);
+
+  const handleSaveTargets = () => {
+    updateTargets(editTargets);
+    setImportMsg({ type: 'success', text: 'Targets updated successfully!' });
+    setTimeout(() => setImportMsg(null), 3000);
+    onUpdate();
+  };
+
   // --- WhatsApp Report Logic ---
   const generateReport = () => {
     if (!selectedDate) return "Please select a date to generate a report.";
@@ -78,21 +136,23 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
 
          const branches: Church[] = ['UJ', 'I', 'K', 'LJ'];
          let ministryTotal = 0;
+         let totalTeachers = 0;
 
          branches.forEach(branch => {
              const record = data.attendance.find(r => r.date === selectedDate && r.churchId === branch);
              if (!record) {
-                 // Skip branches with no data for cleanliness, or mark as Pending
-                 // report += `\n📍 *${branch} Church*: _No Data_\n`;
                  return;
              }
 
              // Filter members present in this record
              const presentMembers = data.members.filter(m => record.presentMemberIds.includes(m.id));
              
-             // Count Categories (Children Only for Stats usually, exclude staff)
+             // Split Categories
+             const staff = presentMembers.filter(m => ['Teacher','Helper','Volunteer'].includes(m.type));
              const children = presentMembers.filter(m => !['Teacher','Helper','Volunteer'].includes(m.type));
-             const staffCount = presentMembers.length - children.length;
+
+             const staffCount = staff.length;
+             totalTeachers += staffCount;
 
              const membersCount = children.filter(m => m.type === MemberType.MEMBER).length;
              const fnfCount = children.filter(m => m.type === MemberType.FNF).length;
@@ -102,21 +162,24 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
              const branchTotal = children.length;
              ministryTotal += branchTotal;
 
-             report += `\n*${branch} CHURCH* (Total: ${branchTotal})\n`;
+             report += `\n*${branch} CHURCH* (${branchTotal})\n`;
              report += `Members: ${membersCount} | FNF: ${fnfCount}\n`;
              
-             if (inconsistentCount > 0 || notMemberCount > 0) {
-                const others = [];
-                if (inconsistentCount > 0) others.push(`Inc: ${inconsistentCount}`);
-                if (notMemberCount > 0) others.push(`Other: ${notMemberCount}`);
+             const others = [];
+             if (inconsistentCount > 0) others.push(`Inc: ${inconsistentCount}`);
+             if (notMemberCount > 0) others.push(`Other: ${notMemberCount}`);
+             if (staffCount > 0) others.push(`Staff: ${staffCount}`);
+             
+             if (others.length > 0) {
                 report += `   • ${others.join(' | ')}\n`;
              }
          });
 
          report += `\n----------------------------\n`;
          report += `*GRAND TOTAL: ${ministryTotal}*\n`;
+         report += `*TOTAL TEACHERS: ${totalTeachers}*\n`;
          
-         if (ministryTotal === 0) {
+         if (ministryTotal === 0 && totalTeachers === 0) {
              report += `\n_No attendance data recorded yet for this date._`;
          }
 
@@ -278,6 +341,14 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
         >
           <span className="flex items-center gap-2"><FileText size={16}/> Report</span>
         </button>
+        {isAdmin && (
+            <button
+            onClick={() => setActiveTab('KPI')}
+            className={`pb-2 px-3 md:px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap outline-none ${activeTab === 'KPI' ? 'border-rose-600 text-rose-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+            >
+            <span className="flex items-center gap-2"><Target size={16}/> Targets & KPI</span>
+            </button>
+        )}
         <button
           onClick={() => setActiveTab('DATA')}
           className={`pb-2 px-3 md:px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap outline-none ${activeTab === 'DATA' ? 'border-amber-600 text-amber-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
@@ -368,6 +439,74 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
             />
           </div>
         </div>
+      )}
+
+      {activeTab === 'KPI' && isAdmin && (
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in">
+              <div className="mb-6 flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2"><Target size={20} className="text-rose-500"/> Annual Targets</h3>
+                    <p className="text-sm text-gray-500">Set cumulative attendance goals for the current year ({new Date().getFullYear()}) and monitor progress.</p>
+                  </div>
+                  <button onClick={handleSaveTargets} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-colors shadow-sm active:scale-95">
+                      <Save size={16}/> Save Targets
+                  </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
+                  {kpiStats.map(stat => (
+                      <div key={stat.church} className="border border-gray-100 rounded-2xl p-4 hover:shadow-md transition-shadow relative overflow-hidden bg-white">
+                          <div className={`absolute top-0 right-0 p-2 rounded-bl-2xl text-xs font-bold text-white
+                            ${stat.church === 'UJ' ? 'bg-indigo-600' : 
+                              stat.church === 'I' ? 'bg-emerald-500' :
+                              stat.church === 'K' ? 'bg-rose-500' : 'bg-amber-500'}
+                          `}>
+                              {stat.church} Church
+                          </div>
+
+                          <div className="mt-4 flex flex-col gap-4">
+                              <div className="flex justify-between items-end">
+                                  <div>
+                                      <p className="text-xs text-gray-400 font-bold uppercase">YTD Attendance</p>
+                                      <p className="text-3xl font-bold text-gray-800">{stat.ytd}</p>
+                                  </div>
+                                  <div className="text-right">
+                                      <p className="text-xs text-gray-400 font-bold uppercase">Avg (5 Wks)</p>
+                                      <p className="text-xl font-bold text-gray-600">{stat.avg}</p>
+                                  </div>
+                              </div>
+                              
+                              <div>
+                                  <div className="flex justify-between text-xs font-bold text-gray-500 mb-1">
+                                      <span>Annual Progress</span>
+                                      <span>{stat.target > 0 ? Math.round((stat.ytd/stat.target)*100) : 0}%</span>
+                                  </div>
+                                  <div className="w-full bg-gray-100 rounded-full h-2">
+                                      <div className={`h-full rounded-full ${stat.church === 'UJ' ? 'bg-indigo-500' : stat.church === 'I' ? 'bg-emerald-500' : stat.church === 'K' ? 'bg-rose-500' : 'bg-amber-500'}`} style={{width: `${Math.min(100, (stat.ytd/(stat.target || 1))*100)}%`}}></div>
+                                  </div>
+                              </div>
+
+                              <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Annual Target (Total)</label>
+                                  <input 
+                                      type="number" 
+                                      className="w-full p-2 bg-white border border-gray-200 rounded-lg font-bold text-gray-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                                      value={editTargets[stat.church]}
+                                      onChange={(e) => setEditTargets({...editTargets, [stat.church]: parseInt(e.target.value) || 0})}
+                                  />
+                              </div>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+              
+              {importMsg && (
+                  <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4">
+                      <CheckCircle size={18} className="text-green-400" />
+                      <span className="font-bold">{importMsg.text}</span>
+                  </div>
+              )}
+          </div>
       )}
 
       {activeTab === 'HELP' && (

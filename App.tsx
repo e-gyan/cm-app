@@ -5,16 +5,14 @@ import Dashboard from './components/Dashboard';
 import AttendanceTaker from './components/AttendanceTaker';
 import ReportExport from './components/ReportExport';
 import MembersList from './components/MembersList';
-import Finances from './components/Finances';
 import Login from './components/Login';
-import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw, Zap, ChevronDown, Wallet } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw, Zap, ChevronDown } from 'lucide-react';
 
 enum View {
   DASHBOARD = 'Dashboard',
   ATTENDANCE = 'Attendance',
   MEMBERS = 'People Hub',
-  EXPORT = 'Reports',
-  FINANCES = 'Finances'
+  EXPORT = 'Reports'
 }
 
 const App: React.FC = () => {
@@ -26,10 +24,11 @@ const App: React.FC = () => {
   const [activeChurch, setActiveChurch] = useState<Church>('CM');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const savedState = localStorage.getItem('sidebarState');
-    return savedState !== null ? JSON.parse(savedState) : false; // Default to open on desktop
+    return savedState !== null ? JSON.parse(savedState) : true; // Default to collapsed (true)
   });
 
   // Initial load & Session Restore
@@ -38,9 +37,13 @@ const App: React.FC = () => {
         await initializeRepository();
         
         try {
-             await syncFromCloud();
+             const result = await syncFromCloud();
+             if (!result.success) {
+                 setSyncError("Cloud connection failed. Using local data.");
+             }
         } catch (e) {
              console.warn("Initial cloud sync failed", e);
+             setSyncError("Network error. Using local data.");
         }
 
         refreshData();
@@ -72,9 +75,12 @@ const App: React.FC = () => {
 
   const handleCloudSync = async () => {
     setIsSyncing(true);
+    setSyncError(null);
     const result = await syncFromCloud();
     if (result.success) {
         refreshData();
+    } else {
+        setSyncError("Sync failed");
     }
     setIsSyncing(false);
   };
@@ -114,7 +120,6 @@ const App: React.FC = () => {
   }
 
   const isAdmin = currentUser.role === 'ADMIN';
-  const canAccessFinances = isAdmin || (currentUser.role === 'TEACHER' && currentUser.name === 'Maxeen Portuphy' && currentUser.assignedChurch === 'UJ');
 
   const NavItem = ({ view, icon: Icon }: { view: View; icon: React.ElementType }) => (
     <button
@@ -184,11 +189,6 @@ const App: React.FC = () => {
             <NavItem view={View.ATTENDANCE} icon={CalendarCheck} />
             <NavItem view={View.MEMBERS} icon={Users} />
             <NavItem view={View.EXPORT} icon={Share2} />
-            {canAccessFinances && (
-                <div className={`pt-4 mt-4 border-t border-slate-100`}>
-                    <NavItem view={View.FINANCES} icon={Wallet} />
-                </div>
-            )}
           </nav>
 
           {/* Sync Status */}
@@ -199,11 +199,12 @@ const App: React.FC = () => {
                   ${isSyncing 
                     ? 'border-indigo-300 bg-indigo-50 text-indigo-600' 
                     : 'border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600 hover:bg-slate-50'}
+                  ${syncError ? 'border-red-200 bg-red-50 text-red-500' : ''}
                 `}
-                title="Force Sync"
+                title={syncError || "Force Sync"}
             >
                 <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-                {!isSidebarCollapsed && (isSyncing ? 'Syncing...' : 'Sync Repository')}
+                {!isSidebarCollapsed && (isSyncing ? 'Syncing...' : (syncError ? 'Retry Sync' : 'Sync Repository'))}
             </button>
           </div>
 
@@ -258,7 +259,7 @@ const App: React.FC = () => {
            <div className="flex items-center gap-1">
                 <button 
                     onClick={handleCloudSync}
-                    className={`p-2 rounded-full ${isSyncing ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400 hover:bg-slate-100 hover:text-indigo-600'}`}
+                    className={`p-2 rounded-full ${isSyncing ? 'text-indigo-600 bg-indigo-50' : (syncError ? 'text-red-500 bg-red-50' : 'text-slate-400 hover:bg-slate-100 hover:text-indigo-600')}`}
                     disabled={isSyncing}
                 >
                     <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} />
@@ -298,7 +299,6 @@ const App: React.FC = () => {
                 {currentView === View.ATTENDANCE && <AttendanceTaker data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />}
                 {currentView === View.MEMBERS && <MembersList data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />}
                 {currentView === View.EXPORT && <ReportExport data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />}
-                {currentView === View.FINANCES && canAccessFinances && <Finances data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />}
             </div>
           </div>
         </div>
@@ -309,7 +309,6 @@ const App: React.FC = () => {
             <MobileNavItem view={View.ATTENDANCE} icon={CalendarCheck} label="Attendance" />
             <MobileNavItem view={View.MEMBERS} icon={Users} label="People" />
             <MobileNavItem view={View.EXPORT} icon={Share2} label="Reports" />
-            {canAccessFinances && <MobileNavItem view={View.FINANCES} icon={Wallet} label="Finances" />}
         </nav>
       </main>
     </div>
