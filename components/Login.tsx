@@ -3,6 +3,7 @@ import { authenticateUser, getAppData } from '../services/storageService';
 import { Member } from '../types';
 import { ArrowRight, AlertCircle, Users, Sparkles } from 'lucide-react';
 import { sanitizeInput } from '../services/securityService';
+import { APP_VERSION } from '../constants';
 
 interface LoginProps {
   onLogin: (user: Member) => void;
@@ -67,7 +68,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 </p>
             </div>
             <div className="text-sm text-indigo-200 opacity-60">
-                © {new Date().getFullYear()} CM Ministry System v5.0
+                © {new Date().getFullYear()} CM System v{APP_VERSION}
             </div>
         </div>
 

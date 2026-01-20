@@ -1,5 +1,7 @@
 import { Member, AttendanceRecord, MemberType, MemberStatus } from './types';
 
+export const APP_VERSION = '5.1';
+
 // SECURITY UPDATE: Using Environment Variables is recommended over hardcoding.
 // If not using a build tool, you can still manually set these, but be careful not to share this file publicly.
 const ENV_API_KEY = (import.meta as any).env?.VITE_API_KEY || '';
