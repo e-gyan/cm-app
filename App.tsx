@@ -5,18 +5,20 @@ import Dashboard from './components/Dashboard';
 import AttendanceTaker from './components/AttendanceTaker';
 import ReportExport from './components/ReportExport';
 import MembersList from './components/MembersList';
+import Finances from './components/Finances';
 import Login from './components/Login';
-import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw, Zap, ChevronDown } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw, Zap, ChevronDown, Wallet } from 'lucide-react';
 
 enum View {
   DASHBOARD = 'Dashboard',
   ATTENDANCE = 'Attendance',
   MEMBERS = 'People Hub',
-  EXPORT = 'Reports'
+  EXPORT = 'Reports',
+  FINANCES = 'Finances'
 }
 
 const App: React.FC = () => {
-  const [data, setData] = useState<AppData>({ members: [], attendance: [] });
+  const [data, setData] = useState<AppData>({ members: [], attendance: [], transactions: [] });
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
   
   // GLOBAL CONTEXT STATE
@@ -24,7 +26,6 @@ const App: React.FC = () => {
   const [activeChurch, setActiveChurch] = useState<Church>('CM');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [showMobileChurchMenu, setShowMobileChurchMenu] = useState(false);
   
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const savedState = localStorage.getItem('sidebarState');
@@ -35,12 +36,24 @@ const App: React.FC = () => {
   useEffect(() => {
     const init = async () => {
         await initializeRepository();
+        
+        try {
+             await syncFromCloud();
+        } catch (e) {
+             console.warn("Initial cloud sync failed", e);
+        }
+
         refreshData();
         const savedUser = restoreSession();
         if (savedUser) {
             setCurrentUser(savedUser);
+            // Ensure activeChurch reflects user assignment. 
+            // Teachers get their assigned church. Admins usually get CM (default) or their assigned if strictly set.
+            // For this app, Admins see CM view.
             if (savedUser.role === 'TEACHER') {
                 setActiveChurch(savedUser.assignedChurch);
+            } else if (savedUser.role === 'ADMIN') {
+                setActiveChurch('CM');
             }
         }
         setIsLoading(false);
@@ -70,6 +83,8 @@ const App: React.FC = () => {
     setCurrentUser(user);
     if (user.role === 'TEACHER') {
         setActiveChurch(user.assignedChurch);
+    } else {
+        setActiveChurch('CM');
     }
     refreshData();
   };
@@ -99,6 +114,7 @@ const App: React.FC = () => {
   }
 
   const isAdmin = currentUser.role === 'ADMIN';
+  const canAccessFinances = isAdmin || (currentUser.role === 'TEACHER' && currentUser.name === 'Maxeen Portuphy' && currentUser.assignedChurch === 'UJ');
 
   const NavItem = ({ view, icon: Icon }: { view: View; icon: React.ElementType }) => (
     <button
@@ -168,6 +184,11 @@ const App: React.FC = () => {
             <NavItem view={View.ATTENDANCE} icon={CalendarCheck} />
             <NavItem view={View.MEMBERS} icon={Users} />
             <NavItem view={View.EXPORT} icon={Share2} />
+            {canAccessFinances && (
+                <div className={`pt-4 mt-4 border-t border-slate-100`}>
+                    <NavItem view={View.FINANCES} icon={Wallet} />
+                </div>
+            )}
           </nav>
 
           {/* Sync Status */}
@@ -185,31 +206,6 @@ const App: React.FC = () => {
                 {!isSidebarCollapsed && (isSyncing ? 'Syncing...' : 'Sync Repository')}
             </button>
           </div>
-
-          {/* Context Switcher (Admin Only) */}
-          {isAdmin && (
-              <div className={`pt-4 border-t border-slate-100 ${isSidebarCollapsed ? 'items-center' : ''} flex flex-col gap-1.5 mb-4`}>
-                {!isSidebarCollapsed && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 mb-1">Switch Branch</span>}
-                
-                {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(church => (
-                    <button
-                        key={church}
-                        onClick={() => setActiveChurch(church)}
-                        className={`
-                            flex items-center gap-3 p-2 rounded-xl text-sm transition-all
-                            ${activeChurch === church 
-                                ? 'bg-slate-100 font-bold text-slate-900' 
-                                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}
-                            ${isSidebarCollapsed ? 'justify-center' : ''}
-                        `}
-                        title={`Switch to ${church}`}
-                    >
-                        <div className={`w-2 h-2 rounded-full shrink-0 ${activeChurch === church ? 'bg-indigo-600' : 'bg-slate-300'}`}></div>
-                        {!isSidebarCollapsed && <span>{church} Church</span>}
-                    </button>
-                ))}
-              </div>
-          )}
 
           {/* User Info / Logout */}
           <div className={`pt-4 border-t border-slate-100 ${isSidebarCollapsed ? 'items-center' : ''} flex flex-col gap-1`}>
@@ -240,13 +236,8 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         {/* Mobile Header */}
         <header className="bg-white/90 backdrop-blur-md border-b border-slate-200 px-4 py-3 md:hidden flex items-center justify-between sticky top-0 z-30">
-          {/* Brand / Admin Switcher */}
-           <div className="relative">
-              <button 
-                onClick={() => isAdmin && setShowMobileChurchMenu(!showMobileChurchMenu)}
-                className="flex items-center gap-3 active:opacity-70 transition-opacity"
-                disabled={!isAdmin}
-              >
+          {/* Brand */}
+           <div className="flex items-center gap-3">
                  <div className={`
                     w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-sm
                     ${activeChurch === 'UJ' ? 'bg-indigo-600' : 
@@ -256,32 +247,11 @@ const App: React.FC = () => {
                      {activeChurch.substring(0,2)}
                  </div>
                  <div className="text-left">
-                     <h1 className="font-bold text-slate-800 text-sm leading-tight flex items-center gap-1">
+                     <h1 className="font-bold text-slate-800 text-sm leading-tight">
                         {activeChurch} Church
-                        {isAdmin && <ChevronDown size={14} className={`text-slate-400 transition-transform ${showMobileChurchMenu ? 'rotate-180' : ''}`}/>}
                      </h1>
                      <p className="text-[10px] text-slate-500 font-medium">Ministry System</p>
                  </div>
-              </button>
-
-              {/* Mobile Church Switcher Dropdown */}
-              {showMobileChurchMenu && isAdmin && (
-                  <>
-                  <div className="fixed inset-0 z-10" onClick={() => setShowMobileChurchMenu(false)}></div>
-                  <div className="absolute top-full left-0 mt-2 w-52 bg-white rounded-xl shadow-xl border border-slate-100 p-2 z-20 flex flex-col gap-1 animate-in fade-in zoom-in-95 origin-top-left">
-                      {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(church => (
-                        <button
-                            key={church}
-                            onClick={() => { setActiveChurch(church); setShowMobileChurchMenu(false); }}
-                            className={`flex items-center gap-3 p-3 rounded-lg text-sm transition-all ${activeChurch === church ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}`}
-                        >
-                            <div className={`w-2 h-2 rounded-full ${activeChurch === church ? 'bg-indigo-600' : 'bg-slate-300'}`}></div>
-                            {church} Church
-                        </button>
-                      ))}
-                  </div>
-                  </>
-              )}
            </div>
 
            {/* Mobile Header Actions (Sync & Logout) */}
@@ -328,6 +298,7 @@ const App: React.FC = () => {
                 {currentView === View.ATTENDANCE && <AttendanceTaker data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />}
                 {currentView === View.MEMBERS && <MembersList data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />}
                 {currentView === View.EXPORT && <ReportExport data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />}
+                {currentView === View.FINANCES && canAccessFinances && <Finances data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />}
             </div>
           </div>
         </div>
@@ -338,6 +309,7 @@ const App: React.FC = () => {
             <MobileNavItem view={View.ATTENDANCE} icon={CalendarCheck} label="Attendance" />
             <MobileNavItem view={View.MEMBERS} icon={Users} label="People" />
             <MobileNavItem view={View.EXPORT} icon={Share2} label="Reports" />
+            {canAccessFinances && <MobileNavItem view={View.FINANCES} icon={Wallet} label="Finances" />}
         </nav>
       </main>
     </div>

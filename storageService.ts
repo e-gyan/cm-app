@@ -16,10 +16,13 @@ const loadData = (): AppData => {
 
     if (stored) {
       parsed = JSON.parse(stored);
+      // Ensure transactions exists if loaded from legacy data
+      if (!parsed.transactions) parsed.transactions = [];
     } else {
       parsed = {
         members: [...INITIAL_MEMBERS],
         attendance: [...INITIAL_ATTENDANCE],
+        transactions: [],
         lastUpdated: Date.now()
       };
     }
@@ -84,6 +87,7 @@ const loadData = (): AppData => {
     return {
         members: [...INITIAL_MEMBERS],
         attendance: [...INITIAL_ATTENDANCE],
+        transactions: [],
         lastUpdated: Date.now()
     };
   }

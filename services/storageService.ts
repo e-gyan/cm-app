@@ -1,5 +1,5 @@
-import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig } from '../types';
-import { DEFAULT_CLOUD_CONFIG } from '../constants';
+import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig, Transaction } from '../types';
+import { INITIAL_MEMBERS, INITIAL_ATTENDANCE, DEFAULT_CLOUD_CONFIG } from '../constants';
 import { sanitizeInput, hashString, isValidSchema } from './securityService';
 
 // STORAGE KEYS
@@ -12,6 +12,7 @@ const CLOUD_CONFIG_KEY = 'UJ_CLOUD_CONFIG_V1';
 let inMemoryData: AppData = {
     members: [],
     attendance: [],
+    transactions: [],
     lastUpdated: 0
 };
 
@@ -37,6 +38,7 @@ export const initializeRepository = async (): Promise<AppData> => {
     const localData = loadFromLocal();
     if (localData) {
         inMemoryData = localData;
+        if (!inMemoryData.transactions) inMemoryData.transactions = [];
     }
 
     // 2. Attempt Cloud Sync (Will overwrite inMemoryData if cloud is newer)
@@ -161,6 +163,7 @@ export const syncFromCloud = async (): Promise<{success: boolean, message?: stri
         if (cloudTime > localTime || localTime === 0) {
             // Re-sanitize incoming cloud names just in case
             cloudData.members.forEach(m => m.name = sanitizeInput(m.name));
+            if (!cloudData.transactions) cloudData.transactions = [];
             
             inMemoryData = cloudData;
             persistData(false); // Update local cache
@@ -295,7 +298,6 @@ export const authenticateUser = async (name: string, passcode: string): Promise<
             timestamp: now
         }));
         
-        // Try to sync one more time on login to be sure
         syncFromCloud();
         return { success: true, member: user };
     }
@@ -339,6 +341,9 @@ export const importData = (jsonString: string): { success: boolean; message: str
         if (!r.churchId) r.churchId = 'UJ';
     });
     
+    // Ensure transactions are initialized
+    if (!parsed.transactions) parsed.transactions = [];
+
     parsed.lastUpdated = Date.now();
 
     inMemoryData = parsed;
@@ -555,4 +560,35 @@ export const saveAttendance = (date: string, churchId: Church, presentIds: strin
       checkAndAutoUpdateMemberStatus(churchId);
   }
   autoTransferMembersBasedOnAge();
+};
+
+// --- FINANCIAL SERVICE METHODS ---
+export const addTransaction = (txn: Partial<Transaction>) => {
+    if (!txn.amount || !txn.category || !txn.type) return;
+    
+    const newTxn: Transaction = {
+        id: crypto.randomUUID(),
+        date: txn.date || new Date().toISOString().split('T')[0],
+        amount: Number(txn.amount),
+        type: txn.type,
+        category: txn.category,
+        description: txn.description || '',
+        churchId: txn.churchId || 'UJ',
+        recordedBy: txn.recordedBy || 'System',
+    };
+    
+    if (!inMemoryData.transactions) inMemoryData.transactions = [];
+    inMemoryData.transactions.push(newTxn);
+    isDirty = true; 
+    persistData();
+};
+
+export const deleteTransaction = (id: string) => {
+    if (!inMemoryData.transactions) return;
+    const initialLen = inMemoryData.transactions.length;
+    inMemoryData.transactions = inMemoryData.transactions.filter(t => t.id !== id);
+    if (inMemoryData.transactions.length !== initialLen) {
+        isDirty = true;
+        persistData();
+    }
 };

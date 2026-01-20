@@ -43,9 +43,21 @@ export interface AttendanceRecord {
   churchId: Church;
 }
 
+export interface Transaction {
+  id: string;
+  date: string;
+  amount: number;
+  type: 'INCOME' | 'EXPENSE';
+  category: string;
+  description: string;
+  churchId: Church;
+  recordedBy?: string;
+}
+
 export interface AppData {
   members: Member[];
   attendance: AttendanceRecord[];
+  transactions: Transaction[];
   lastUpdated?: number; // Timestamp for sync conflict resolution
 }
 

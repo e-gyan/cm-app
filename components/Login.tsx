@@ -55,11 +55,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 </div>
                 <h1 className="text-4xl font-bold mb-4">Children's Ministry<br/>Attendance</h1>
                 <p className="text-indigo-100 text-lg leading-relaxed opacity-90">
-                    Seamlessly track attendance, manage members, and generate insights for a thriving community.
+                    Seamlessly track attendance, manage members, and generate insights for a thriving family.
                 </p>
             </div>
             <div className="text-sm text-indigo-200 opacity-60">
-                © 2026 CM Ministry System v5.0
+                © {new Date().getFullYear()} CM Ministry System v5.0
             </div>
         </div>
 

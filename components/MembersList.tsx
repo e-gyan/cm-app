@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppData, Member, MemberType, MemberStatus, Church, Role } from '../types';
-import { User, Users, Edit2, Archive, X, Save, GraduationCap, Undo2, HelpCircle, AlertCircle, Activity, Briefcase, ChevronDown, ChevronUp, Plus, Lock, Key, Heart, Hand, Trash2 } from 'lucide-react';
+import { User, Users, Edit2, Archive, X, Save, GraduationCap, Undo2, HelpCircle, AlertCircle, Activity, Briefcase, ChevronDown, ChevronUp, Plus, Lock, Key, Heart, Hand, Trash2, Building2, Filter } from 'lucide-react';
 import { updateMember, bulkArchiveMembers, addMember } from '../services/storageService';
 import { sanitizeInput } from '../services/securityService';
 
@@ -21,6 +21,9 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
   // Tabs for the Central Hub
   const [hubTab, setHubTab] = useState<'MEMBERS' | 'TEACHERS'>('MEMBERS');
   const [filter, setFilter] = useState<'CM' | 'ARCHIVED' | string>('CM');
+  
+  // Church Filter for Admins
+  const [churchFilter, setChurchFilter] = useState<Church | 'All'>('All');
   
   // SELECTION STATE
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -370,9 +373,14 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
         baseList = baseList.filter(m => !teacherTypes.includes(m.type));
     }
     
-    // Filter by Church: if activeChurch is CM (Admin), show everything, otherwise filter
+    // Filter by Church: if activeChurch is CM (Admin), show everything unless filtered, otherwise filter by assignment
     if (activeChurch !== 'CM') {
         baseList = baseList.filter(m => m.assignedChurch === activeChurch || (m.assignedChurch === 'CM' && isAdmin && hubTab === 'TEACHERS'));
+    } else {
+        // Admin (CM) View: Filter by selected church from toolbar
+        if (churchFilter !== 'All') {
+            baseList = baseList.filter(m => m.assignedChurch === churchFilter);
+        }
     }
 
     if (filter === 'ARCHIVED') {
@@ -510,14 +518,40 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
          </div>
       </div>
 
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide">Filtering {hubTab.toLowerCase()}</h3>
-        <div className="flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto">
-          {['CM', ...getCreationRoleOptions(), 'ARCHIVED'].map((f) => (
-             <button key={f} onClick={() => { setFilter(f); setSelectedIds(new Set()); }} className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${filter === f ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
-                {f === 'CM' ? 'Active' : f}
-              </button>
-          ))}
+      <div className="space-y-4">
+        
+        {/* Church Filter (Admin Only) */}
+        {activeChurch === 'CM' && (
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
+                <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                    <Building2 size={18}/> Church Filter
+                </h3>
+                <div className="flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto no-scrollbar">
+                    {(['All', 'UJ', 'I', 'K', 'LJ'] as const).map((c) => (
+                        <button 
+                            key={c} 
+                            onClick={() => { setChurchFilter(c); setSelectedIds(new Set()); }} 
+                            className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${churchFilter === c ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}
+                        >
+                            {c === 'All' ? 'All Branches' : `${c} Church`}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        )}
+
+        {/* Type Filter */}
+        <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                <Filter size={18}/> {hubTab === 'TEACHERS' ? 'Role' : 'Type'} Filter
+            </h3>
+            <div className="flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto no-scrollbar">
+            {['CM', ...getCreationRoleOptions(), 'ARCHIVED'].map((f) => (
+                <button key={f} onClick={() => { setFilter(f); setSelectedIds(new Set()); }} className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${filter === f ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
+                    {f === 'CM' ? 'All Active' : f}
+                </button>
+            ))}
+            </div>
         </div>
       </div>
       

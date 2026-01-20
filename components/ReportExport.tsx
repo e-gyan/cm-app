@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AppData, MemberType, Church, Member } from '../types';
-import { Copy, FileText, CheckCircle, Database, Download, Upload, AlertCircle, RefreshCw, Cloud, Lock, Code, MessageCircle, BookOpen, Compass, GitBranch, ArrowRight, Presentation, Smartphone, Zap, Heart, Layout, BarChart3, MousePointerClick, Lightbulb } from 'lucide-react';
+import { Copy, FileText, CheckCircle, Database, Download, Upload, AlertCircle, RefreshCw, Cloud, Lock, Code, MessageCircle, BookOpen, Compass, GitBranch, ArrowRight, ChevronDown, Calendar } from 'lucide-react';
 import { getSundaysInYear, DEFAULT_CLOUD_CONFIG } from '../constants';
 import { importData, saveCloudConfig, syncFromCloud } from '../services/storageService';
 
@@ -14,7 +14,7 @@ interface ReportExportProps {
 const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurch, currentUser }) => {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [copiedReport, setCopiedReport] = useState(false);
-  const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'DATA' | 'CLOUD' | 'HELP' | 'PORTFOLIO'>('WHATSAPP');
+  const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'DATA' | 'CLOUD' | 'HELP'>('WHATSAPP');
   const [importMsg, setImportMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);
   
   // Cloud Sync State
@@ -64,12 +64,70 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
   const generateReport = () => {
     if (!selectedDate) return "Please select a date to generate a report.";
 
-    // Filter record by Church
+    const formattedDate = new Date(selectedDate).toLocaleDateString('en-GB', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+    });
+
+    // --- ADMIN GLOBAL REPORT (Figures Only) ---
+    if (activeChurch === 'CM') {
+         let report = `*CM ATTENDANCE SUMMARY*\n${formattedDate}\n`;
+         report += `----------------------------\n`;
+
+         const branches: Church[] = ['UJ', 'I', 'K', 'LJ'];
+         let ministryTotal = 0;
+
+         branches.forEach(branch => {
+             const record = data.attendance.find(r => r.date === selectedDate && r.churchId === branch);
+             if (!record) {
+                 // Skip branches with no data for cleanliness, or mark as Pending
+                 // report += `\n📍 *${branch} Church*: _No Data_\n`;
+                 return;
+             }
+
+             // Filter members present in this record
+             const presentMembers = data.members.filter(m => record.presentMemberIds.includes(m.id));
+             
+             // Count Categories (Children Only for Stats usually, exclude staff)
+             const children = presentMembers.filter(m => !['Teacher','Helper','Volunteer'].includes(m.type));
+             const staffCount = presentMembers.length - children.length;
+
+             const membersCount = children.filter(m => m.type === MemberType.MEMBER).length;
+             const fnfCount = children.filter(m => m.type === MemberType.FNF).length;
+             const inconsistentCount = children.filter(m => m.type === MemberType.INCONSISTENT).length;
+             const notMemberCount = children.filter(m => m.type === MemberType.NOT_MEMBER).length;
+
+             const branchTotal = children.length;
+             ministryTotal += branchTotal;
+
+             report += `\n*${branch} CHURCH* (Total: ${branchTotal})\n`;
+             report += `Members: ${membersCount} | FNF: ${fnfCount}\n`;
+             
+             if (inconsistentCount > 0 || notMemberCount > 0) {
+                const others = [];
+                if (inconsistentCount > 0) others.push(`Inc: ${inconsistentCount}`);
+                if (notMemberCount > 0) others.push(`Other: ${notMemberCount}`);
+                report += `   • ${others.join(' | ')}\n`;
+             }
+         });
+
+         report += `\n----------------------------\n`;
+         report += `*GRAND TOTAL: ${ministryTotal}*\n`;
+         
+         if (ministryTotal === 0) {
+             report += `\n_No attendance data recorded yet for this date._`;
+         }
+
+         return report;
+    }
+
+    // --- SINGLE BRANCH REPORT (Names included) ---
     const record = data.attendance.find(r => r.date === selectedDate && r.churchId === activeChurch);
     if (!record) return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
 
     const presentMembers = data.members.filter(m => record.presentMemberIds.includes(m.id));
-    const punctualMembers = data.members.filter(m => record.punctualMemberIds?.includes(m.id));
     
     // Sort alphabetically
     presentMembers.sort((a, b) => a.name.localeCompare(b.name));
@@ -83,18 +141,9 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     // Accounting count: Everyone excluding teachers
     const accountingCount = presentMembers.length - teachers.length;
 
-    const formattedDate = new Date(selectedDate).toLocaleDateString('en-GB', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric'
-    });
-
     let report = `*${activeChurch} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
     report += `------------------\n`;
-    report += `Total Present: ${accountingCount}\n\n`; // Only showing Accounting Count
-
-    
+    report += `Total Present: ${accountingCount}\n\n`;
 
     report += `*MEMBERS (${members.length})*\n`;
     if (members.length > 0) {
@@ -105,11 +154,11 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
       report += `_None_\n`;
     }
 
-    report += `\n*FNF (${fnfs.length})*\n`;
     if (fnfs.length > 0) {
-      fnfs.forEach((m, idx) => {
-        report += `${idx + 1}. ${m.name}\n`;
-      });
+        report += `\n*FNF (${fnfs.length})*\n`;
+        fnfs.forEach((m, idx) => {
+          report += `${idx + 1}. ${m.name}\n`;
+        });
     }
 
     if (inconsistent.length > 0) {
@@ -174,11 +223,9 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
       setTimeout(() => setImportMsg(null), 3000);
     };
     reader.readAsText(file);
-    // Reset input so same file can be selected again if needed
     event.target.value = '';
   };
   
-  // --- Cloud Sync Logic ---
   const handleSaveCloudConfig = async () => {
       if (!apiKey || !binId) {
           setCloudMsg('Please enter both API Key and Bin ID');
@@ -221,288 +268,106 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
   const reportText = generateReport();
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6">
       
       {/* Tabs */}
-      <div className="flex space-x-4 border-b border-gray-200 pb-2 overflow-x-auto no-scrollbar">
+      <div className="flex space-x-2 md:space-x-4 border-b border-gray-200 pb-3 overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveTab('WHATSAPP')}
-          className={`pb-2 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap outline-none ${activeTab === 'WHATSAPP' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          className={`pb-2 px-3 md:px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap outline-none ${activeTab === 'WHATSAPP' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
         >
-          <span className="flex items-center gap-2"><FileText size={16}/> WhatsApp Report</span>
+          <span className="flex items-center gap-2"><FileText size={16}/> Report</span>
         </button>
         <button
           onClick={() => setActiveTab('DATA')}
-          className={`pb-2 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap outline-none ${activeTab === 'DATA' ? 'border-amber-600 text-amber-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          className={`pb-2 px-3 md:px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap outline-none ${activeTab === 'DATA' ? 'border-amber-600 text-amber-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
         >
-          <span className="flex items-center gap-2"><Database size={16}/> Manual Backup</span>
+          <span className="flex items-center gap-2"><Database size={16}/> Backup</span>
         </button>
         {isAdmin && (
             <button
             onClick={() => setActiveTab('CLOUD')}
-            className={`pb-2 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap outline-none ${activeTab === 'CLOUD' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            className={`pb-2 px-3 md:px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap outline-none ${activeTab === 'CLOUD' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
             >
-            <span className="flex items-center gap-2"><Cloud size={16}/> Cloud Sync</span>
+            <span className="flex items-center gap-2"><Cloud size={16}/> Cloud</span>
             </button>
         )}
         <button
           onClick={() => setActiveTab('HELP')}
-          className={`pb-2 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap outline-none ${activeTab === 'HELP' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          className={`pb-2 px-3 md:px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap outline-none ${activeTab === 'HELP' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
         >
-          <span className="flex items-center gap-2"><BookOpen size={16}/> System Guide</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('PORTFOLIO')}
-          className={`pb-2 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap outline-none ${activeTab === 'PORTFOLIO' ? 'border-pink-600 text-pink-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-        >
-          <span className="flex items-center gap-2"><Presentation size={16}/> Product Case Study</span>
+          <span className="flex items-center gap-2"><BookOpen size={16}/> Guide</span>
         </button>
       </div>
 
       {activeTab === 'WHATSAPP' && (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-left-2">
-          <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-            Export for WhatsApp ({activeChurch})
-          </h2>
+        <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-left-2">
           
-          <div className="mb-6">
-             <label className="block text-sm font-bold text-gray-600 mb-2">Select Week</label>
+          {/* Header & Actions */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+             <div>
+                <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    Export Report
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">{activeChurch === 'CM' ? 'Global Ministry Summary' : `${activeChurch} Church Detailed Report`}</p>
+             </div>
+             
+             {/* Action Buttons - Moved to top for Mobile */}
+             <div className="flex gap-2 w-full md:w-auto">
+                <button
+                    onClick={handleOpenWhatsApp}
+                    className="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-sm transition-all font-bold bg-[#25D366] text-white hover:bg-[#128C7E] active:scale-95 text-sm"
+                >
+                    <MessageCircle size={18} /> Share
+                </button>
+                <button
+                    onClick={handleCopyReport}
+                    className={`
+                    flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-sm transition-all font-bold active:scale-95 text-sm
+                    ${copiedReport ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}
+                    `}
+                >
+                    {copiedReport ? <><CheckCircle size={18} /> Copied</> : <><Copy size={18} /> Copy</>}
+                </button>
+             </div>
+          </div>
+          
+          {/* Date Selector */}
+          <div className="mb-4 relative">
+             <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400">
+                <Calendar size={18} />
+             </div>
+             <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
+                <ChevronDown size={16} />
+             </div>
              <select 
               value={selectedDate} 
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full p-3 transition-shadow"
+              className="bg-gray-50 border border-gray-200 text-gray-900 text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-10 pr-10 p-3.5 appearance-none transition-shadow cursor-pointer"
             >
-              <option value="">-- Select a Date --</option>
+              <option value="">-- Select Date --</option>
               {sundays2026.map(d => {
                 const strDate = d.toISOString().split('T')[0];
-                const hasData = data.attendance.some(r => r.date === strDate && r.churchId === activeChurch);
+                // Check Data Availability: 
+                // If Admin (CM), check if ANY record exists. If Branch, check specific church.
+                const hasData = activeChurch === 'CM' 
+                    ? data.attendance.some(r => r.date === strDate)
+                    : data.attendance.some(r => r.date === strDate && r.churchId === activeChurch);
+                
                 return <option key={strDate} value={strDate}>{hasData ? '✅ ' : '⚪ '} {d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric'})}</option>
               })}
             </select>
           </div>
 
-          <div className="relative">
+          {/* Report Preview */}
+          <div className="relative rounded-xl overflow-hidden border border-gray-200 shadow-inner">
             <textarea
-              readOnly
-              value={reportText}
-              className="w-full h-96 p-4 bg-gray-50 border border-gray-200 rounded-xl font-mono text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none shadow-inner"
+                readOnly
+                value={reportText}
+                className="w-full h-[60vh] md:h-96 p-4 bg-gray-50/50 font-mono text-xs md:text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none leading-relaxed"
             />
-            <div className="absolute top-4 right-4 flex flex-col sm:flex-row gap-2">
-              <button
-                onClick={handleOpenWhatsApp}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg shadow-sm transition-all font-medium bg-[#25D366] text-white hover:bg-[#128C7E] active:scale-95"
-                title="Open in WhatsApp"
-              >
-                 <MessageCircle size={16} /> <span className="hidden sm:inline">WhatsApp</span>
-              </button>
-              <button
-                onClick={handleCopyReport}
-                className={`
-                  flex items-center gap-2 px-4 py-2 rounded-lg shadow-sm transition-all font-medium active:scale-95
-                  ${copiedReport ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50'}
-                `}
-              >
-                {copiedReport ? <><CheckCircle size={16} /> <span className="hidden sm:inline">Copied</span></> : <><Copy size={16} /> <span className="hidden sm:inline">Copy Text</span></>}
-              </button>
-            </div>
           </div>
         </div>
-      )}
-
-      {activeTab === 'PORTFOLIO' && (
-          <div className="space-y-12 animate-in fade-in pb-12">
-              {/* 1. Hero Section */}
-              <div className="bg-slate-900 text-white rounded-3xl p-8 md:p-12 relative overflow-hidden shadow-2xl">
-                  <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-500 rounded-full blur-3xl opacity-20 -translate-y-1/2 translate-x-1/2"></div>
-                  <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-pink-500 rounded-full blur-3xl opacity-10 translate-y-1/2 -translate-x-1/2"></div>
-                  
-                  <div className="relative z-10 max-w-2xl">
-                      <div className="flex items-center gap-3 mb-6">
-                          <span className="bg-indigo-500/20 text-indigo-200 px-3 py-1 rounded-full text-xs font-bold border border-indigo-500/30">PRODUCT CASE STUDY</span>
-                          <span className="text-slate-400 text-sm font-medium">UX / Engineering</span>
-                      </div>
-                      <h1 className="text-4xl md:text-5xl font-bold mb-6 leading-tight">Reimagining Church <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-pink-400">Attendance & Engagement</span></h1>
-                      <p className="text-slate-300 text-lg leading-relaxed mb-8">
-                          A mobile-first PWA designed to replace paper registries with automated workflows, real-time analytics, and seamless WhatsApp reporting.
-                      </p>
-                      <div className="flex flex-wrap gap-4">
-                          <div className="flex items-center gap-2 text-sm font-medium text-slate-300 bg-white/5 px-4 py-2 rounded-xl border border-white/10">
-                              <Zap size={16} className="text-yellow-400"/> Auto-Promotion Logic
-                          </div>
-                          <div className="flex items-center gap-2 text-sm font-medium text-slate-300 bg-white/5 px-4 py-2 rounded-xl border border-white/10">
-                              <Smartphone size={16} className="text-blue-400"/> Mobile First
-                          </div>
-                          <div className="flex items-center gap-2 text-sm font-medium text-slate-300 bg-white/5 px-4 py-2 rounded-xl border border-white/10">
-                              <Cloud size={16} className="text-cyan-400"/> Cloud Sync
-                          </div>
-                      </div>
-                  </div>
-              </div>
-
-              {/* 2. The Solution (UI Gallery) */}
-              <div>
-                  <div className="flex items-center gap-3 mb-6">
-                       <Layout className="text-indigo-600"/>
-                       <h2 className="text-2xl font-bold text-gray-900">The Solution: Visual User Flow</h2>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      
-                      {/* CARD 1: Dashboard */}
-                      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm hover:shadow-md transition-all">
-                           <div className="aspect-[9/16] bg-slate-50 rounded-2xl border-4 border-slate-200 overflow-hidden relative shadow-inner mb-6 flex flex-col">
-                               {/* Mock UI: Header */}
-                               <div className="h-12 bg-white border-b border-gray-200 flex items-center justify-between px-3">
-                                   <div className="w-16 h-3 bg-gray-200 rounded-full"></div>
-                                   <div className="w-6 h-6 bg-indigo-100 rounded-full"></div>
-                               </div>
-                               {/* Mock UI: Body */}
-                               <div className="p-3 space-y-3">
-                                   <div className="flex gap-2">
-                                       <div className="w-1/2 h-20 bg-indigo-500 rounded-xl"></div>
-                                       <div className="w-1/2 h-20 bg-white border border-gray-200 rounded-xl"></div>
-                                   </div>
-                                   <div className="h-32 bg-white border border-gray-200 rounded-xl"></div>
-                                   <div className="h-8 bg-gray-200 rounded-full w-2/3"></div>
-                                   <div className="space-y-2">
-                                       <div className="h-12 bg-white border border-gray-200 rounded-xl"></div>
-                                       <div className="h-12 bg-white border border-gray-200 rounded-xl"></div>
-                                   </div>
-                               </div>
-                               {/* Mock UI: Bottom Nav */}
-                               <div className="mt-auto h-12 bg-white border-t border-gray-200 flex justify-around items-center px-2">
-                                   <div className="w-6 h-6 bg-indigo-600 rounded-md"></div>
-                                   <div className="w-6 h-6 bg-gray-300 rounded-md"></div>
-                                   <div className="w-6 h-6 bg-gray-300 rounded-md"></div>
-                               </div>
-                           </div>
-                           <h3 className="font-bold text-gray-900 text-lg">1. Insightful Dashboard</h3>
-                           <p className="text-sm text-gray-500 mt-2">Immediate visibility into growth trends and retention health across 4 locations.</p>
-                      </div>
-
-                      {/* CARD 2: Attendance */}
-                      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm hover:shadow-md transition-all">
-                           <div className="aspect-[9/16] bg-slate-50 rounded-2xl border-4 border-slate-200 overflow-hidden relative shadow-inner mb-6 flex flex-col">
-                               {/* Mock UI: Search Header */}
-                               <div className="p-3 bg-white border-b border-gray-200 space-y-2">
-                                   <div className="flex justify-between">
-                                       <div className="w-24 h-6 bg-gray-200 rounded-md"></div>
-                                       <div className="w-16 h-6 bg-indigo-600 rounded-md"></div>
-                                   </div>
-                                   <div className="h-8 bg-gray-100 rounded-lg border border-gray-200"></div>
-                               </div>
-                               {/* Mock UI: List */}
-                               <div className="p-3 grid grid-cols-1 gap-2 overflow-hidden">
-                                   <div className="h-16 bg-indigo-600 rounded-xl shadow-md border-l-4 border-indigo-800 flex items-center px-3 gap-2">
-                                       <div className="flex-1">
-                                           <div className="w-20 h-3 bg-white/30 rounded mb-1"></div>
-                                           <div className="w-32 h-4 bg-white rounded"></div>
-                                       </div>
-                                       <div className="w-6 h-6 bg-white rounded-full"></div>
-                                   </div>
-                                   <div className="h-16 bg-white border border-gray-200 rounded-xl flex items-center px-3 gap-2 opacity-50">
-                                       <div className="flex-1">
-                                           <div className="w-20 h-3 bg-gray-100 rounded mb-1"></div>
-                                           <div className="w-24 h-4 bg-gray-200 rounded"></div>
-                                       </div>
-                                       <div className="w-6 h-6 bg-gray-100 rounded-full"></div>
-                                   </div>
-                                    <div className="h-16 bg-white border border-gray-200 rounded-xl flex items-center px-3 gap-2 opacity-50">
-                                       <div className="flex-1">
-                                           <div className="w-20 h-3 bg-gray-100 rounded mb-1"></div>
-                                           <div className="w-24 h-4 bg-gray-200 rounded"></div>
-                                       </div>
-                                       <div className="w-6 h-6 bg-gray-100 rounded-full"></div>
-                                   </div>
-                               </div>
-                           </div>
-                           <h3 className="font-bold text-gray-900 text-lg">2. Rapid Attendance</h3>
-                           <p className="text-sm text-gray-500 mt-2">One-tap check-ins with visual cues for 'Present' state. Includes 'Punctuality' gamification.</p>
-                      </div>
-
-                      {/* CARD 3: Export */}
-                      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm hover:shadow-md transition-all">
-                           <div className="aspect-[9/16] bg-slate-50 rounded-2xl border-4 border-slate-200 overflow-hidden relative shadow-inner mb-6 flex flex-col justify-center items-center p-6">
-                               <div className="w-full bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-4">
-                                   <div className="w-32 h-4 bg-gray-800 rounded mb-4"></div>
-                                   <div className="space-y-2">
-                                       <div className="w-full h-2 bg-gray-200 rounded"></div>
-                                       <div className="w-full h-2 bg-gray-200 rounded"></div>
-                                       <div className="w-2/3 h-2 bg-gray-200 rounded"></div>
-                                   </div>
-                               </div>
-                               <div className="w-full h-10 bg-[#25D366] rounded-lg shadow-md flex items-center justify-center text-white text-xs font-bold gap-2">
-                                   <MessageCircle size={14} fill="white"/> Share to WhatsApp
-                               </div>
-                           </div>
-                           <h3 className="font-bold text-gray-900 text-lg">3. Instant Reporting</h3>
-                           <p className="text-sm text-gray-500 mt-2">Auto-generates formatted text summaries for stakeholder communication, eliminating manual counting.</p>
-                      </div>
-
-                  </div>
-              </div>
-
-              {/* 3. Impact & Design Philosophy */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Impact */}
-                  <div className="bg-gradient-to-br from-indigo-50 to-white p-8 rounded-3xl border border-indigo-100">
-                      <div className="flex items-center gap-2 mb-6 text-indigo-700">
-                          <BarChart3 className="shrink-0"/>
-                          <h3 className="font-bold text-xl">User Impact</h3>
-                      </div>
-                      <div className="space-y-6">
-                          <div>
-                              <div className="text-4xl font-extrabold text-slate-800 mb-1">90%</div>
-                              <p className="text-sm font-medium text-slate-500">Reduction in weekly administrative time for Head Teachers.</p>
-                          </div>
-                          <div>
-                              <div className="text-4xl font-extrabold text-slate-800 mb-1">100%</div>
-                              <p className="text-sm font-medium text-slate-500">Accuracy in data retention and historical reporting.</p>
-                          </div>
-                          <div className="pt-4 border-t border-indigo-100">
-                              <p className="text-sm text-slate-600 italic">"The automated demotion/promotion logic means I no longer have to manually check birthdays or attendance streaks. The system just works."</p>
-                          </div>
-                      </div>
-                  </div>
-
-                  {/* Design Thinking */}
-                  <div className="bg-white p-8 rounded-3xl border border-gray-200">
-                      <div className="flex items-center gap-2 mb-6 text-purple-700">
-                          <Lightbulb className="shrink-0"/>
-                          <h3 className="font-bold text-xl">Product Thinking</h3>
-                      </div>
-                      <ul className="space-y-6">
-                          <li className="flex gap-4">
-                              <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center shrink-0">
-                                  <MousePointerClick size={20}/>
-                              </div>
-                              <div>
-                                  <h4 className="font-bold text-gray-900">Forgiving UI</h4>
-                                  <p className="text-sm text-gray-500 mt-1">Every action (attendance, archiving) is reversible. Toggles are used over complex forms to reduce friction on mobile.</p>
-                              </div>
-                          </li>
-                          <li className="flex gap-4">
-                              <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shrink-0">
-                                  <GitBranch size={20}/>
-                              </div>
-                              <div>
-                                  <h4 className="font-bold text-gray-900">Invisible Logic</h4>
-                                  <p className="text-sm text-gray-500 mt-1">Complex rules (e.g., 'Inconsistent' after 10 absences, Age promotion) happen in the background, keeping the UI clean.</p>
-                              </div>
-                          </li>
-                          <li className="flex gap-4">
-                              <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center shrink-0">
-                                  <Heart size={20}/>
-                              </div>
-                              <div>
-                                  <h4 className="font-bold text-gray-900">Empathy for Context</h4>
-                                  <p className="text-sm text-gray-500 mt-1">Designed for high-distraction environments (Sunday school). Large tap targets, high contrast, and offline-first resilience.</p>
-                              </div>
-                          </li>
-                      </ul>
-                  </div>
-              </div>
-          </div>
       )}
 
       {activeTab === 'HELP' && (
@@ -567,38 +432,6 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
                                  Conversely, if an "Inconsistent" member attends <strong>7 weeks</strong> in a row, they are restored to "Active".
                              </p>
                          </div>
-                     </div>
-                 </div>
-             </div>
-
-             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                 <h3 className="font-bold text-gray-800 mb-6 text-lg">Primary User Journeys</h3>
-                 
-                 <div className="relative border-l-2 border-indigo-100 pl-8 space-y-8">
-                     <div className="relative">
-                         <div className="absolute -left-[39px] top-0 w-6 h-6 rounded-full bg-indigo-600 border-4 border-white shadow-sm"></div>
-                         <h4 className="font-bold text-gray-900">Sunday Morning Flow</h4>
-                         <p className="text-sm text-gray-500 mt-1">The typical workflow for a teacher.</p>
-                         <ol className="mt-3 space-y-2 text-sm text-gray-600 list-decimal ml-4">
-                             <li>Login using personal Access Code.</li>
-                             <li>Navigate to <strong>Attendance</strong> tab.</li>
-                             <li>Select "Today" from the date dropdown.</li>
-                             <li>Tap names as children arrive (Green Card = Present).</li>
-                             <li>Click "Save" periodically to sync data to the cloud.</li>
-                             <li>Navigate to <strong>Reports</strong> tab and click "WhatsApp" to send the summary to the group.</li>
-                         </ol>
-                     </div>
-
-                     <div className="relative">
-                         <div className="absolute -left-[39px] top-0 w-6 h-6 rounded-full bg-amber-500 border-4 border-white shadow-sm"></div>
-                         <h4 className="font-bold text-gray-900">New Visitor Workflow</h4>
-                         <p className="text-sm text-gray-500 mt-1">Handling first-time guests.</p>
-                         <ol className="mt-3 space-y-2 text-sm text-gray-600 list-decimal ml-4">
-                             <li>In <strong>Attendance</strong>, click the <span className="inline-block p-1 bg-indigo-50 rounded text-indigo-600"><Code size={10} className="inline"/> + User</span> button.</li>
-                             <li>Enter the child's name in the Quick Add box.</li>
-                             <li>This creates a temporary "FNF" (Friends & Family) record.</li>
-                             <li>Later, go to <strong>People Hub</strong>, find the record, click Edit, and add DOB to convert them to a full member.</li>
-                         </ol>
                      </div>
                  </div>
              </div>
