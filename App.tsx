@@ -306,7 +306,7 @@ const App: React.FC = () => {
         {/* Mobile Bottom Navigation */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 px-4 py-1 pb-safe flex justify-around items-center shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.05)]">
             <MobileNavItem view={View.DASHBOARD} icon={LayoutDashboard} label="Home" />
-            <MobileNavItem view={View.ATTENDANCE} icon={CalendarCheck} label="Attendance" />
+            <MobileNavItem view={View.ATTENDANCE} icon={CalendarCheck} label="Attend" />
             <MobileNavItem view={View.MEMBERS} icon={Users} label="People" />
             <MobileNavItem view={View.EXPORT} icon={Share2} label="Reports" />
         </nav>

@@ -341,7 +341,7 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
                     icon={<Calendar size={24} />} 
                     colorClass="bg-emerald-500"
                     trend={stats.trend}
-                    subtitle="vs Avg"
+                    subtitle={`vs Avg (${stats.avgAttendance})`}
                 />
                  <StatCard 
                     title="Annual Progress" 
