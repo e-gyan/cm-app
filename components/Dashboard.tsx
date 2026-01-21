@@ -152,7 +152,7 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                     <Users className="mb-4 text-indigo-200" size={32} />
                     <h2 className="text-5xl font-extrabold mb-2 tracking-tight">{totalPop}</h2>
                     <p className="text-indigo-100 font-medium text-lg">Active Children</p>
-                    <p className="text-indigo-200 text-sm mt-1 opacity-80">Across 4 Locations</p>
+                    <p className="text-indigo-200 text-sm mt-1 opacity-80">Across 4 churches</p>
                 </div>
                 
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 lg:col-span-3 flex flex-col justify-center relative">
@@ -167,7 +167,7 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                     <div className="flex items-center justify-between mb-6">
                         <div>
                              <h3 className="text-lg font-bold text-slate-800">Ministry Overview</h3>
-                             <p className="text-slate-500 text-sm">Combined performance metrics ({new Date().getFullYear()})</p>
+                             <p className="text-slate-500 text-sm">Combined metrics ({new Date().getFullYear()})</p>
                         </div>
                         <div className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-bold mr-10 md:mr-0">Live Data</div>
                     </div>
@@ -197,7 +197,7 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                             <p className="text-xs text-slate-400 mt-1">YTD: {totalYTD}</p>
                          </div>
                          <div className="px-4 pt-4 md:pt-0">
-                             <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Branches</p>
+                             <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Churches</p>
                              <div className="flex items-center gap-2">
                                 {churches.map(c => (
                                     <div key={c} className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${c==='UJ'?'bg-indigo-500':c==='I'?'bg-emerald-500':c==='K'?'bg-rose-500':'bg-amber-500'}`}>{c}</div>
@@ -222,7 +222,7 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                                 </div>
                                 <div>
                                     <h3 className="text-xl font-bold text-slate-800">{stat.church} Church</h3>
-                                    <p className="text-sm text-slate-500 font-medium">{stat.population} Active Kids</p>
+                                    <p className="text-sm text-slate-500 font-medium">{stat.population} Active Members</p>
                                 </div>
                             </div>
                             <div className={`flex flex-col items-end ${stat.growth >= 0 ? 'text-green-600' : 'text-rose-600'}`}>
@@ -398,7 +398,7 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
                     <div className="flex items-center justify-between mb-8">
                         <div>
                             <h3 className="text-xl font-bold text-slate-800">Attendance Trend</h3>
-                            <p className="text-slate-500 text-sm">Last 5 Sessions Performance</p>
+                            <p className="text-slate-500 text-sm">Last 5 Sessions</p>
                         </div>
                         <div className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
                             <TrendingUp size={14} /> Analysis
@@ -430,15 +430,15 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
                      <ul className="space-y-4 relative z-10">
                         <li className="flex gap-3 items-start">
                             <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center shrink-0 mt-0.5">1</div>
-                            <p className="text-sm text-slate-300 font-medium">Use the "Punctual" toggle for early arrivals to gamify the experience.</p>
+                            <p className="text-sm text-slate-300 font-medium">Use the Punctual toggle for early arrivals to gamify the experience.</p>
                         </li>
                         <li className="flex gap-3 items-start">
                             <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center shrink-0 mt-0.5">2</div>
-                            <p className="text-sm text-slate-300 font-medium">Mark visitors as "FNF" to track outreach separately.</p>
+                            <p className="text-sm text-slate-300 font-medium">Mark visitors as FNF to track outreach separately.</p>
                         </li>
                         <li className="flex gap-3 items-start">
                             <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center shrink-0 mt-0.5">3</div>
-                            <p className="text-sm text-slate-300 font-medium">Review the "Inconsistent" list in People Hub to reach out.</p>
+                            <p className="text-sm text-slate-300 font-medium">Review the Inconsistent list in People Hub to reach out.</p>
                         </li>
                      </ul>
                 </div>
