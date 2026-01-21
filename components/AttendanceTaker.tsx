@@ -286,16 +286,16 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   return (
     <div className="flex flex-col h-[calc(100vh-130px)] md:h-[calc(100vh-140px)] relative overflow-hidden">
       
-      {/* 1. TOP BAR: Compact for Mobile */}
+      {/* 1. TOP BAR: Refined for Mobile & Desktop */}
       <div className="shrink-0 space-y-3 z-20 pb-2">
           
-          {/* Main Controls */}
+          {/* Row 1: Main Controls (Church, Date, Save) */}
           <div className="bg-white rounded-3xl p-3 md:p-4 shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-3">
             
             <div className="flex gap-2 w-full items-center">
                 {/* Admin Church Selector */}
                 {activeChurch === 'CM' && (
-                    <div className="relative w-2/5 md:w-48 shrink-0">
+                    <div className="relative w-28 md:w-48 shrink-0">
                         <div className="absolute inset-y-0 left-0 flex items-center pl-2 pointer-events-none text-indigo-600">
                             <Crown size={16} />
                         </div>
@@ -304,7 +304,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                             onChange={(e) => setInternalChurchFilter(e.target.value as Church | 'All')}
                             className="w-full bg-indigo-50 border border-indigo-100 text-indigo-900 text-xs md:text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block pl-8 p-3 appearance-none cursor-pointer"
                         >
-                            <option value="All">All Branches</option>
+                            <option value="All">All</option>
                             {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(church => (
                                 <option key={church} value={church}>{church}</option>
                             ))}
@@ -313,7 +313,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                 )}
 
                  {/* Date Selector */}
-                <div className="relative flex-1">
+                <div className="relative flex-1 min-w-0">
                     <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                         <Calendar size={16} />
                     </div>
@@ -330,16 +330,18 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                     </select>
                 </div>
 
-                {/* Desktop Save Button (Hidden on Mobile) */}
+                {/* Save Button (Always Visible) */}
                 <button 
                     onClick={handleSave}
-                    className="hidden md:flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95"
+                    className="flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95 shrink-0"
                 >
-                    <Save size={18} /> <span>Save</span>
+                    <Save size={18} />
+                    <span className="hidden sm:inline">Save</span>
+                    <span className="bg-white/20 px-1.5 py-0.5 rounded text-xs font-mono">{displayCount}</span>
                 </button>
             </div>
             
-            {/* Desktop-only secondary actions */}
+            {/* Desktop-only secondary actions (Kept for layout consistency on large screens) */}
             <div className="hidden md:flex items-center gap-2 w-full md:w-auto">
                 {isAdmin && (
                     <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
@@ -360,7 +362,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
             </div>
           </div>
 
-          {/* Search & Filter Bar */}
+          {/* Row 2: Search & Filters (Includes Actions on Mobile) */}
           <div className="bg-white/80 backdrop-blur-md rounded-2xl md:rounded-3xl p-2 shadow-sm border border-slate-100">
              <div className="flex flex-col gap-2">
                 <div className="relative">
@@ -376,10 +378,27 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                 
                 {/* Horizontal Filter Scroll */}
                 <div className="flex gap-2 overflow-x-auto pb-1 px-1 no-scrollbar items-center">
+                    
+                    {/* Mobile Quick Actions (Pinned to left of filters) */}
+                    <div className="md:hidden flex items-center gap-1 pr-2 border-r border-slate-200 mr-1 shrink-0">
+                         {enablePunctuality && (
+                            <button onClick={() => setShowLeaderboard(true)} className="p-1.5 text-amber-600 bg-amber-50 rounded-lg border border-amber-100">
+                                <Trophy size={18} />
+                            </button>
+                         )}
+                         {attendanceMode === 'MEMBERS' && (
+                            <button onClick={() => setIsAddingFNF(!isAddingFNF)} className="p-1.5 text-indigo-600 bg-indigo-50 rounded-lg border border-indigo-100">
+                                <UserPlus size={18} />
+                            </button>
+                         )}
+                    </div>
+
                     <button onClick={() => setFilterType('All')} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${filterType === 'All' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>All</button>
                     {(attendanceMode === 'STAFF' ? [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER] : [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT]).map(type => (
                         <button key={type} onClick={() => setFilterType(type)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterType === type ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>{type}</button>
                     ))}
+                    
+                    {/* Admin Switcher on Mobile */}
                     <div className="md:hidden flex items-center gap-1 border-l pl-2 ml-1">
                          {isAdmin && (
                             <button onClick={() => { setAttendanceMode(attendanceMode === 'MEMBERS' ? 'STAFF' : 'MEMBERS'); }} className={`px-2 py-1 text-[10px] font-bold rounded border ${attendanceMode === 'STAFF' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-white text-slate-500'}`}>
@@ -400,7 +419,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
       )}
 
       {/* 2. MAIN GRID (Scrollable Area) - Fills remaining space */}
-      <div className="flex-1 overflow-y-auto pr-1 pb-24 md:pb-10">
+      <div className="flex-1 overflow-y-auto pr-1 pb-4 md:pb-10">
              {effectiveChurch === 'All' && filteredMembers.length > 0 && (
                 <div className="mb-2 text-center text-xs font-bold text-slate-400 uppercase tracking-widest">
                     Viewing All Branches ({filteredMembers.length})
@@ -472,34 +491,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
              </div>
       </div>
       
-      {/* 3. MOBILE FLOATING ACTION BAR (Fixed above bottom nav) */}
-      <div className="md:hidden fixed bottom-20 left-4 right-4 z-40 flex items-center justify-between gap-3 p-2 bg-slate-900/90 backdrop-blur-xl rounded-full shadow-2xl border border-slate-700/50 animate-in slide-in-from-bottom-4">
-          <div className="flex items-center gap-2 pl-2">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                  <CheckCircle2 size={14} /> 
-                  <span className="text-sm font-bold">{displayCount}</span>
-              </div>
-              {enablePunctuality && (
-                 <button onClick={() => setShowLeaderboard(true)} className="p-2 text-amber-400 hover:bg-white/10 rounded-full transition-colors">
-                    <Trophy size={20} />
-                 </button>
-              )}
-              {attendanceMode === 'MEMBERS' && (
-                 <button onClick={() => setIsAddingFNF(true)} className="p-2 text-indigo-400 hover:bg-white/10 rounded-full transition-colors">
-                    <UserPlus size={20} />
-                 </button>
-              )}
-          </div>
-          
-          <button 
-             onClick={handleSave}
-             className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-full font-bold shadow-lg active:scale-95 transition-transform"
-          >
-             <span>Save</span>
-             <Save size={16} />
-          </button>
-      </div>
-
+      {/* 3. MOBILE FLOATING ACTION BAR - REMOVED */}
+      
       {successMsg && (
         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-800/90 backdrop-blur text-white px-8 py-4 rounded-2xl shadow-2xl flex flex-col items-center gap-2 animate-in fade-in zoom-in-95 z-50">
             <CheckCircle2 size={32} className="text-green-400" />
