@@ -91,21 +91,17 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
         });
         const avg = last5.length ? Math.round(totalAtt / last5.length) : 0;
         
-        // YTD Cumulative
-        const currentYear = new Date().getFullYear();
-        const ytd = attendance
-            .filter(r => new Date(r.date).getFullYear() === currentYear)
-            .reduce((sum, r) => {
-                return sum + r.presentMemberIds.filter(id => {
-                    const m = data.members.find(mem => mem.id === id);
-                    return m && !['Teacher','Helper','Volunteer'].includes(m.type);
-                }).length;
-            }, 0);
+        // Current Population (Active + FNF)
+        const population = data.members.filter(m => 
+            m.assignedChurch === church && 
+            m.status === MemberStatus.ACTIVE && 
+            (m.type === MemberType.MEMBER || m.type === MemberType.FNF)
+        ).length;
 
         return {
             church,
             avg,
-            ytd,
+            population,
             target: editTargets[church] || 0
         };
     });
@@ -134,7 +130,8 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
          let report = `*CM ATTENDANCE SUMMARY*\n${formattedDate}\n`;
          report += `----------------------------\n`;
 
-         const branches: Church[] = ['UJ', 'I', 'K', 'LJ'];
+         // Added CM and All to the report loop to capture staff assigned to them
+         const branches: Church[] = ['UJ', 'I', 'K', 'LJ', 'CM', 'All'];
          let ministryTotal = 0;
          let totalTeachers = 0;
 
@@ -162,16 +159,20 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
              const branchTotal = children.length;
              ministryTotal += branchTotal;
 
-             report += `\n*${branch} CHURCH* (${branchTotal})\n`;
-             report += `Members: ${membersCount} | FNF: ${fnfCount}\n`;
-             
-             const others = [];
-             if (inconsistentCount > 0) others.push(`Inc: ${inconsistentCount}`);
-             if (notMemberCount > 0) others.push(`Other: ${notMemberCount}`);
-             if (staffCount > 0) others.push(`Staff: ${staffCount}`);
-             
-             if (others.length > 0) {
-                report += `   • ${others.join(' | ')}\n`;
+             if (branchTotal > 0 || staffCount > 0) {
+                 report += `\n*${branch} CHURCH* (${branchTotal})\n`;
+                 if (branchTotal > 0) {
+                     report += `Members: ${membersCount} | FNF: ${fnfCount}\n`;
+                 }
+                 
+                 const others = [];
+                 if (inconsistentCount > 0) others.push(`Inc: ${inconsistentCount}`);
+                 if (notMemberCount > 0) others.push(`Other: ${notMemberCount}`);
+                 if (staffCount > 0) others.push(`Staff: ${staffCount}`);
+                 
+                 if (others.length > 0) {
+                    report += `   • ${others.join(' | ')}\n`;
+                 }
              }
          });
 
@@ -445,8 +446,8 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in">
               <div className="mb-6 flex justify-between items-center">
                   <div>
-                    <h3 className="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2"><Target size={20} className="text-rose-500"/> Annual Targets</h3>
-                    <p className="text-sm text-gray-500">Set cumulative attendance goals for the current year ({new Date().getFullYear()}) and monitor progress.</p>
+                    <h3 className="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2"><Target size={20} className="text-rose-500"/> Membership Targets</h3>
+                    <p className="text-sm text-gray-500">Set population goals (Active Members + FNF) for the current year.</p>
                   </div>
                   <button onClick={handleSaveTargets} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-colors shadow-sm active:scale-95">
                       <Save size={16}/> Save Targets
@@ -467,8 +468,9 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
                           <div className="mt-4 flex flex-col gap-4">
                               <div className="flex justify-between items-end">
                                   <div>
-                                      <p className="text-xs text-gray-400 font-bold uppercase">YTD Attendance</p>
-                                      <p className="text-3xl font-bold text-gray-800">{stat.ytd}</p>
+                                      <p className="text-xs text-gray-400 font-bold uppercase">Current Members</p>
+                                      <p className="text-3xl font-bold text-gray-800">{stat.population}</p>
+                                      <p className="text-[10px] text-gray-400">Active + FNF</p>
                                   </div>
                                   <div className="text-right">
                                       <p className="text-xs text-gray-400 font-bold uppercase">Avg (5 Wks)</p>
@@ -478,16 +480,16 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
                               
                               <div>
                                   <div className="flex justify-between text-xs font-bold text-gray-500 mb-1">
-                                      <span>Annual Progress</span>
-                                      <span>{stat.target > 0 ? Math.round((stat.ytd/stat.target)*100) : 0}%</span>
+                                      <span>Goal Progress</span>
+                                      <span>{stat.target > 0 ? Math.round((stat.population/stat.target)*100) : 0}%</span>
                                   </div>
                                   <div className="w-full bg-gray-100 rounded-full h-2">
-                                      <div className={`h-full rounded-full ${stat.church === 'UJ' ? 'bg-indigo-500' : stat.church === 'I' ? 'bg-emerald-500' : stat.church === 'K' ? 'bg-rose-500' : 'bg-amber-500'}`} style={{width: `${Math.min(100, (stat.ytd/(stat.target || 1))*100)}%`}}></div>
+                                      <div className={`h-full rounded-full ${stat.church === 'UJ' ? 'bg-indigo-500' : stat.church === 'I' ? 'bg-emerald-500' : stat.church === 'K' ? 'bg-rose-500' : 'bg-amber-500'}`} style={{width: `${Math.min(100, (stat.population/(stat.target || 1))*100)}%`}}></div>
                                   </div>
                               </div>
 
                               <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-                                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Annual Target (Total)</label>
+                                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Target Count</label>
                                   <input 
                                       type="number" 
                                       className="w-full p-2 bg-white border border-gray-200 rounded-lg font-bold text-gray-800 outline-none focus:ring-2 focus:ring-indigo-500"

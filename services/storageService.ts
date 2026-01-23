@@ -145,7 +145,7 @@ const fetchWithRetryHeaders = async (url: string, method: string, apiKey: string
     let response = await fetch(url, { method, headers: headersMaster, body });
     
     // Attempt 2: If unauthorized (401), try with Access Key
-    if (response.status === 401) {
+    if (response.status === 401 || response.status === 403) {
         const headersAccess = {
             'Content-Type': 'application/json',
             'X-Access-Key': apiKey

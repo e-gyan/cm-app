@@ -449,6 +449,8 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                     <select className="w-full p-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" value={formData.assignedChurch} onChange={e => setFormData({...formData, assignedChurch: e.target.value as Church})}>
                         {['UJ', 'I', 'K', 'LJ'].map(c => <option key={c} value={c}>{c}</option>)}
                         {isAdmin && <option value="CM">CM (Admin)</option>}
+                        {/* Added All option for staff assignment */}
+                        {hubTab === 'TEACHERS' && isAdmin && <option value="All">All Churches</option>}
                     </select>
                 </div>
             </div>
@@ -529,7 +531,8 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                 
                 {/* Desktop: Horizontal Scroll */}
                 <div className="hidden md:flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto no-scrollbar">
-                    {(['All', 'UJ', 'I', 'K', 'LJ'] as const).map((c) => (
+                    {/* Added 'All' church filter if looking for members assigned to All */}
+                    {(['All', 'UJ', 'I', 'K', 'LJ', 'CM'] as const).map((c) => (
                         <button 
                             key={c} 
                             onClick={() => { setChurchFilter(c); setSelectedIds(new Set()); }} 
@@ -549,7 +552,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                         className="w-full appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-bold rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     >
                          <option value="All">All Branches</option>
-                         {(['UJ', 'I', 'K', 'LJ'] as const).map((c) => (
+                         {(['UJ', 'I', 'K', 'LJ', 'CM'] as const).map((c) => (
                              <option key={c} value={c}>{c} Church</option>
                          ))}
                     </select>

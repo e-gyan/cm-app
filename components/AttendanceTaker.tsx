@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppData, Member, MemberType, MemberStatus, Church } from '../types';
 import { getSundaysInYear } from '../constants';
-import { Search, Save, Check, Clock, Trophy, X, Calendar, UserPlus, Users2, Filter, Crown, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { Search, Save, Check, Trophy, X, Calendar, UserPlus, Crown, CheckCircle2 } from 'lucide-react';
 import { addMember, saveAttendance } from '../services/storageService';
 import { sanitizeInput } from '../services/securityService';
 
@@ -23,8 +23,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const [filterType, setFilterType] = useState<string>('All');
   
   // Internal Church Filter for Admins when activeChurch is 'CM'
-  // Added 'All' as a valid option for the UI state
-  const [internalChurchFilter, setInternalChurchFilter] = useState<Church | 'All'>('UJ');
+  // changed 'All' to 'COMBINED' to avoid collision with the specific church named 'All'
+  const [internalChurchFilter, setInternalChurchFilter] = useState<Church | 'COMBINED'>('UJ');
 
   const [newMemberName, setNewMemberName] = useState('');
   const [isAddingFNF, setIsAddingFNF] = useState(false);
@@ -35,10 +35,22 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const [attendanceMode, setAttendanceMode] = useState<'MEMBERS' | 'STAFF'>('MEMBERS');
 
   // Determine the effective church context
+  // If activeChurch is CM, we use the internal filter. If the filter is 'COMBINED', it represents a view of multiple churches.
   const effectiveChurch = activeChurch === 'CM' ? internalChurchFilter : activeChurch;
+  const isCombinedView = effectiveChurch === 'COMBINED';
 
-  const enablePunctuality = (attendanceMode === 'MEMBERS' && (effectiveChurch === 'UJ' || effectiveChurch === 'All')) || attendanceMode === 'STAFF';
+  const enablePunctuality = (attendanceMode === 'MEMBERS' && (effectiveChurch === 'UJ' || isCombinedView)) || attendanceMode === 'STAFF';
   const sundays2026 = useMemo(() => getSundaysInYear(2026), []);
+
+  // Helper to determine which branches are relevant based on mode and filter
+  const getRelevantBranches = (churchFilter: Church | 'COMBINED', mode: 'MEMBERS' | 'STAFF'): Church[] => {
+      if (churchFilter !== 'COMBINED') return [churchFilter];
+      // If Combined, return list based on mode
+      // Added 'All' to the list of branches for Staff mode
+      return mode === 'STAFF' 
+        ? ['UJ', 'I', 'K', 'LJ', 'CM', 'All'] 
+        : ['UJ', 'I', 'K', 'LJ'];
+  };
 
   useEffect(() => {
     setPresentIds(new Set());
@@ -62,9 +74,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   // Load attendance data when context changes
   useEffect(() => {
     if (selectedDate) {
-      const branchesToLoad: Church[] = effectiveChurch === 'All' 
-        ? ['UJ', 'I', 'K', 'LJ'] 
-        : [effectiveChurch as Church];
+      const branchesToLoad = getRelevantBranches(effectiveChurch, attendanceMode);
 
       const combinedPresent = new Set<string>();
       const combinedPunctual = new Set<string>();
@@ -118,8 +128,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
     if (newPunctual.has(id)) {
       newPunctual.delete(id);
     } else {
-      // In 'All' mode, we might want to limit per church, but global limit is safer for UI
-      if (effectiveChurch !== 'All' && newPunctual.size >= 3) return; 
+      // In Combined mode, we might want to limit per church, but global limit is safer for UI
+      if (!isCombinedView && newPunctual.size >= 3) return; 
       
       newPunctual.add(id);
       if (!presentIds.has(id)) {
@@ -134,9 +144,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const handleSave = () => {
     if (!selectedDate) return;
 
-    const branchesToSave: Church[] = effectiveChurch === 'All' 
-        ? ['UJ', 'I', 'K', 'LJ'] 
-        : [effectiveChurch as Church];
+    const branchesToSave = getRelevantBranches(effectiveChurch, attendanceMode);
 
     branchesToSave.forEach(churchId => {
         // Load existing record to preserve the "other" group (e.g. if editing Staff, keep Members)
@@ -198,8 +206,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const handleAddFNF = () => {
     if (!newMemberName.trim()) return;
     const cleanName = sanitizeInput(newMemberName);
-    // If 'All' is selected, default new FNF to UJ (or ask user, but keeping simple for now)
-    const targetChurch = effectiveChurch === 'All' ? 'UJ' : effectiveChurch as Church;
+    // If 'COMBINED' is selected, default new FNF to UJ (or ask user, but keeping simple for now)
+    const targetChurch = isCombinedView ? 'UJ' : effectiveChurch as Church;
     
     const newMember = addMember(cleanName, MemberType.FNF, targetChurch, '');
     const newSet = new Set(presentIds);
@@ -213,7 +221,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   
   // --- LIST GENERATION ---
   let membersToList: Member[] = [];
-  const targetChurches = effectiveChurch === 'All' ? ['UJ', 'I', 'K', 'LJ'] : [effectiveChurch];
+  const targetChurches = getRelevantBranches(effectiveChurch, attendanceMode);
 
   if (attendanceMode === 'STAFF') {
       membersToList = data.members.filter(m => m.status === MemberStatus.ACTIVE && targetChurches.includes(m.assignedChurch) && ['Teacher','Helper','Volunteer'].includes(m.type));
@@ -228,8 +236,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   });
 
   const sortedMembers = [...filteredMembers].sort((a, b) => {
-    // Sort by Church first if in 'All' view
-    if (effectiveChurch === 'All' && a.assignedChurch !== b.assignedChurch) {
+    // Sort by Church first if in Combined view
+    if (isCombinedView && a.assignedChurch !== b.assignedChurch) {
+        // Put CM and All at the end or beginning? Let's just standard sort string.
         return a.assignedChurch.localeCompare(b.assignedChurch);
     }
     
@@ -260,7 +269,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
           const rDate = new Date(r.date);
           const isMonthMatch = leaderboardTimeframe === 'CM' || (rDate.getMonth() === currentMonth && rDate.getFullYear() === currentYear);
           // Match church ID
-          const isChurchMatch = effectiveChurch === 'All' ? true : r.churchId === effectiveChurch;
+          const isChurchMatch = isCombinedView ? true : r.churchId === effectiveChurch;
           return isChurchMatch && isMonthMatch;
       });
 
@@ -281,12 +290,19 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
           .sort(([, a], [, b]) => b - a)
           .slice(0, 10) // Top 10
           .map(([id, score], index) => ({ rank: index + 1, id, name: data.members.find(mem => mem.id === id)?.name || 'Unknown', count: score }));
-  }, [data.attendance, effectiveChurch, attendanceMode, leaderboardTimeframe, data.members]);
+  }, [data.attendance, effectiveChurch, attendanceMode, leaderboardTimeframe, data.members, isCombinedView]);
+
+  const churchOptions = useMemo(() => {
+      const base: Church[] = ['UJ', 'I', 'K', 'LJ'];
+      // If Staff mode, include CM and All
+      if (attendanceMode === 'STAFF') return [...base, 'CM', 'All'];
+      return base;
+  }, [attendanceMode]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-130px)] md:h-[calc(100vh-140px)] relative overflow-hidden">
       
-      {/* 1. TOP BAR: Refined for Mobile & Desktop */}
+      {/* 1. TOP BAR */}
       <div className="shrink-0 space-y-3 z-20 pb-2">
           
           {/* Row 1: Main Controls (Church, Date, Save) */}
@@ -301,11 +317,11 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                         </div>
                         <select
                             value={internalChurchFilter}
-                            onChange={(e) => setInternalChurchFilter(e.target.value as Church | 'All')}
+                            onChange={(e) => setInternalChurchFilter(e.target.value as Church | 'COMBINED')}
                             className="w-full bg-indigo-50 border border-indigo-100 text-indigo-900 text-xs md:text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block pl-8 p-3 appearance-none cursor-pointer"
                         >
-                            <option value="All">All</option>
-                            {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(church => (
+                            <option value="COMBINED">View Combined</option>
+                            {churchOptions.map(church => (
                                 <option key={church} value={church}>{church}</option>
                             ))}
                         </select>
@@ -341,7 +357,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                 </button>
             </div>
             
-            {/* Desktop-only secondary actions (Kept for layout consistency on large screens) */}
+            {/* Desktop-only secondary actions */}
             <div className="hidden md:flex items-center gap-2 w-full md:w-auto">
                 {isAdmin && (
                     <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
@@ -362,7 +378,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
             </div>
           </div>
 
-          {/* Row 2: Search & Filters (Includes Actions on Mobile) */}
+          {/* Row 2: Search & Filters */}
           <div className="bg-white/80 backdrop-blur-md rounded-2xl md:rounded-3xl p-2 shadow-sm border border-slate-100">
              <div className="flex flex-col gap-2">
                 <div className="relative">
@@ -379,7 +395,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                 {/* Horizontal Filter Scroll */}
                 <div className="flex gap-2 overflow-x-auto pb-1 px-1 no-scrollbar items-center">
                     
-                    {/* Mobile Quick Actions (Pinned to left of filters) */}
+                    {/* Mobile Quick Actions */}
                     <div className="md:hidden flex items-center gap-1 pr-2 border-r border-slate-200 mr-1 shrink-0">
                          {enablePunctuality && (
                             <button onClick={() => setShowLeaderboard(true)} className="p-1.5 text-amber-600 bg-amber-50 rounded-lg border border-amber-100">
@@ -418,11 +434,11 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
         </div>
       )}
 
-      {/* 2. MAIN GRID (Scrollable Area) - Fills remaining space */}
+      {/* 2. MAIN GRID */}
       <div className="flex-1 overflow-y-auto pr-1 pb-4 md:pb-10">
-             {effectiveChurch === 'All' && filteredMembers.length > 0 && (
+             {isCombinedView && filteredMembers.length > 0 && (
                 <div className="mb-2 text-center text-xs font-bold text-slate-400 uppercase tracking-widest">
-                    Viewing All Branches ({filteredMembers.length})
+                    Viewing All Churches ({filteredMembers.length})
                 </div>
              )}
              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
@@ -450,7 +466,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                                          <p className={`text-xs font-medium uppercase tracking-wider ${isPresent ? 'text-indigo-200' : 'text-slate-400'}`}>
                                             {member.type}
                                          </p>
-                                         {effectiveChurch === 'All' && (
+                                         {(isCombinedView || effectiveChurch === 'CM') && (
                                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isPresent ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
                                                  {member.assignedChurch}
                                              </span>
@@ -467,14 +483,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                                 {enablePunctuality && (
                                     <button 
                                         onClick={(e) => handlePunctualToggle(e, member.id)}
-                                        disabled={!isPunctual && effectiveChurch !== 'All' && punctualIds.size >= 3}
+                                        disabled={!isPunctual && !isCombinedView && punctualIds.size >= 3}
                                         className={`p-1.5 rounded-lg transition-all ${
                                             isPunctual 
                                                 ? 'bg-amber-400 text-white shadow-sm' 
                                                 : isPresent 
                                                     ? 'bg-indigo-500 text-indigo-300 hover:bg-indigo-400 hover:text-white' 
                                                     : 'bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-500'
-                                        } ${(!isPunctual && effectiveChurch !== 'All' && punctualIds.size >= 3) ? 'opacity-30 cursor-not-allowed' : ''}`}
+                                        } ${(!isPunctual && !isCombinedView && punctualIds.size >= 3) ? 'opacity-30 cursor-not-allowed' : ''}`}
                                     >
                                         <Trophy size={16} fill={isPunctual ? "currentColor" : "none"} />
                                     </button>
@@ -490,8 +506,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                  })}
              </div>
       </div>
-      
-      {/* 3. MOBILE FLOATING ACTION BAR - REMOVED */}
       
       {successMsg && (
         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-800/90 backdrop-blur text-white px-8 py-4 rounded-2xl shadow-2xl flex flex-col items-center gap-2 animate-in fade-in zoom-in-95 z-50">

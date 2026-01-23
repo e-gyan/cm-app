@@ -82,22 +82,17 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
 
     const churchStats = useMemo(() => {
         return churches.map(church => {
-            const members = data.members.filter(m => m.assignedChurch === church && m.status === MemberStatus.ACTIVE && !['Teacher','Helper','Volunteer'].includes(m.type));
+            // New "Membership Goal" Logic: Active Members + FNF
+            const population = data.members.filter(m => 
+                m.assignedChurch === church && 
+                m.status === MemberStatus.ACTIVE && 
+                (m.type === MemberType.MEMBER || m.type === MemberType.FNF)
+            ).length;
+
             const attendance = data.attendance.filter(r => r.churchId === church);
             const sortedAttendance = [...attendance].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             
-            // YTD Calculation (Year To Date) - Cumulative
-            const currentYear = new Date().getFullYear();
-            const ytdAttendance = attendance
-                .filter(r => new Date(r.date).getFullYear() === currentYear)
-                .reduce((sum, r) => {
-                    return sum + r.presentMemberIds.filter(id => {
-                        const m = data.members.find(mem => mem.id === id);
-                        return m && !['Teacher','Helper','Volunteer'].includes(m.type);
-                    }).length;
-                }, 0);
-
-            // Average (Last 5 weeks mainly for trend, but not for YTD)
+            // Average (Last 5 weeks)
             const totalAtt = attendance.reduce((sum, r) => {
                  return sum + r.presentMemberIds.filter(id => {
                      const m = data.members.find(mem => mem.id === id);
@@ -106,8 +101,7 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
             }, 0);
             
             const avg = attendance.length ? Math.round(totalAtt / attendance.length) : 0;
-            const population = members.length;
-            const rate = population ? Math.round((avg / population) * 100) : 0;
+            const retention = population ? Math.round((avg / population) * 100) : 0;
             
             let lastAttendance = 0;
             let growth = 0;
@@ -129,17 +123,16 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
             }
 
             const target = data.targets?.[church] || 0;
-            // Target Achievement is now YTD vs Annual Target
-            const targetAchievement = target > 0 ? Math.round((ytdAttendance / target) * 100) : 0;
+            // Target Achievement is now Population vs Target
+            const targetAchievement = target > 0 ? Math.round((population / target) * 100) : 0;
 
-            return { church, population, avg, rate, lastAttendance, growth, target, targetAchievement, ytdAttendance };
+            return { church, population, avg, retention, lastAttendance, growth, target, targetAchievement };
         });
     }, [data]);
 
     const totalPop = churchStats.reduce((acc, curr) => acc + curr.population, 0);
     const totalAvg = churchStats.reduce((acc, curr) => acc + curr.avg, 0);
     const totalTarget = churchStats.reduce((acc, curr) => acc + curr.target, 0);
-    const totalYTD = churchStats.reduce((acc, curr) => acc + curr.ytdAttendance, 0);
     
     // Global Retention Rate (Avg Attendance / Total Population)
     const globalRetention = totalPop > 0 ? Math.round((totalAvg / totalPop) * 100) : 0;
@@ -151,8 +144,8 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                     <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full translate-x-10 -translate-y-10 group-hover:scale-110 transition-transform duration-500"></div>
                     <Users className="mb-4 text-indigo-200" size={32} />
                     <h2 className="text-5xl font-extrabold mb-2 tracking-tight">{totalPop}</h2>
-                    <p className="text-indigo-100 font-medium text-lg">Active Children</p>
-                    <p className="text-indigo-200 text-sm mt-1 opacity-80">Across 4 churches</p>
+                    <p className="text-indigo-100 font-medium text-lg">Total Membership</p>
+                    <p className="text-indigo-200 text-sm mt-1 opacity-80">Active & FNF</p>
                 </div>
                 
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 lg:col-span-3 flex flex-col justify-center relative">
@@ -187,14 +180,14 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                              <p className="text-xs text-slate-400 mt-1">Avg vs Total Active</p>
                          </div>
                          <div className="px-4 pt-4 md:pt-0">
-                            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Annual Goal</p>
+                            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Membership Goal</p>
                             <div className="flex items-center gap-3">
-                                <h2 className="text-4xl font-bold text-slate-800">{totalTarget > 0 ? Math.round((totalYTD/totalTarget)*100) : 0}%</h2>
+                                <h2 className="text-4xl font-bold text-slate-800">{totalTarget > 0 ? Math.round((totalPop/totalTarget)*100) : 0}%</h2>
                                 <div className="h-2 flex-1 bg-slate-100 rounded-full overflow-hidden flex">
-                                    <div className="h-full bg-blue-500 rounded-full" style={{width: `${Math.min(100, (totalYTD/totalTarget)*100)}%`}}></div>
+                                    <div className="h-full bg-blue-500 rounded-full" style={{width: `${Math.min(100, (totalPop/totalTarget)*100)}%`}}></div>
                                 </div>
                             </div>
-                            <p className="text-xs text-slate-400 mt-1">YTD: {totalYTD}</p>
+                            <p className="text-xs text-slate-400 mt-1">Current: {totalPop}</p>
                          </div>
                          <div className="px-4 pt-4 md:pt-0">
                              <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Churches</p>
@@ -237,13 +230,13 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                         <div className="space-y-3">
                             <div>
                                 <div className="flex justify-between text-xs font-bold text-slate-500 mb-1">
-                                    <span>Annual Progress (YTD)</span>
-                                    <span>{stat.ytdAttendance} / {stat.target}</span>
+                                    <span>Membership Goal</span>
+                                    <span>{stat.population} / {stat.target}</span>
                                 </div>
                                 <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
                                     <div 
                                         className={`h-full rounded-full ${stat.church === 'UJ' ? 'bg-indigo-500' : stat.church === 'I' ? 'bg-emerald-500' : stat.church === 'K' ? 'bg-rose-500' : 'bg-amber-500'}`} 
-                                        style={{ width: `${Math.min(100, (stat.ytdAttendance / (stat.target || 1)) * 100)}%` }}
+                                        style={{ width: `${Math.min(100, (stat.population / (stat.target || 1)) * 100)}%` }}
                                     ></div>
                                 </div>
                             </div>
@@ -257,10 +250,10 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold text-slate-800">Set Annual Targets</h3>
+                            <h3 className="text-xl font-bold text-slate-800">Set Membership Targets</h3>
                             <button onClick={() => setIsTargetModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X size={20}/></button>
                         </div>
-                        <p className="text-xs text-slate-500 mb-4">Enter the cumulative attendance goal for the entire year (e.g., 2000 total visits).</p>
+                        <p className="text-xs text-slate-500 mb-4">Enter the target number of ACTIVE members + FNF for each church.</p>
                         <div className="space-y-4">
                             {churches.map(c => (
                                 <div key={c} className="flex items-center gap-4">
@@ -272,7 +265,7 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                                         {c}
                                     </div>
                                     <div className="flex-1">
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{c} Annual Goal</label>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{c} Target</label>
                                         <input 
                                             type="number" 
                                             className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500" 
@@ -297,8 +290,15 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
 const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ data, activeChurch }) => {
     
     const stats = useMemo(() => {
+        // New Population Logic: Members + FNF only
+        const population = data.members.filter(m => 
+            m.assignedChurch === activeChurch && 
+            m.status === MemberStatus.ACTIVE &&
+            (m.type === MemberType.MEMBER || m.type === MemberType.FNF)
+        ).length;
+
         const members = data.members.filter(m => m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE);
-        const kids = members.filter(m => !['Teacher','Helper','Volunteer'].includes(m.type));
+        const kids = members.filter(m => !['Teacher','Helper','Volunteer'].includes(m.type)); // Used for retention base
         const attendance = data.attendance
             .filter(r => r.churchId === activeChurch)
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -327,14 +327,6 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
             return { name: date, count, growth };
         });
 
-        // YTD Calculation
-        const currentYear = new Date().getFullYear();
-        const ytd = attendance
-            .filter(r => new Date(r.date).getFullYear() === currentYear)
-            .reduce((sum, r) => {
-                return sum + getCount(r);
-            }, 0);
-
         const avg = last5.length ? Math.round(last5.reduce((acc, curr) => acc + curr.count, 0) / last5.length) : 0;
         const lastAtt = last5.length > 0 ? last5[last5.length - 1].count : 0;
         const trend = avg > 0 ? Math.round(((lastAtt - avg) / avg) * 100) : 0;
@@ -345,13 +337,12 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
         const retention = kids.length > 0 ? Math.round((avg / kids.length) * 100) : 0;
 
         return { 
-            totalMembers: kids.length, 
+            totalMembers: population, 
             avgAttendance: avg, 
             lastAttendance: lastAtt,
             trendData: last5,
             trend,
             target,
-            ytd,
             retention
         };
     }, [data, activeChurch]);
@@ -360,11 +351,11 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
         <div className="space-y-6">
              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                 <StatCard 
-                    title="Active Members" 
+                    title="Active + FNF" 
                     value={stats.totalMembers} 
                     icon={<Users size={24} />} 
                     colorClass="bg-indigo-600"
-                    subtitle="Registered"
+                    subtitle="Current Pop."
                 />
                  <StatCard 
                     title="Retention Rate" 
@@ -382,13 +373,13 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
                     subtitle={`vs Avg (${stats.avgAttendance})`}
                 />
                  <StatCard 
-                    title="Annual Progress" 
-                    value={stats.ytd}
+                    title="Membership Goal" 
+                    value={stats.totalMembers}
                     target={stats.target}
-                    progressValue={stats.ytd}
+                    progressValue={stats.totalMembers}
                     icon={<Target size={24} />} 
                     colorClass="bg-rose-500"
-                    subtitle="YTD Visits"
+                    subtitle="Population vs Target"
                 />
             </div>
 
