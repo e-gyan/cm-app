@@ -54,10 +54,23 @@ export interface Transaction {
   recordedBy?: string;
 }
 
+export type NotificationType = 'BIRTHDAY' | 'PROMOTION' | 'STATUS_CHANGE' | 'TEEN_ALERT';
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  message: string;
+  createdAt: string; // ISO Date
+  targetChurch: Church; // The church staff who should see this
+  relatedMemberId?: string;
+  isRead: boolean;
+}
+
 export interface AppData {
   members: Member[];
   attendance: AttendanceRecord[];
   transactions: Transaction[];
+  notifications: Notification[];
   targets?: Record<string, number>; // Stores attendance goals e.g. { "UJ": 50, "I": 20 }
   lastUpdated?: number; // Timestamp for sync conflict resolution
 }

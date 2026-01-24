@@ -1,4 +1,4 @@
-import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig } from '../types';
+import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig, Transaction, Notification } from '../types';
 import { INITIAL_MEMBERS, INITIAL_ATTENDANCE, DEFAULT_CLOUD_CONFIG } from '../constants';
 import { sanitizeInput, hashString, isValidSchema } from './services/securityService';
 
@@ -18,11 +18,15 @@ const loadData = (): AppData => {
       parsed = JSON.parse(stored);
       // Ensure transactions exists if loaded from legacy data
       if (!parsed.transactions) parsed.transactions = [];
+      if (!parsed.notifications) parsed.notifications = [];
+      if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
     } else {
       parsed = {
         members: [...INITIAL_MEMBERS],
         attendance: [...INITIAL_ATTENDANCE],
         transactions: [],
+        notifications: [],
+        targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
         lastUpdated: Date.now()
       };
     }
@@ -88,6 +92,8 @@ const loadData = (): AppData => {
         members: [...INITIAL_MEMBERS],
         attendance: [...INITIAL_ATTENDANCE],
         transactions: [],
+        notifications: [],
+        targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
         lastUpdated: Date.now()
     };
   }
@@ -351,6 +357,9 @@ export const importData = (jsonString: string): { success: boolean; message: str
     });
     
     parsed.lastUpdated = Date.now();
+    // Ensure new fields exist on import
+    if (!parsed.notifications) parsed.notifications = [];
+    if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
 
     inMemoryData = parsed;
     persistData(true); 

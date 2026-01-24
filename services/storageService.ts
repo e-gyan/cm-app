@@ -1,4 +1,4 @@
-import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig, Transaction } from '../types';
+import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig, Transaction, Notification, NotificationType } from '../types';
 import { INITIAL_MEMBERS, INITIAL_ATTENDANCE, DEFAULT_CLOUD_CONFIG } from '../constants';
 import { sanitizeInput, hashString, isValidSchema } from './securityService';
 
@@ -18,6 +18,8 @@ const loadData = (): AppData => {
       parsed = JSON.parse(stored);
       // Ensure transactions exists if loaded from legacy data
       if (!parsed.transactions) parsed.transactions = [];
+      // Ensure notifications exists
+      if (!parsed.notifications) parsed.notifications = [];
       // Ensure targets exists
       if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
     } else {
@@ -25,20 +27,13 @@ const loadData = (): AppData => {
         members: [...INITIAL_MEMBERS],
         attendance: [...INITIAL_ATTENDANCE],
         transactions: [],
+        notifications: [],
         targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
         lastUpdated: 0 // Set to 0 ensures cloud data is accepted on fresh install
       };
     }
 
     // --- SECURITY MIGRATION: HASH PLAIN TEXT PASSWORDS ---
-    // If a passcode is short (e.g. "1234"), it's plaintext. SHA-256 hex is 64 chars.
-    let migrationNeeded = false;
-    
-    // We can't await inside synchronous loadData, so we'll schedule it.
-    // However, to ensure consistency, we check on usage. 
-    // For initial load, we assume if they are short they are legacy.
-    
-    // Migration Logic:
     let adminExists = false;
     parsed.members.forEach((m: any) => {
         if (!m.assignedChurch) m.assignedChurch = 'UJ';
@@ -64,7 +59,7 @@ const loadData = (): AppData => {
             status: MemberStatus.ACTIVE,
             assignedChurch: "CM",
             role: "ADMIN",
-            passcode: "2026", // Plaintext initially, will be hashed on auth or next save cycle logic
+            passcode: "2026", 
             isAccessActive: true
         });
     }
@@ -80,7 +75,6 @@ const loadData = (): AppData => {
         }
         if (hasUpdates) {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
-            console.log("Security Migration: Passcodes hashed successfully.");
         }
     })();
 
@@ -91,6 +85,7 @@ const loadData = (): AppData => {
         members: [...INITIAL_MEMBERS],
         attendance: [...INITIAL_ATTENDANCE],
         transactions: [],
+        notifications: [],
         targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
         lastUpdated: 0
     };
@@ -103,6 +98,8 @@ export const initializeRepository = async () => {
     if (!inMemoryData) {
         inMemoryData = loadData();
     }
+    // Check for birthdays on init
+    checkBirthdaysAndTeens();
 };
 
 // --- CLOUD SYNC SERVICE ---
@@ -206,6 +203,7 @@ export const syncFromCloud = async (): Promise<{success: boolean, message?: stri
             // Re-sanitize incoming cloud names just in case
             cloudData.members.forEach(m => m.name = sanitizeInput(m.name));
             if (!cloudData.targets) cloudData.targets = { UJ: 0, I: 0, K: 0, LJ: 0 }; 
+            if (!cloudData.notifications) cloudData.notifications = [];
             
             inMemoryData = cloudData;
             persistData(false); 
@@ -237,6 +235,123 @@ let isDirty = false;
 export const getAppData = (): AppData => {
   return inMemoryData;
 };
+
+// --- NOTIFICATION SYSTEM ---
+
+const addNotification = (type: NotificationType, message: string, targetChurch: Church, memberId?: string) => {
+    // Prevent duplicate notifications for same member/type today
+    const today = new Date().toISOString().split('T')[0];
+    const exists = inMemoryData.notifications.find(n => 
+        n.type === type && 
+        n.relatedMemberId === memberId && 
+        n.createdAt.startsWith(today)
+    );
+
+    if (!exists) {
+        inMemoryData.notifications.unshift({
+            id: crypto.randomUUID(),
+            type,
+            message,
+            createdAt: new Date().toISOString(),
+            targetChurch,
+            relatedMemberId: memberId,
+            isRead: false
+        });
+        // Keep only last 50 notifications to prevent bloat
+        if (inMemoryData.notifications.length > 50) {
+            inMemoryData.notifications = inMemoryData.notifications.slice(0, 50);
+        }
+        isDirty = true;
+    }
+};
+
+export const markNotificationAsRead = (id: string) => {
+    const note = inMemoryData.notifications.find(n => n.id === id);
+    if (note) {
+        note.isRead = true;
+        isDirty = true;
+        persistData();
+    }
+};
+
+export const clearAllNotifications = (churchId: Church) => {
+    let changed = false;
+    inMemoryData.notifications.forEach(n => {
+        if ((n.targetChurch === churchId || churchId === 'CM') && !n.isRead) {
+            n.isRead = true;
+            changed = true;
+        }
+    });
+    if (changed) {
+        isDirty = true;
+        persistData();
+    }
+};
+
+const checkBirthdaysAndTeens = () => {
+    if (!inMemoryData.members) return;
+    
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    
+    const oneWeekFromNow = new Date(today);
+    oneWeekFromNow.setDate(today.getDate() + 7);
+
+    inMemoryData.members.forEach(m => {
+        if (!m.birthDate || m.status !== MemberStatus.ACTIVE) return;
+        
+        const birth = new Date(m.birthDate);
+        const thisYearBirthday = new Date(today.getFullYear(), birth.getMonth(), birth.getDate());
+        
+        // Handle year wrap-around for Dec/Jan
+        if (thisYearBirthday < today) {
+            thisYearBirthday.setFullYear(today.getFullYear() + 1);
+        }
+        
+        const diffTime = thisYearBirthday.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        // 1. General Birthday Notice (Prior notice ~7 days)
+        if (diffDays <= 7 && diffDays >= 0) {
+            // Check if we already notified this year
+            const alreadyNotified = inMemoryData.notifications.some(n => 
+                n.type === 'BIRTHDAY' && 
+                n.relatedMemberId === m.id && 
+                new Date(n.createdAt).getFullYear() === today.getFullYear()
+            );
+
+            if (!alreadyNotified) {
+                const dayText = diffDays === 0 ? 'TODAY!' : `in ${diffDays} days.`;
+                addNotification(
+                    'BIRTHDAY', 
+                    `🎂 ${m.name}'s birthday is ${dayText}`, 
+                    m.assignedChurch, 
+                    m.id
+                );
+            }
+        }
+
+        // 2. Teen Check (13th Birthday) - "Up to a week"
+        const age = today.getFullYear() - birth.getFullYear();
+        // If they are turning 13 this specific year
+        if (age === 12 && diffDays <= 7 && diffDays >= 0) {
+             const alreadyNotifiedTeen = inMemoryData.notifications.some(n => 
+                n.type === 'TEEN_ALERT' && 
+                n.relatedMemberId === m.id
+            );
+            if (!alreadyNotifiedTeen) {
+                addNotification(
+                    'TEEN_ALERT', 
+                    `🎓 Teen Alert: ${m.name} turns 13 in ${diffDays} days! Prepare for graduation.`, 
+                    m.assignedChurch, 
+                    m.id
+                );
+            }
+        }
+    });
+    if (isDirty) persistData();
+};
+
 
 // --- AUTHENTICATION & SECURITY ---
 
@@ -383,11 +498,8 @@ export const importData = (jsonString: string): { success: boolean; message: str
         if (!r.churchId) r.churchId = 'UJ';
     });
     
-    // Ensure transactions are initialized
-    if (!parsed.transactions) parsed.transactions = [];
-    if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
-
     parsed.lastUpdated = Date.now();
+    if (!parsed.notifications) parsed.notifications = [];
 
     inMemoryData = parsed;
     persistData(true); 
@@ -497,6 +609,7 @@ const autoTransferMembersBasedOnAge = () => {
         if (targetChurch === 'ARCHIVE' && member.assignedChurch === 'UJ') {
              if (!member.transferPendingDate) {
                  member.transferPendingDate = today.toISOString();
+                 addNotification('TEEN_ALERT', `🎓 ${member.name} is scheduled for Moving Up in 1 week!`, member.assignedChurch, member.id);
                  transferChanges = true;
                  return;
              } else {
@@ -508,6 +621,7 @@ const autoTransferMembersBasedOnAge = () => {
                      member.status = MemberStatus.ARCHIVED;
                      member.type = MemberType.NOT_MEMBER;
                      member.transferPendingDate = undefined; 
+                     addNotification('PROMOTION', `🎓 ${member.name} has officially graduated to the next level.`, member.assignedChurch, member.id);
                      transferChanges = true;
                  }
                  return;
@@ -516,12 +630,15 @@ const autoTransferMembersBasedOnAge = () => {
 
         if (targetChurch) {
             if (targetChurch === 'ARCHIVE') {
+                // Should have been caught by UJ check, but for others:
                 member.status = MemberStatus.ARCHIVED;
                 member.type = MemberType.NOT_MEMBER;
                 transferChanges = true;
             } else {
                 if (member.assignedChurch !== targetChurch) {
+                    const oldChurch = member.assignedChurch;
                     member.assignedChurch = targetChurch;
+                    addNotification('PROMOTION', `🚀 ${member.name} promoted from ${oldChurch} to ${targetChurch} Church!`, targetChurch, member.id);
                     transferChanges = true;
                 }
             }
@@ -583,6 +700,7 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
         if (attendedAll7) {
             member.type = MemberType.MEMBER;
             member.status = MemberStatus.ACTIVE;
+            addNotification('STATUS_CHANGE', `✨ ${member.name} is now ACTIVE after consistent attendance!`, member.assignedChurch, member.id);
             isDirty = true;
         }
     });
@@ -609,6 +727,7 @@ export const saveAttendance = (date: string, churchId: Church, presentIds: strin
       checkAndAutoUpdateMemberStatus(churchId);
   }
   autoTransferMembersBasedOnAge();
+  checkBirthdaysAndTeens(); // Re-check notifications on save
 };
 
 // --- FINANCIAL SERVICE METHODS ---

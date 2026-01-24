@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { getAppData, restoreSession, logoutUser, syncFromCloud, initializeRepository } from './services/storageService';
-import { AppData, Church, Member, Role } from './types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { getAppData, restoreSession, logoutUser, syncFromCloud, initializeRepository, markNotificationAsRead, clearAllNotifications } from './services/storageService';
+import { AppData, Church, Member, Role, Notification } from './types';
 import Dashboard from './components/Dashboard';
 import AttendanceTaker from './components/AttendanceTaker';
 import ReportExport from './components/ReportExport';
 import MembersList from './components/MembersList';
 import Login from './components/Login';
-import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw, Zap, ChevronDown } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw, Zap, ChevronDown, Bell, Check } from 'lucide-react';
 
 enum View {
   DASHBOARD = 'Dashboard',
@@ -16,7 +16,7 @@ enum View {
 }
 
 const App: React.FC = () => {
-  const [data, setData] = useState<AppData>({ members: [], attendance: [], transactions: [] });
+  const [data, setData] = useState<AppData>({ members: [], attendance: [], transactions: [], notifications: [] });
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
   
   // GLOBAL CONTEXT STATE
@@ -25,6 +25,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const savedState = localStorage.getItem('sidebarState');
@@ -101,6 +102,23 @@ const App: React.FC = () => {
     setCurrentView(View.DASHBOARD);
   };
 
+  const myNotifications = useMemo(() => {
+      if (!data.notifications || !currentUser) return [];
+      return data.notifications.filter(n => 
+          !n.isRead && (n.targetChurch === activeChurch || (currentUser.role === 'ADMIN' && activeChurch === 'CM'))
+      );
+  }, [data.notifications, activeChurch, currentUser]);
+
+  const handleMarkRead = (id: string) => {
+      markNotificationAsRead(id);
+      refreshData();
+  };
+
+  const handleClearAll = () => {
+      clearAllNotifications(activeChurch);
+      refreshData();
+  };
+
   if (isLoading) {
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50 flex-col gap-6">
@@ -153,6 +171,47 @@ const App: React.FC = () => {
       </div>
       <span className={`text-[10px] font-bold tracking-tight ${currentView === view ? 'text-indigo-700' : 'text-slate-500'}`}>{label}</span>
     </button>
+  );
+  
+  const NotificationDropdown = () => (
+      <div className="absolute top-12 right-0 w-80 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-[100] animate-in fade-in zoom-in-95 origin-top-right">
+          <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Notifications ({myNotifications.length})</span>
+              {myNotifications.length > 0 && (
+                  <button onClick={handleClearAll} className="text-xs font-bold text-indigo-600 hover:text-indigo-800">Clear All</button>
+              )}
+          </div>
+          <div className="max-h-80 overflow-y-auto">
+              {myNotifications.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 text-sm">No new notifications</div>
+              ) : (
+                  myNotifications.map(n => (
+                      <div key={n.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors relative group">
+                          <div className="flex gap-3">
+                              <div className={`shrink-0 w-2 h-2 mt-2 rounded-full ${
+                                  n.type === 'BIRTHDAY' ? 'bg-pink-500' : 
+                                  n.type === 'PROMOTION' ? 'bg-indigo-500' :
+                                  n.type === 'STATUS_CHANGE' ? 'bg-green-500' : 'bg-amber-500'
+                              }`}></div>
+                              <div className="flex-1">
+                                  <p className="text-sm font-semibold text-slate-800 leading-tight">{n.message}</p>
+                                  <span className="text-[10px] font-bold text-slate-400 mt-1 block">
+                                      {n.type.replace('_', ' ')} • {new Date(n.createdAt).toLocaleDateString()}
+                                  </span>
+                              </div>
+                              <button 
+                                onClick={() => handleMarkRead(n.id)}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-slate-400 hover:text-indigo-600"
+                                title="Mark as read"
+                              >
+                                  <Check size={16}/>
+                              </button>
+                          </div>
+                      </div>
+                  ))
+              )}
+          </div>
+      </div>
   );
 
   return (
@@ -255,15 +314,22 @@ const App: React.FC = () => {
                  </div>
            </div>
 
-           {/* Mobile Header Actions (Sync & Logout) */}
+           {/* Mobile Header Actions (Notification & Logout) */}
            <div className="flex items-center gap-1">
-                <button 
-                    onClick={handleCloudSync}
-                    className={`p-2 rounded-full ${isSyncing ? 'text-indigo-600 bg-indigo-50' : (syncError ? 'text-red-500 bg-red-50' : 'text-slate-400 hover:bg-slate-100 hover:text-indigo-600')}`}
-                    disabled={isSyncing}
-                >
-                    <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} />
-                </button>
+                {/* Notification Bell Mobile */}
+                <div className="relative">
+                    <button 
+                        onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                        className={`p-2 rounded-full ${isNotificationsOpen ? 'bg-slate-100 text-indigo-600' : 'text-slate-400'}`}
+                    >
+                        <Bell size={20} />
+                        {myNotifications.length > 0 && (
+                            <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+                        )}
+                    </button>
+                    {isNotificationsOpen && <NotificationDropdown />}
+                </div>
+
                 <button 
                     onClick={handleLogout}
                     className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full"
@@ -282,13 +348,32 @@ const App: React.FC = () => {
                 <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">{currentView}</h2>
                 <p className="text-slate-500 mt-1 font-medium">Managing ministry activities for <span className="text-indigo-600 font-bold">{activeChurch} Church</span>.</p>
               </div>
-              <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl shadow-sm border border-slate-200">
-                  <div className={`p-1.5 rounded-lg ${isAdmin ? 'bg-purple-100 text-purple-600' : 'bg-indigo-100 text-indigo-600'}`}>
-                    {isAdmin ? <UserCog size={16} /> : <Users size={16} />}
+              
+              <div className="flex items-center gap-4">
+                  {/* Notification Bell Desktop */}
+                  <div className="relative">
+                       <button 
+                          onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                          className={`p-2.5 rounded-xl border transition-all ${isNotificationsOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300'}`}
+                       >
+                           <Bell size={20} />
+                           {myNotifications.length > 0 && (
+                               <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white border-2 border-white">
+                                   {myNotifications.length}
+                               </span>
+                           )}
+                       </button>
+                       {isNotificationsOpen && <NotificationDropdown />}
                   </div>
-                  <div className="text-right">
-                      <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Session</p>
-                      <p className="text-sm font-bold text-slate-700">{currentUser.name}</p>
+
+                  <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl shadow-sm border border-slate-200">
+                      <div className={`p-1.5 rounded-lg ${isAdmin ? 'bg-purple-100 text-purple-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                        {isAdmin ? <UserCog size={16} /> : <Users size={16} />}
+                      </div>
+                      <div className="text-right">
+                          <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Session</p>
+                          <p className="text-sm font-bold text-slate-700">{currentUser.name}</p>
+                      </div>
                   </div>
               </div>
             </div>

@@ -16,6 +16,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
   const [copiedReport, setCopiedReport] = useState(false);
   const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'KPI' | 'DATA' | 'CLOUD' | 'HELP'>('WHATSAPP');
   const [importMsg, setImportMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   // KPI/Target Edit State
   const [editTargets, setEditTargets] = useState<Record<string, number>>(data.targets || { UJ: 0, I: 0, K: 0, LJ: 0 });
@@ -31,6 +32,32 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sundays2026 = getSundaysInYear(2026);
   const isAdmin = currentUser.role === 'ADMIN';
+
+  // Auto-sync on mount to ensure report data is fresh from cloud
+  useEffect(() => {
+    const initSync = async () => {
+        const savedConfig = localStorage.getItem('UJ_CLOUD_CONFIG_V1');
+        const config = savedConfig ? JSON.parse(savedConfig) : null;
+        const shouldSync = (config && config.enabled) || isHardcoded;
+
+        if (shouldSync) {
+            setIsRefreshing(true);
+            try {
+                const result = await syncFromCloud();
+                if (result.success && result.message?.includes('New data')) {
+                    onUpdate();
+                    setImportMsg({ type: 'success', text: 'Report updated with latest cloud data' });
+                    setTimeout(() => setImportMsg(null), 3000);
+                }
+            } catch (e) {
+                console.error("Auto-sync failed", e);
+            } finally {
+                setIsRefreshing(false);
+            }
+        }
+    };
+    initSync();
+  }, []);
 
   useEffect(() => {
     if (!selectedDate && sundays2026.length > 0) {
@@ -114,6 +141,19 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     onUpdate();
   };
 
+  const handleManualRefresh = async () => {
+      setIsRefreshing(true);
+      const result = await syncFromCloud();
+      if (result.success) {
+          onUpdate();
+          setImportMsg({ type: 'success', text: 'Data refreshed' });
+      } else {
+          setImportMsg({ type: 'error', text: 'Sync failed' });
+      }
+      setTimeout(() => setImportMsg(null), 2000);
+      setIsRefreshing(false);
+  };
+
   // --- WhatsApp Report Logic ---
   const generateReport = () => {
     if (!selectedDate) return "Please select a date to generate a report.";
@@ -168,6 +208,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
                  const others = [];
                  if (inconsistentCount > 0) others.push(`Inc: ${inconsistentCount}`);
                  if (notMemberCount > 0) others.push(`Other: ${notMemberCount}`);
+                 if (staffCount > 0) others.push(`Staff: ${staffCount}`);
                  
                  if (others.length > 0) {
                     report += `   • ${others.join(' | ')}\n`;
@@ -372,8 +413,14 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
       </div>
 
       {activeTab === 'WHATSAPP' && (
-        <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-left-2">
+        <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-left-2 relative">
           
+          {importMsg && (
+             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-green-100 text-green-700 px-4 py-2 rounded-xl text-sm font-bold shadow-sm flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                 <CheckCircle size={16} /> {importMsg.text}
+             </div>
+          )}
+
           {/* Header & Actions */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
              <div>
@@ -404,30 +451,40 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
           </div>
           
           {/* Date Selector */}
-          <div className="mb-4 relative">
-             <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400">
-                <Calendar size={18} />
+          <div className="mb-4 flex gap-2">
+             <div className="relative flex-1">
+                 <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400">
+                    <Calendar size={18} />
+                 </div>
+                 <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
+                    <ChevronDown size={16} />
+                 </div>
+                 <select 
+                  value={selectedDate} 
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="bg-gray-50 border border-gray-200 text-gray-900 text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-10 pr-10 p-3.5 appearance-none transition-shadow cursor-pointer"
+                >
+                  <option value="">-- Select Date --</option>
+                  {sundays2026.map(d => {
+                    const strDate = d.toISOString().split('T')[0];
+                    const hasData = activeChurch === 'CM' 
+                        ? data.attendance.some(r => r.date === strDate)
+                        : data.attendance.some(r => r.date === strDate && r.churchId === activeChurch);
+                    
+                    return <option key={strDate} value={strDate}>{hasData ? '✅ ' : '⚪ '} {d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric'})}</option>
+                  })}
+                </select>
              </div>
-             <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
-                <ChevronDown size={16} />
-             </div>
-             <select 
-              value={selectedDate} 
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-gray-50 border border-gray-200 text-gray-900 text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-10 pr-10 p-3.5 appearance-none transition-shadow cursor-pointer"
-            >
-              <option value="">-- Select Date --</option>
-              {sundays2026.map(d => {
-                const strDate = d.toISOString().split('T')[0];
-                // Check Data Availability: 
-                // If Admin (CM), check if ANY record exists. If Branch, check specific church.
-                const hasData = activeChurch === 'CM' 
-                    ? data.attendance.some(r => r.date === strDate)
-                    : data.attendance.some(r => r.date === strDate && r.churchId === activeChurch);
-                
-                return <option key={strDate} value={strDate}>{hasData ? '✅ ' : '⚪ '} {d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric'})}</option>
-              })}
-            </select>
+             
+             {/* Manual Refresh Button */}
+             <button 
+                onClick={handleManualRefresh}
+                disabled={isRefreshing}
+                className="p-3.5 bg-slate-100 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors disabled:opacity-50"
+                title="Refresh Cloud Data"
+             >
+                 <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
+             </button>
           </div>
 
           {/* Report Preview */}
