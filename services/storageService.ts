@@ -18,9 +18,7 @@ const loadData = (): AppData => {
       parsed = JSON.parse(stored);
       // Ensure transactions exists if loaded from legacy data
       if (!parsed.transactions) parsed.transactions = [];
-      // Ensure notifications exists
       if (!parsed.notifications) parsed.notifications = [];
-      // Ensure targets exists
       if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
     } else {
       parsed = {
@@ -29,7 +27,7 @@ const loadData = (): AppData => {
         transactions: [],
         notifications: [],
         targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
-        lastUpdated: 0 // Set to 0 ensures cloud data is accepted on fresh install
+        lastUpdated: 0 // IMPORTANT: Set to 0 so cloud data (which has timestamp) always wins on fresh install
       };
     }
 
@@ -105,7 +103,6 @@ export const initializeRepository = async () => {
 // --- CLOUD SYNC SERVICE ---
 const getCloudConfig = (): CloudConfig | null => {
     // 1. Check for Env Var / Constants (Prioritize Code)
-    // Only use if strictly defined
     if (DEFAULT_CLOUD_CONFIG.apiKey && DEFAULT_CLOUD_CONFIG.binId) {
         return {
             enabled: true, 
@@ -127,7 +124,7 @@ const getCloudConfig = (): CloudConfig | null => {
 export const saveCloudConfig = (config: CloudConfig) => {
     localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(config));
     if (config.enabled) {
-        syncFromCloud(); 
+        syncFromCloud(true); // Force sync when saving new config
     }
 };
 
@@ -141,7 +138,7 @@ const fetchWithRetryHeaders = async (url: string, method: string, apiKey: string
     // Attempt 1: Try with Master Key
     let response = await fetch(url, { method, headers: headersMaster, body });
     
-    // Attempt 2: If unauthorized (401), try with Access Key
+    // Attempt 2: If unauthorized (401) or Forbidden (403), try with Access Key
     if (response.status === 401 || response.status === 403) {
         const headersAccess = {
             'Content-Type': 'application/json',
@@ -165,14 +162,14 @@ const syncToCloud = async () => {
     }
 };
 
-export const syncFromCloud = async (): Promise<{success: boolean, message?: string}> => {
+export const syncFromCloud = async (force: boolean = false): Promise<{success: boolean, message?: string}> => {
     const config = getCloudConfig();
     if (!config || !config.enabled || !config.apiKey || !config.binId) {
         return { success: false, message: 'Cloud not configured' };
     }
 
     try {
-        // Add timestamp to prevent caching
+        // We append a timestamp to prevent caching issues
         const response = await fetchWithRetryHeaders(
             `${config.url}/${config.binId}?t=${Date.now()}`, 
             'GET', 
@@ -180,7 +177,6 @@ export const syncFromCloud = async (): Promise<{success: boolean, message?: stri
         );
         
         if (!response.ok) {
-            // Provide specific error messages for common issues
             if (response.status === 404) throw new Error("Bin ID not found. Check Configuration.");
             if (response.status === 401 || response.status === 403) throw new Error("Invalid API Key.");
             throw new Error(`Cloud fetch failed: ${response.status}`);
@@ -189,30 +185,29 @@ export const syncFromCloud = async (): Promise<{success: boolean, message?: stri
         const result = await response.json();
         const cloudData: AppData = result.record || result; 
         
-        // Security Check: Validate Schema of Cloud Data before merging
         if (!isValidSchema(cloudData)) {
-            console.error("Security Alert: Cloud data schema invalid.", cloudData);
             return { success: false, message: 'Cloud data corrupted or invalid.' };
         }
 
         const localTime = inMemoryData.lastUpdated || 0;
         const cloudTime = cloudData.lastUpdated || 0;
 
-        // Sync if cloud is newer OR local is effectively "empty/default" (timestamp 0)
-        if (cloudTime > localTime || localTime === 0) {
-            // Re-sanitize incoming cloud names just in case
+        // Sync Logic:
+        // 1. If force is TRUE, always accept cloud (Login scenario)
+        // 2. If local is 0 (fresh install/reset), always accept cloud.
+        // 3. If cloud is newer than local, accept cloud.
+        if (force || localTime === 0 || cloudTime > localTime) {
             cloudData.members.forEach(m => m.name = sanitizeInput(m.name));
             if (!cloudData.targets) cloudData.targets = { UJ: 0, I: 0, K: 0, LJ: 0 }; 
             if (!cloudData.notifications) cloudData.notifications = [];
             
             inMemoryData = cloudData;
-            persistData(false); 
+            persistData(false); // Save to local storage, don't push back to cloud immediately
             return { success: true, message: 'New data downloaded from cloud' };
         } else {
             return { success: true, message: 'Local data is up to date' };
         }
     } catch (e: any) {
-        console.error("Failed to pull from cloud", e);
         return { success: false, message: e.message || 'Failed to connect to cloud' };
     }
 };
@@ -237,9 +232,7 @@ export const getAppData = (): AppData => {
 };
 
 // --- NOTIFICATION SYSTEM ---
-
 const addNotification = (type: NotificationType, message: string, targetChurch: Church, memberId?: string) => {
-    // Prevent duplicate notifications for same member/type today
     const today = new Date().toISOString().split('T')[0];
     const exists = inMemoryData.notifications.find(n => 
         n.type === type && 
@@ -257,7 +250,6 @@ const addNotification = (type: NotificationType, message: string, targetChurch: 
             relatedMemberId: memberId,
             isRead: false
         });
-        // Keep only last 50 notifications to prevent bloat
         if (inMemoryData.notifications.length > 50) {
             inMemoryData.notifications = inMemoryData.notifications.slice(0, 50);
         }
@@ -290,30 +282,19 @@ export const clearAllNotifications = (churchId: Church) => {
 
 const checkBirthdaysAndTeens = () => {
     if (!inMemoryData.members) return;
-    
     const today = new Date();
     today.setHours(0,0,0,0);
     
-    const oneWeekFromNow = new Date(today);
-    oneWeekFromNow.setDate(today.getDate() + 7);
-
     inMemoryData.members.forEach(m => {
         if (!m.birthDate || m.status !== MemberStatus.ACTIVE) return;
-        
         const birth = new Date(m.birthDate);
         const thisYearBirthday = new Date(today.getFullYear(), birth.getMonth(), birth.getDate());
-        
-        // Handle year wrap-around for Dec/Jan
-        if (thisYearBirthday < today) {
-            thisYearBirthday.setFullYear(today.getFullYear() + 1);
-        }
+        if (thisYearBirthday < today) thisYearBirthday.setFullYear(today.getFullYear() + 1);
         
         const diffTime = thisYearBirthday.getTime() - today.getTime();
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         
-        // 1. General Birthday Notice (Prior notice ~7 days)
         if (diffDays <= 7 && diffDays >= 0) {
-            // Check if we already notified this year
             const alreadyNotified = inMemoryData.notifications.some(n => 
                 n.type === 'BIRTHDAY' && 
                 n.relatedMemberId === m.id && 
@@ -322,39 +303,22 @@ const checkBirthdaysAndTeens = () => {
 
             if (!alreadyNotified) {
                 const dayText = diffDays === 0 ? 'TODAY!' : `in ${diffDays} days.`;
-                addNotification(
-                    'BIRTHDAY', 
-                    `🎂 ${m.name}'s birthday is ${dayText}`, 
-                    m.assignedChurch, 
-                    m.id
-                );
+                addNotification('BIRTHDAY', `🎂 ${m.name}'s birthday is ${dayText}`, m.assignedChurch, m.id);
             }
         }
 
-        // 2. Teen Check (13th Birthday) - "Up to a week"
         const age = today.getFullYear() - birth.getFullYear();
-        // If they are turning 13 this specific year
         if (age === 12 && diffDays <= 7 && diffDays >= 0) {
-             const alreadyNotifiedTeen = inMemoryData.notifications.some(n => 
-                n.type === 'TEEN_ALERT' && 
-                n.relatedMemberId === m.id
-            );
+             const alreadyNotifiedTeen = inMemoryData.notifications.some(n => n.type === 'TEEN_ALERT' && n.relatedMemberId === m.id);
             if (!alreadyNotifiedTeen) {
-                addNotification(
-                    'TEEN_ALERT', 
-                    `🎓 Teen Alert: ${m.name} turns 13 in ${diffDays} days! Prepare for graduation.`, 
-                    m.assignedChurch, 
-                    m.id
-                );
+                addNotification('TEEN_ALERT', `🎓 Teen Alert: ${m.name} turns 13 in ${diffDays} days! Prepare for graduation.`, m.assignedChurch, m.id);
             }
         }
     });
     if (isDirty) persistData();
 };
 
-
 // --- AUTHENTICATION & SECURITY ---
-
 interface LoginAttempt {
     count: number;
     lastAttempt: number;
@@ -374,20 +338,16 @@ export const restoreSession = (): Member | null => {
     try {
         const sessionStr = localStorage.getItem(SESSION_KEY);
         if (!sessionStr) return null;
-
         const session = JSON.parse(sessionStr);
         const now = Date.now();
-
         if (now - session.timestamp > 24 * 60 * 60 * 1000) {
             localStorage.removeItem(SESSION_KEY);
             return null;
         }
-
         const user = inMemoryData.members.find(m => m.id === session.userId);
         if (user && user.isAccessActive && (user.role === 'ADMIN' || user.role === 'TEACHER')) {
             return user;
         }
-        
         localStorage.removeItem(SESSION_KEY);
         return null;
     } catch (e) {
@@ -414,7 +374,6 @@ export const authenticateUser = async (name: string, passcode: string): Promise<
     }
 
     const cleanName = sanitizeInput(name);
-    
     const user = inMemoryData.members.find(m => 
         (m.role === 'ADMIN' || m.role === 'TEACHER') && 
         m.name.toLowerCase().trim() === cleanName.toLowerCase().trim()
@@ -423,39 +382,26 @@ export const authenticateUser = async (name: string, passcode: string): Promise<
     if (!user) {
         return recordFailedAttempt(attempts);
     }
-
     if (!user.isAccessActive) {
         return { success: false, message: "Access deactivated. Contact Admin." };
     }
 
-    // AUTH LOGIC: Check hash
-    // If stored passcode is short, it's legacy plaintext.
     let isValid = false;
-    
     if (user.passcode && user.passcode.length < 64) {
-        // Legacy check (Plaintext)
         if (user.passcode === passcode) {
             isValid = true;
-            // Upgrade to hash immediately
             user.passcode = await hashString(passcode);
             persistData(); 
         }
     } else {
-        // Secure check (Hash)
         const inputHash = await hashString(passcode);
-        if (user.passcode === inputHash) {
-            isValid = true;
-        }
+        if (user.passcode === inputHash) isValid = true;
     }
 
     if (isValid) {
         localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify({ count: 0, lastAttempt: now, lockedUntil: null }));
-        localStorage.setItem(SESSION_KEY, JSON.stringify({
-            userId: user.id,
-            timestamp: now
-        }));
-        
-        syncFromCloud();
+        localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: user.id, timestamp: now }));
+        syncFromCloud(); // Trigger background sync after login as well
         return { success: true, member: user };
     }
 
@@ -472,34 +418,28 @@ const recordFailedAttempt = (attempts: LoginAttempt) => {
         saveLoginAttempts(attempts);
         return { success: false, message: "Too many failed attempts. Account locked for 5 minutes." };
     }
-
     saveLoginAttempts(attempts);
     return { success: false, message: "Invalid credentials." };
 };
 
 // --- DATA IMPORT/EXPORT ---
-
 export const importData = (jsonString: string): { success: boolean; message: string } => {
   try {
     const parsed = JSON.parse(jsonString);
-    
-    // Security Schema Validation
     if (!isValidSchema(parsed)) {
         return { success: false, message: "Security Warning: Invalid or malformed data file." };
     }
-
-    // Migration & Sanitization during Import
     parsed.members.forEach((m: any) => {
-        if (m.name) m.name = sanitizeInput(m.name); // Sanitize imported names
+        if (m.name) m.name = sanitizeInput(m.name);
         if (!m.assignedChurch) m.assignedChurch = 'UJ';
         if (!m.role) m.role = 'NONE';
     });
     parsed.attendance.forEach((r: any) => {
         if (!r.churchId) r.churchId = 'UJ';
     });
-    
     parsed.lastUpdated = Date.now();
     if (!parsed.notifications) parsed.notifications = [];
+    if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
 
     inMemoryData = parsed;
     persistData(true); 
@@ -510,15 +450,8 @@ export const importData = (jsonString: string): { success: boolean; message: str
   }
 };
 
-export const addMember = (
-    name: string, 
-    type: MemberType, 
-    assignedChurch: Church, 
-    birthDate: string = '', 
-    status: MemberStatus = MemberStatus.ACTIVE
-): Member => {
+export const addMember = (name: string, type: MemberType, assignedChurch: Church, birthDate: string = '', status: MemberStatus = MemberStatus.ACTIVE): Member => {
   const cleanName = sanitizeInput(name);
-  
   const newMember: Member = {
     id: crypto.randomUUID(),
     name: cleanName,
@@ -540,14 +473,10 @@ export const addMember = (
 export const updateMember = async (updatedMember: Member) => {
   const index = inMemoryData.members.findIndex(m => m.id === updatedMember.id);
   if (index !== -1) {
-    // Sanitize before saving
     updatedMember.name = sanitizeInput(updatedMember.name);
-    
-    // If this is a user update involving passcode (that isn't already hashed), hash it
     if (updatedMember.passcode && updatedMember.passcode.length < 64 && updatedMember.role !== 'NONE') {
         updatedMember.passcode = await hashString(updatedMember.passcode);
     }
-
     inMemoryData.members[index] = updatedMember;
     isDirty = true;
     persistData();
@@ -555,8 +484,9 @@ export const updateMember = async (updatedMember: Member) => {
   }
 };
 
-export const updateTargets = (newTargets: Record<string, number>) => {
-    inMemoryData.targets = { ...inMemoryData.targets, ...newTargets };
+// PERMANENT DELETE MEMBER
+export const deleteMember = (id: string) => {
+    inMemoryData.members = inMemoryData.members.filter(m => m.id !== id);
     isDirty = true;
     persistData();
 };
@@ -575,22 +505,25 @@ export const bulkArchiveMembers = (ids: string[]) => {
   }
 };
 
+export const updateTargets = (newTargets: Record<string, number>) => {
+    inMemoryData.targets = { ...inMemoryData.targets, ...newTargets };
+    isDirty = true;
+    persistData();
+};
+
 // --- AUTOMATION RULES ---
 const calculateAge = (birthDate: string) => {
     const birth = new Date(birthDate);
     const today = new Date();
     let age = today.getFullYear() - birth.getFullYear();
     const m = today.getMonth() - birth.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
-        age--;
-    }
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
     return age;
 };
 
 const autoTransferMembersBasedOnAge = () => {
     let transferChanges = false;
     const today = new Date();
-
     inMemoryData.members.forEach(member => {
         if (member.assignedChurch === 'CM') return;
         if (member.status !== MemberStatus.ACTIVE) return;
@@ -616,7 +549,6 @@ const autoTransferMembersBasedOnAge = () => {
                  const pendingDate = new Date(member.transferPendingDate);
                  const diffTime = Math.abs(today.getTime() - pendingDate.getTime());
                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-                 
                  if (diffDays >= 7) {
                      member.status = MemberStatus.ARCHIVED;
                      member.type = MemberType.NOT_MEMBER;
@@ -627,10 +559,8 @@ const autoTransferMembersBasedOnAge = () => {
                  return;
              }
         }
-
         if (targetChurch) {
             if (targetChurch === 'ARCHIVE') {
-                // Should have been caught by UJ check, but for others:
                 member.status = MemberStatus.ARCHIVED;
                 member.type = MemberType.NOT_MEMBER;
                 transferChanges = true;
@@ -644,7 +574,6 @@ const autoTransferMembersBasedOnAge = () => {
             }
         }
     });
-    
     if (transferChanges) {
         isDirty = true;
         persistData();
@@ -653,15 +582,12 @@ const autoTransferMembersBasedOnAge = () => {
 
 const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
   if (churchId === 'CM') return;
-
   const sortedAttendance = inMemoryData.attendance
     .filter(r => r.churchId === churchId)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
   if (sortedAttendance.length === 0) return;
   const churchMembers = inMemoryData.members.filter(m => m.assignedChurch === churchId);
 
-  // LOGIC 1: DEMOTION
   if (sortedAttendance.length >= 10) {
     const last10Weeks = sortedAttendance.slice(0, 10);
     const oldestDateInWindow = new Date(last10Weeks[last10Weeks.length - 1].date);
@@ -675,7 +601,6 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
       if (member.role === 'ADMIN' || member.role === 'TEACHER') return;
       const joined = new Date(member.joinedDate);
       if (joined > oldestDateInWindow) return;
-
       if (!presentInLast10Weeks.has(member.id)) {
         if (member.type !== MemberType.INCONSISTENT || member.status !== MemberStatus.NOT_ACTIVE) {
           member.type = MemberType.INCONSISTENT;
@@ -686,7 +611,6 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
     });
   }
 
-  // LOGIC 2: REACTIVATION
   if (sortedAttendance.length >= 7) {
     const last7Weeks = sortedAttendance.slice(0, 7);
     const candidatesForReactivation = churchMembers.filter(m => 
@@ -694,7 +618,6 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
         m.status !== MemberStatus.ARCHIVED && 
         m.status !== MemberStatus.TRANSFERRED
     );
-
     candidatesForReactivation.forEach(member => {
         const attendedAll7 = last7Weeks.every(record => record.presentMemberIds.includes(member.id));
         if (attendedAll7) {
@@ -727,13 +650,12 @@ export const saveAttendance = (date: string, churchId: Church, presentIds: strin
       checkAndAutoUpdateMemberStatus(churchId);
   }
   autoTransferMembersBasedOnAge();
-  checkBirthdaysAndTeens(); // Re-check notifications on save
+  checkBirthdaysAndTeens(); 
 };
 
 // --- FINANCIAL SERVICE METHODS ---
 export const addTransaction = (txn: Partial<Transaction>) => {
     if (!txn.amount || !txn.category || !txn.type) return;
-    
     const newTxn: Transaction = {
         id: crypto.randomUUID(),
         date: txn.date || new Date().toISOString().split('T')[0],
@@ -744,7 +666,6 @@ export const addTransaction = (txn: Partial<Transaction>) => {
         churchId: txn.churchId || 'UJ',
         recordedBy: txn.recordedBy || 'System',
     };
-    
     if (!inMemoryData.transactions) inMemoryData.transactions = [];
     inMemoryData.transactions.push(newTxn);
     isDirty = true; 

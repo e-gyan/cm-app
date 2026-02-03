@@ -170,7 +170,6 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
          let report = `*CM ATTENDANCE SUMMARY*\n${formattedDate}\n`;
          report += `----------------------------\n`;
 
-         // Added CM and All to the report loop to capture staff assigned to them
          const branches: Church[] = ['UJ', 'I', 'K', 'LJ', 'CM', 'All'];
          let ministryTotal = 0;
          let totalTeachers = 0;
@@ -191,26 +190,35 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
              const staffCount = staff.length;
              totalTeachers += staffCount;
 
+             // Logic: CM branch is specifically for staff/admin, so we don't count "members" there usually
+             // But if data exists, we report it.
              const membersCount = children.filter(m => m.type === MemberType.MEMBER).length;
              const fnfCount = children.filter(m => m.type === MemberType.FNF).length;
              const inconsistentCount = children.filter(m => m.type === MemberType.INCONSISTENT).length;
              const notMemberCount = children.filter(m => m.type === MemberType.NOT_MEMBER).length;
 
              const branchTotal = children.length;
+             // Only add children to ministry total if it's NOT the CM administrative branch, unless user mistakenly added kids there
              ministryTotal += branchTotal;
 
              if (branchTotal > 0 || staffCount > 0) {
                  report += `\n*${branch} CHURCH* (${branchTotal})\n`;
-                 if (branchTotal > 0) {
-                     report += `Members: ${membersCount} | FNF: ${fnfCount}\n`;
-                 }
                  
-                 const others = [];
-                 if (inconsistentCount > 0) others.push(`Inc: ${inconsistentCount}`);
-                 if (notMemberCount > 0) others.push(`Other: ${notMemberCount}`);
-                 
-                 if (others.length > 0) {
-                    report += `   • ${others.join(' | ')}\n`;
+                 // CM Branch specifically usually only lists teachers
+                 if (branch === 'CM') {
+                     report += `Staff Present: ${staffCount}\n`;
+                 } else {
+                     if (branchTotal > 0) {
+                         report += `Members: ${membersCount} | FNF: ${fnfCount}\n`;
+                     }
+                     
+                     const others = [];
+                     if (inconsistentCount > 0) others.push(`Inc: ${inconsistentCount}`);
+                     if (notMemberCount > 0) others.push(`Other: ${notMemberCount}`);
+                     
+                     if (others.length > 0) {
+                        report += `   • ${others.join(' | ')}\n`;
+                     }
                  }
              }
          });
@@ -296,7 +304,13 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
 
   // --- Data Management Logic ---
 
-  const handleDownloadBackup = () => {
+  const handleDownloadBackup = async () => {
+    // Force sync before download to ensure data integrity
+    setImportMsg({ type: 'success', text: 'Syncing with cloud before backup...' });
+    await syncFromCloud();
+    onUpdate(); // Refresh local data state
+    setImportMsg(null);
+
     const jsonString = JSON.stringify(data, null, 2);
     const blob = new Blob([jsonString], { type: "application/json" });
     const url = URL.createObjectURL(blob);

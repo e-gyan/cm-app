@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { AppData, Member, MemberType, MemberStatus, Church } from '../types';
 import { getSundaysInYear } from '../constants';
 import { Search, Save, Check, Trophy, X, Calendar, UserPlus, Crown, CheckCircle2 } from 'lucide-react';
-import { addMember, saveAttendance } from '../services/storageService';
+import { addMember, saveAttendance, syncFromCloud } from '../services/storageService';
 import { sanitizeInput } from '../services/securityService';
 
 interface AttendanceTakerProps {
@@ -24,7 +24,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   
   // Internal Church Filter for Admins when activeChurch is 'CM'
   // changed 'All' to 'COMBINED' to avoid collision with the specific church named 'All'
-  const [internalChurchFilter, setInternalChurchFilter] = useState<Church | 'COMBINED'>('UJ');
+  const [internalChurchFilter, setInternalChurchFilter] = useState<Church | 'COMBINED'>('COMBINED');
 
   const [newMemberName, setNewMemberName] = useState('');
   const [isAddingFNF, setIsAddingFNF] = useState(false);
@@ -35,7 +35,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const [attendanceMode, setAttendanceMode] = useState<'MEMBERS' | 'STAFF'>('MEMBERS');
 
   // Determine the effective church context
-  // If activeChurch is CM, we use the internal filter. If the filter is 'COMBINED', it represents a view of multiple churches.
   const effectiveChurch = activeChurch === 'CM' ? internalChurchFilter : activeChurch;
   const isCombinedView = effectiveChurch === 'COMBINED';
 
@@ -141,10 +140,20 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
     setPunctualIds(newPunctual);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!selectedDate) return;
 
+    // First check cloud to ensure we have latest data
+    const syncRes = await syncFromCloud();
+    if (syncRes.success && syncRes.message?.includes('New data')) {
+        // If new data came in, we should ideally re-merge, but for simple attendance taker, 
+        // we might just warn or proceed. Since the UI state `presentIds` reflects what user WANTS,
+        // we persist that over whatever came from cloud if conflict, but `syncFromCloud` updates inMemoryData.
+        onUpdate(); 
+    }
+
     const branchesToSave = getRelevantBranches(effectiveChurch, attendanceMode);
+    let hasActualChanges = false;
 
     branchesToSave.forEach(churchId => {
         // Load existing record to preserve the "other" group (e.g. if editing Staff, keep Members)
@@ -166,7 +175,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
 
         if (existingRecord) {
             if (attendanceMode === 'STAFF') {
-                // Preserve existing Members
                 const existingMembers = existingRecord.presentMemberIds.filter(id => {
                     const m = data.members.find(mem => mem.id === id);
                     return m && !['Teacher','Helper','Volunteer'].includes(m.type);
@@ -178,7 +186,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                 finalPresent = [...existingMembers, ...currentBranchPresentIds];
                 finalPunctual = [...existingMembersPunctual, ...currentBranchPunctualIds];
             } else {
-                // Preserve existing Staff
                 const existingStaff = existingRecord.presentMemberIds.filter(id => {
                     const m = data.members.find(mem => mem.id === id);
                     return m && ['Teacher','Helper','Volunteer'].includes(m.type);
@@ -195,10 +202,19 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
             finalPunctual = currentBranchPunctualIds;
         }
 
-        saveAttendance(selectedDate, churchId, finalPresent, finalPunctual);
+        // Compare with existing to determine change status
+        const oldPresent = existingRecord ? existingRecord.presentMemberIds.sort().join(',') : '';
+        const newPresent = finalPresent.sort().join(',');
+        const oldPunctual = existingRecord ? (existingRecord.punctualMemberIds || []).sort().join(',') : '';
+        const newPunctual = finalPunctual.sort().join(',');
+
+        if (oldPresent !== newPresent || oldPunctual !== newPunctual) {
+            hasActualChanges = true;
+            saveAttendance(selectedDate, churchId, finalPresent, finalPunctual);
+        }
     });
 
-    setSuccessMsg(`Saved!`);
+    setSuccessMsg(hasActualChanges ? `Changes saved` : `No changes saved`);
     onUpdate();
     setTimeout(() => setSuccessMsg(''), 2000);
   };
@@ -206,7 +222,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const handleAddFNF = () => {
     if (!newMemberName.trim()) return;
     const cleanName = sanitizeInput(newMemberName);
-    // If 'COMBINED' is selected, default new FNF to UJ (or ask user, but keeping simple for now)
     const targetChurch = isCombinedView ? 'UJ' : effectiveChurch as Church;
     
     const newMember = addMember(cleanName, MemberType.FNF, targetChurch, '');
@@ -238,7 +253,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const sortedMembers = [...filteredMembers].sort((a, b) => {
     // Sort by Church first if in Combined view
     if (isCombinedView && a.assignedChurch !== b.assignedChurch) {
-        // Put CM and All at the end or beginning? Let's just standard sort string.
         return a.assignedChurch.localeCompare(b.assignedChurch);
     }
     
@@ -268,7 +282,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
       let relevantRecords = data.attendance.filter(r => {
           const rDate = new Date(r.date);
           const isMonthMatch = leaderboardTimeframe === 'CM' || (rDate.getMonth() === currentMonth && rDate.getFullYear() === currentYear);
-          // Match church ID
           const isChurchMatch = isCombinedView ? true : r.churchId === effectiveChurch;
           return isChurchMatch && isMonthMatch;
       });
@@ -293,10 +306,11 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   }, [data.attendance, effectiveChurch, attendanceMode, leaderboardTimeframe, data.members, isCombinedView]);
 
   const churchOptions = useMemo(() => {
-      const base: Church[] = ['UJ', 'I', 'K', 'LJ'];
-      // If Staff mode, include CM and All
-      if (attendanceMode === 'STAFF') return [...base, 'CM', 'All'];
-      return base;
+      const base: Church[] = ['I', 'K', 'LJ', 'UJ']; // Sorted Ascending based on age progression roughly, or alphabetical? Prompt said Ascending. I, K, L, U. I, K, LJ, UJ.
+      // I comes before K. K comes before L. L comes before U.
+      // If alphabetical: I, K, LJ, UJ.
+      if (attendanceMode === 'STAFF') return ['All', 'CM', ...base].sort();
+      return base; // Already sorted
   }, [attendanceMode]);
 
   return (

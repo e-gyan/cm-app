@@ -132,7 +132,10 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
 
     const totalPop = churchStats.reduce((acc, curr) => acc + curr.population, 0);
     const totalAvg = churchStats.reduce((acc, curr) => acc + curr.avg, 0);
-    const totalTarget = churchStats.reduce((acc, curr) => acc + curr.target, 0);
+    
+    // Only count accumulation for churches that have a target > 0
+    const totalTarget = churchStats.reduce((acc, curr) => acc + (curr.target > 0 ? curr.target : 0), 0);
+    const totalTargetPop = churchStats.reduce((acc, curr) => acc + (curr.target > 0 ? curr.population : 0), 0);
     
     // Global Retention Rate (Avg Attendance / Total Population)
     const globalRetention = totalPop > 0 ? Math.round((totalAvg / totalPop) * 100) : 0;
@@ -182,12 +185,12 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                          <div className="px-4 pt-4 md:pt-0">
                             <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Membership Goal</p>
                             <div className="flex items-center gap-3">
-                                <h2 className="text-4xl font-bold text-slate-800">{totalTarget > 0 ? Math.round((totalPop/totalTarget)*100) : 0}%</h2>
+                                <h2 className="text-4xl font-bold text-slate-800">{totalTarget > 0 ? Math.round((totalTargetPop/totalTarget)*100) : 0}%</h2>
                                 <div className="h-2 flex-1 bg-slate-100 rounded-full overflow-hidden flex">
-                                    <div className="h-full bg-blue-500 rounded-full" style={{width: `${Math.min(100, (totalPop/totalTarget)*100)}%`}}></div>
+                                    <div className="h-full bg-blue-500 rounded-full" style={{width: `${Math.min(100, (totalTargetPop/(totalTarget || 1))*100)}%`}}></div>
                                 </div>
                             </div>
-                            <p className="text-xs text-slate-400 mt-1">Current: {totalPop}</p>
+                            <p className="text-xs text-slate-400 mt-1">Cumulative Target: {totalTarget}</p>
                          </div>
                          <div className="px-4 pt-4 md:pt-0">
                              <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Churches</p>

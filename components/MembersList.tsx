@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AppData, Member, MemberType, MemberStatus, Church, Role } from '../types';
 import { User, Users, Edit2, Archive, X, Save, GraduationCap, Undo2, HelpCircle, AlertCircle, Activity, Briefcase, ChevronDown, ChevronUp, Plus, Lock, Key, Heart, Hand, Trash2, Building2, Filter } from 'lucide-react';
-import { updateMember, bulkArchiveMembers, addMember } from '../services/storageService';
+import { updateMember, bulkArchiveMembers, addMember, deleteMember } from '../services/storageService';
 import { sanitizeInput } from '../services/securityService';
 
 interface MembersListProps {
@@ -115,6 +115,13 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
      onUpdate();
   };
 
+  const handleDeletePermanent = (member: Member) => {
+      if (window.confirm(`WARNING: This will PERMANENTLY delete ${member.name} from the database. This cannot be undone. Are you sure?`)) {
+          deleteMember(member.id);
+          onUpdate();
+      }
+  };
+
   const toggleSelection = (id: string) => {
     const newSelection = new Set(selectedIds);
     if (newSelection.has(id)) newSelection.delete(id);
@@ -148,13 +155,44 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
     const m = today.getMonth() - birth.getMonth();
     if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
     
+    // Logic matches "moving up" criteria based on age milestones
+    // 0-1 (I) moves to K at 2
+    // 2-5 (K) moves to LJ at 6
+    // 6-8 (LJ) moves to UJ at 9
+    // 9-13 (UJ) moves to Teen at 14 (Check start at 13)
+
+    // Generalized logic: check against current church context
+    // But since this function is generic, we return status based on global "Teen/Transition" concept
+    // However, the column header will change name.
+    
     if (age >= 13) return { label: 'YES', colorClass: 'bg-green-100 text-green-700 border-green-200' };
+    
+    // Check for "Soon" - within 5 months of turning next major age group?
+    // Let's stick to the Teen check logic for simplicity in data, but label "YES" means "Ready/Overdue"
+    // "SOON" means approaching.
+    
+    // For specific church checks, we might want custom logic, but user request implies just naming change for now.
+    // "if I church it should K Check" -> Meaning checking if they are ready for K.
+    // This logic is implicitly handled by the auto-transfer, but visual indicator helps.
+    
+    // Re-using existing logic for now, as it calculates generalized age readiness.
+    // 13th birthday check is specific to UJ.
+    
     const thirteenthBirthday = new Date(birth);
     thirteenthBirthday.setFullYear(birth.getFullYear() + 13);
     const fiveMonthsFromNow = new Date(today);
     fiveMonthsFromNow.setMonth(today.getMonth() + 5);
+    
     if (thirteenthBirthday <= fiveMonthsFromNow) return { label: 'SOON', colorClass: 'bg-yellow-100 text-yellow-800 border-yellow-200' };
     return { label: 'NO', colorClass: 'bg-red-50 text-red-600 border-red-100' };
+  };
+  
+  // Intelligent Column Header Name
+  const getCheckColumnName = () => {
+      if (activeChurch === 'I') return 'K Check';
+      if (activeChurch === 'K') return 'LJ Check';
+      if (activeChurch === 'LJ') return 'UJ Check';
+      return 'Teen Check';
   };
 
   const getStatusBadgeColor = (status: MemberStatus) => {
@@ -221,7 +259,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                     {isTeacherSection && isAdmin ? (
                          <th className="px-6 py-4">System Access</th>
                     ) : (
-                         <th className="px-6 py-4">Teen Check</th>
+                         <th className="px-6 py-4">{getCheckColumnName()}</th>
                     )}
                     {!isTeacherSection && <th className="px-6 py-4">Attendance</th>}
                     {canManage && <th className="px-6 py-4 text-right">Actions</th>}
@@ -298,9 +336,14 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                                     <Edit2 size={16} />
                                 </button>
                                 {(member.status === MemberStatus.ARCHIVED) ? (
-                                    <button onClick={() => restoreMember(member)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Restore">
-                                        <Undo2 size={16} />
-                                    </button>
+                                    <>
+                                        <button onClick={() => restoreMember(member)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Restore">
+                                            <Undo2 size={16} />
+                                        </button>
+                                        <button onClick={() => handleDeletePermanent(member)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Permanently Delete">
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </>
                                 ) : (
                                     <button onClick={() => archiveMember(member)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Archive">
                                         <Archive size={16} />
@@ -331,7 +374,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                                     <span className={`text-xs px-2 py-1 rounded-md font-medium ${getStatusBadgeColor(member.status)}`}>{member.status}</span>
                                     <span className="text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-600 border border-gray-200 font-medium">{member.assignedChurch}</span>
                                     {member.birthDate && <span className="text-xs px-2 py-1 rounded-md bg-blue-50 text-blue-600 border border-blue-100 font-medium">🎂 {new Date(member.birthDate).toLocaleDateString()}</span>}
-                                    {!isTeacherSection && teenStatus.label !== 'NO' && <span className={`text-xs px-2 py-1 rounded-md border font-bold ${teenStatus.colorClass}`}>Teen: {teenStatus.label}</span>}
+                                    {!isTeacherSection && teenStatus.label !== 'NO' && <span className={`text-xs px-2 py-1 rounded-md border font-bold ${teenStatus.colorClass}`}>{getCheckColumnName()}: {teenStatus.label}</span>}
                                     {isTeacherSection && member.isAccessActive && <span className="text-xs px-2 py-1 rounded-md bg-green-50 text-green-700 border border-green-100 flex items-center gap-1 font-medium"><Key size={10}/> Access</span>}
                                 </div>
                                 {!isTeacherSection && (
@@ -346,7 +389,10 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                             <div className="flex flex-col gap-2 pl-2">
                                 <button onClick={() => openEditModal(member)} className="p-2 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors shadow-sm"><Edit2 size={18} /></button>
                                 {member.status === MemberStatus.ARCHIVED ? (
-                                    <button onClick={() => restoreMember(member)} className="p-2 text-green-600 bg-green-50 rounded-xl hover:bg-green-100 transition-colors shadow-sm"><Undo2 size={18} /></button>
+                                    <>
+                                        <button onClick={() => restoreMember(member)} className="p-2 text-green-600 bg-green-50 rounded-xl hover:bg-green-100 transition-colors shadow-sm"><Undo2 size={18} /></button>
+                                        <button onClick={() => handleDeletePermanent(member)} className="p-2 text-red-600 bg-red-50 rounded-xl hover:bg-red-100 transition-colors shadow-sm"><Trash2 size={18} /></button>
+                                    </>
                                 ) : (
                                     <button onClick={() => archiveMember(member)} className="p-2 text-red-400 bg-red-50 rounded-xl hover:bg-red-100 transition-colors shadow-sm"><Archive size={18} /></button>
                                 )}

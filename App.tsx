@@ -378,12 +378,20 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* View Content */}
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {currentView === View.DASHBOARD && <Dashboard data={data} activeChurch={activeChurch} currentUser={currentUser} />}
-                {currentView === View.ATTENDANCE && <AttendanceTaker data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />}
-                {currentView === View.MEMBERS && <MembersList data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />}
-                {currentView === View.EXPORT && <ReportExport data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />}
+            {/* View Content - State Restoration using display: none */}
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
+                <div style={{ display: currentView === View.DASHBOARD ? 'block' : 'none' }}>
+                    <Dashboard data={data} activeChurch={activeChurch} currentUser={currentUser} />
+                </div>
+                <div style={{ display: currentView === View.ATTENDANCE ? 'block' : 'none' }}>
+                    <AttendanceTaker data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />
+                </div>
+                <div style={{ display: currentView === View.MEMBERS ? 'block' : 'none' }}>
+                    <MembersList data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />
+                </div>
+                <div style={{ display: currentView === View.EXPORT ? 'block' : 'none' }}>
+                    <ReportExport data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />
+                </div>
             </div>
           </div>
         </div>
