@@ -364,7 +364,9 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
   };
 
   const getFilteredContent = () => {
-    let baseList = data.members;
+    // Sort members alphabetically (A-Z) before filtering
+    let baseList = [...data.members].sort((a, b) => a.name.localeCompare(b.name));
+
     const teacherTypes = [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER];
 
     if (hubTab === 'TEACHERS') {

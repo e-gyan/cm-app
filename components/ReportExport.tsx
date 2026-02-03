@@ -208,7 +208,6 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
                  const others = [];
                  if (inconsistentCount > 0) others.push(`Inc: ${inconsistentCount}`);
                  if (notMemberCount > 0) others.push(`Other: ${notMemberCount}`);
-                 if (staffCount > 0) others.push(`Staff: ${staffCount}`);
                  
                  if (others.length > 0) {
                     report += `   • ${others.join(' | ')}\n`;
