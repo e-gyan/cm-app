@@ -737,6 +737,12 @@ export const generateOutreachSchedule = (dates: string[], members: Member[]): { 
     const fnf = members.filter(m => m.type === MemberType.FNF);
     const inconsistent = members.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE);
 
+    // Shuffle each pool for fairness
+    const shuffle = (array: Member[]) => array.sort(() => Math.random() - 0.5);
+    shuffle(active);
+    shuffle(fnf);
+    shuffle(inconsistent);
+
     let dateIndex = 0;
     
     while (dateIndex < dates.length) {
@@ -750,6 +756,7 @@ export const generateOutreachSchedule = (dates: string[], members: Member[]): { 
         // Take 1 Inconsistent
         if (inconsistent.length > 0) group.push(inconsistent.shift()!.id);
 
+        // Fill remaining spot if logic allows (logic above guarantees 4 slots)
         while (group.length < 4) {
             if (inconsistent.length > 0) group.push(inconsistent.shift()!.id);
             else if (fnf.length > 0) group.push(fnf.shift()!.id);
@@ -776,6 +783,62 @@ export const generateOutreachSchedule = (dates: string[], members: Member[]): { 
     isDirty = true;
     persistData('IMMEDIATE');
     return { success: true, message: 'Schedule generated successfully.' };
+};
+
+export const generatePrayerSchedule = (startWeekDate: Date, members: Member[]): { success: boolean, message: string } => {
+    if (!inMemoryData.prayerSchedule) inMemoryData.prayerSchedule = [];
+    
+    // Define the specific pools
+    // Logic: 3 Members, 1 FNF, 1 Inconsistent per day
+    let membersPool = members.filter(m => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE);
+    let fnfPool = members.filter(m => m.type === MemberType.FNF);
+    let incPool = members.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE);
+
+    // Shuffle helper
+    const shuffle = (arr: any[]) => arr.sort(() => Math.random() - 0.5);
+    
+    // We need enough people for 5 days * 5 people = 25 slots roughly, but we can reuse if pools are small
+    const days = 5; // Mon-Fri
+    
+    for (let i = 0; i < days; i++) {
+        const d = new Date(startWeekDate);
+        d.setDate(startWeekDate.getDate() + i);
+        const dateStr = d.toISOString().split('T')[0];
+        
+        // Skip if already exists
+        if (inMemoryData.prayerSchedule.some(s => s.date === dateStr)) continue;
+
+        const dailyGroup: string[] = [];
+
+        // 1. Pick 3 Members
+        for (let j=0; j<3; j++) {
+            if (membersPool.length === 0) membersPool = shuffle(members.filter(m => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE)); // Refill/Reshuffle
+            if (membersPool.length > 0) dailyGroup.push(membersPool.shift()!.id);
+        }
+
+        // 2. Pick 1 FNF
+        if (fnfPool.length === 0) fnfPool = shuffle(members.filter(m => m.type === MemberType.FNF));
+        if (fnfPool.length > 0) dailyGroup.push(fnfPool.shift()!.id);
+
+        // 3. Pick 1 Inconsistent
+        if (incPool.length === 0) incPool = shuffle(members.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE));
+        if (incPool.length > 0) dailyGroup.push(incPool.shift()!.id);
+
+        if (dailyGroup.length > 0) {
+            inMemoryData.prayerSchedule.push({
+                id: crypto.randomUUID(),
+                date: dateStr,
+                dayOfWeek: d.toLocaleDateString('en-US', { weekday: 'long'}),
+                assignedMemberIds: dailyGroup,
+                isCompleted: false,
+                durationMins: 30
+            });
+        }
+    }
+
+    isDirty = true;
+    persistData('IMMEDIATE');
+    return { success: true, message: 'Prayer schedule generated.' };
 };
 
 
