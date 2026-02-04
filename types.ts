@@ -77,7 +77,8 @@ export interface OutreachSession {
   date: string; // YYYY-MM-DD
   startTime: string; // "10:00"
   endTime: string; // "15:00"
-  assignedMemberIds: string[]; // The group of 4
+  assignedMemberIds: string[]; // The group assigned
+  visitedMemberIds?: string[]; // Track who was actually visited
   status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
   notes?: string;
   completedBy?: string;

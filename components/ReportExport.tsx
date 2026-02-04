@@ -170,6 +170,44 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
         year: 'numeric'
     });
 
+    // --- UJ OUTREACH REPORT (Special Section) ---
+    if (activeChurch === 'UJ') {
+        const today = new Date().toISOString().split('T')[0];
+        
+        // Find visits around this date (e.g. previous saturday)
+        // For simplicity, showing completed visits from the last 7 days
+        const recentVisits = (data.outreachSessions || []).filter(s => {
+            const d = new Date(s.date);
+            const rDate = new Date(selectedDate);
+            const diff = Math.abs(rDate.getTime() - d.getTime()) / (1000 * 3600 * 24);
+            return diff <= 7 && s.visitedMemberIds && s.visitedMemberIds.length > 0;
+        });
+
+        // Prayer stats for this week
+        const startOfWeek = new Date(selectedDate); // Approx
+        const prayerSlots = (data.prayerSchedule || []).filter(s => s.isCompleted);
+        const prayerCount = prayerSlots.length;
+
+        let outreachSection = `\n\n*ARROWS OUTREACH UPDATE*\n`;
+        outreachSection += `------------------\n`;
+        
+        if (recentVisits.length > 0) {
+            outreachSection += `*Visits Completed (${recentVisits.length} Sessions)*\n`;
+            recentVisits.forEach(s => {
+                const names = s.visitedMemberIds?.map(id => data.members.find(m => m.id === id)?.name).filter(Boolean).join(', ');
+                outreachSection += `• ${formatDateDDMMYYYY(s.date)}: ${names}\n`;
+            });
+        } else {
+            outreachSection += `No recent visits recorded.\n`;
+        }
+
+        outreachSection += `\n*Prayer Tracking*\n`;
+        outreachSection += `• ${prayerCount} Prayer Slots completed recently.\n`;
+        
+        // This variable is appended to the standard report below
+        var ujOutreachText = outreachSection;
+    }
+
     // --- ADMIN GLOBAL REPORT (Figures Only) ---
     if (activeChurch === 'CM') {
          let report = `*CM ATTENDANCE SUMMARY*\n${formattedDate}\n`;
@@ -241,9 +279,9 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
 
     // --- SINGLE BRANCH REPORT (Names included) ---
     const record = data.attendance.find(r => r.date === selectedDate && r.churchId === activeChurch);
-    if (!record) return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
+    if (!record && !ujOutreachText) return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
 
-    const presentMembers = data.members.filter(m => record.presentMemberIds.includes(m.id));
+    const presentMembers = record ? data.members.filter(m => record.presentMemberIds.includes(m.id)) : [];
     
     // Sort alphabetically
     presentMembers.sort((a, b) => a.name.localeCompare(b.name));
@@ -289,6 +327,11 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
         notMembers.forEach((m, idx) => {
           report += `${idx + 1}. ${m.name}\n`;
         });
+    }
+
+    // Append Outreach data for UJ
+    if (ujOutreachText) {
+        report += ujOutreachText;
     }
 
     return report;

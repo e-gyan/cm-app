@@ -141,19 +141,23 @@ const fetchWithRetryHeaders = async (url: string, method: string, apiKey: string
         'X-Master-Key': apiKey
     };
 
-    // Attempt 1: Try with Master Key
-    let response = await fetch(url, { method, headers: headersMaster, body });
-    
-    // Attempt 2: If unauthorized (401) or Forbidden (403), try with Access Key
-    if (response.status === 401 || response.status === 403) {
-        const headersAccess = {
-            'Content-Type': 'application/json',
-            'X-Access-Key': apiKey
-        };
-        response = await fetch(url, { method, headers: headersAccess, body });
+    try {
+        // Attempt 1: Try with Master Key
+        let response = await fetch(url, { method, headers: headersMaster, body });
+        
+        // Attempt 2: If unauthorized (401) or Forbidden (403), try with Access Key
+        if (response.status === 401 || response.status === 403) {
+            const headersAccess = {
+                'Content-Type': 'application/json',
+                'X-Access-Key': apiKey
+            };
+            response = await fetch(url, { method, headers: headersAccess, body });
+        }
+        return response;
+    } catch (e) {
+        // Re-throw to be caught by the caller
+        throw e;
     }
-    
-    return response;
 };
 
 const syncToCloud = async () => {
@@ -161,7 +165,12 @@ const syncToCloud = async () => {
     if (!config || !config.enabled || !config.apiKey || !config.binId) return;
 
     try {
-        await fetchWithRetryHeaders(`${config.url}/${config.binId}`, 'PUT', config.apiKey, JSON.stringify(inMemoryData));
+        await fetchWithRetryHeaders(
+            `${config.url}/${config.binId}`, 
+            'PUT', 
+            config.apiKey, 
+            JSON.stringify(inMemoryData)
+        );
         console.log("Data synced to cloud successfully.");
     } catch (e) {
         console.error("Failed to sync to cloud", e);
@@ -185,13 +194,14 @@ export const syncFromCloud = async (force: boolean = false): Promise<{success: b
         if (!response.ok) {
             if (response.status === 404) throw new Error("Bin ID not found. Check Configuration.");
             if (response.status === 401 || response.status === 403) throw new Error("Invalid API Key.");
-            throw new Error(`Cloud fetch failed: ${response.status}`);
+            throw new Error(`Cloud fetch failed: ${response.status} ${response.statusText}`);
         }
 
         const result = await response.json();
         const cloudData: AppData = result.record || result; 
         
         if (!isValidSchema(cloudData)) {
+            console.error("Security Alert: Cloud data schema invalid.");
             return { success: false, message: 'Cloud data corrupted or invalid.' };
         }
 
@@ -216,6 +226,7 @@ export const syncFromCloud = async (force: boolean = false): Promise<{success: b
             return { success: true, message: 'Local data is up to date' };
         }
     } catch (e: any) {
+        console.error("Failed to pull from cloud", e);
         return { success: false, message: e.message || 'Failed to connect to cloud' };
     }
 };
@@ -673,6 +684,13 @@ export const saveOutreachSession = (session: OutreachSession) => {
     persistData();
 };
 
+export const deleteOutreachSession = (id: string) => {
+    if (!inMemoryData.outreachSessions) return;
+    inMemoryData.outreachSessions = inMemoryData.outreachSessions.filter(s => s.id !== id);
+    isDirty = true;
+    persistData();
+};
+
 export const savePrayerSlot = (slot: PrayerSlot) => {
     if (!inMemoryData.prayerSchedule) inMemoryData.prayerSchedule = [];
     const idx = inMemoryData.prayerSchedule.findIndex(s => s.id === slot.id);
@@ -682,23 +700,30 @@ export const savePrayerSlot = (slot: PrayerSlot) => {
     persistData();
 };
 
-export const generateOutreachSchedule = (dates: string[], members: Member[]) => {
-    if (dates.length === 0 || members.length === 0) return;
+export const generateOutreachSchedule = (dates: string[], members: Member[]): { success: boolean, message: string } => {
+    if (dates.length === 0 || members.length === 0) return { success: false, message: 'No dates or members.' };
     if (!inMemoryData.outreachSessions) inMemoryData.outreachSessions = [];
+
+    // Check for Duplicate Dates
+    const existingDates = inMemoryData.outreachSessions.map(s => s.date);
+    const duplicates = dates.filter(d => existingDates.includes(d));
+    
+    if (duplicates.length > 0) {
+        return { 
+            success: false, 
+            message: `Cannot schedule: Date(s) ${duplicates.join(', ')} already have sessions. Please remove them or edit existing.` 
+        };
+    }
 
     // Filter UJ pools
     const active = members.filter(m => m.status === MemberStatus.ACTIVE && m.type === MemberType.MEMBER);
     const fnf = members.filter(m => m.type === MemberType.FNF);
     const inconsistent = members.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE);
 
-    // Create a large pool to draw from
-    // Mix Ratio: 2 Active, 1 FNF, 1 Inconsistent
     let dateIndex = 0;
     
-    // We want to create groups until we run out of dates or people
-    // Simple round robin allocation
     while (dateIndex < dates.length) {
-        if (active.length < 2 && fnf.length < 1 && inconsistent.length < 1) break; // Not enough people left for a full group
+        if (active.length < 2 && fnf.length < 1 && inconsistent.length < 1) break;
 
         const group: string[] = [];
         // Take 2 active
@@ -708,8 +733,6 @@ export const generateOutreachSchedule = (dates: string[], members: Member[]) => 
         // Take 1 Inconsistent
         if (inconsistent.length > 0) group.push(inconsistent.shift()!.id);
 
-        // Fill remaining spots if specific types run out to ensure group of 4 (optional, but requested "Fair")
-        // If FNF runs out, maybe take another Inconsistent or Active
         while (group.length < 4) {
             if (inconsistent.length > 0) group.push(inconsistent.shift()!.id);
             else if (fnf.length > 0) group.push(fnf.shift()!.id);
@@ -724,19 +747,18 @@ export const generateOutreachSchedule = (dates: string[], members: Member[]) => 
                 startTime: '10:00',
                 endTime: '15:00',
                 assignedMemberIds: group,
+                visitedMemberIds: [], // Start empty
                 status: 'PENDING'
             };
             inMemoryData.outreachSessions.push(session);
         }
         
         dateIndex++;
-        // Loop dates if we have more people than dates? 
-        // User said "design the days of visit as the days goes". 
-        // We will assign one group per date provided. If user provides 4 Saturdays, we create 4 groups.
     }
     
     isDirty = true;
     persistData();
+    return { success: true, message: 'Schedule generated successfully.' };
 };
 
 

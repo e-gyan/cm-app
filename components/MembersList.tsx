@@ -203,21 +203,38 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
   };
 
   const AttendanceBadge = ({ member }: { member: Member }) => {
+      // Calculate attendance stats
       const churchAttendance = data.attendance.filter(r => r.churchId === member.assignedChurch);
       const totalSessions = churchAttendance.length;
       const attendedSessions = churchAttendance.filter(r => r.presentMemberIds.includes(member.id)).length;
       const attendanceRate = totalSessions > 0 ? Math.round((attendedSessions / totalSessions) * 100) : 0;
       
-      let colorClass = "bg-gray-100 text-gray-600";
-      if (attendanceRate >= 80) colorClass = "bg-green-100 text-green-700 border-green-200";
-      else if (attendanceRate >= 50) colorClass = "bg-yellow-50 text-yellow-700 border-yellow-200";
-      else if (totalSessions > 0) colorClass = "bg-red-50 text-red-700 border-red-200";
+      // Determine visual style based on percentage
+      let styles = { bg: 'bg-slate-50', text: 'text-slate-500', bar: 'bg-slate-300', border: 'border-slate-200' };
+      
+      if (attendanceRate >= 75) {
+          styles = { bg: 'bg-emerald-50', text: 'text-emerald-700', bar: 'bg-emerald-500', border: 'border-emerald-200' };
+      } else if (attendanceRate >= 50) {
+          styles = { bg: 'bg-amber-50', text: 'text-amber-700', bar: 'bg-amber-500', border: 'border-amber-200' };
+      } else if (attendedSessions > 0) {
+          styles = { bg: 'bg-rose-50', text: 'text-rose-700', bar: 'bg-rose-500', border: 'border-rose-200' };
+      }
 
       return (
-          <div className={`flex items-center gap-2 px-2 py-1 rounded-md border text-xs font-bold w-fit ${colorClass}`}>
-              <Activity size={12} />
-              <span>{attendedSessions}/{totalSessions}</span>
-              <span className="opacity-75">({attendanceRate}%)</span>
+          <div className="w-full max-w-[140px]">
+              <div className={`flex items-center justify-between mb-1 px-2 py-1 rounded-md border ${styles.bg} ${styles.border}`}>
+                  <span className={`text-xs font-bold ${styles.text}`}>{attendanceRate}%</span>
+                  <span className={`text-[10px] font-medium ${styles.text} opacity-80 flex items-center gap-1`}>
+                      <Activity size={10} />
+                      {attendedSessions}/{totalSessions}
+                  </span>
+              </div>
+              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 ${styles.bar}`} 
+                    style={{ width: `${totalSessions > 0 ? Math.max(5, attendanceRate) : 0}%` }}
+                  ></div>
+              </div>
           </div>
       );
   };

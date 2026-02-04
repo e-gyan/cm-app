@@ -141,7 +141,8 @@ const App: React.FC = () => {
   }
 
   const isAdmin = currentUser.role === 'ADMIN';
-  const showOutreach = isAdmin || activeChurch === 'UJ'; // Only UJ or Admins see Outreach
+  // Logic: Show Outreach strictly for UJ Teachers (Remove for Admin as requested)
+  const showOutreach = currentUser.role === 'TEACHER' && currentUser.assignedChurch === 'UJ';
 
   const NavItem = ({ view, icon: Icon }: { view: View; icon: React.ElementType }) => (
     <button
