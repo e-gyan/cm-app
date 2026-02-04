@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { AppData, Member, OutreachSession, PrayerSlot, MemberType } from '../types';
 import { generateOutreachSchedule, saveOutreachSession, deleteOutreachSession, savePrayerSlot, updateMember } from '../services/storageService';
-import { Calendar, MapPin, Phone, MessageSquare, Plus, Trash2, CheckCircle2, Clock, User, Heart, AlertCircle, Save, ArrowRightLeft, Target, BarChart2, ChevronUp, ChevronDown, FolderOpen, Folder, Users } from 'lucide-react';
+import { Calendar, MapPin, Phone, MessageSquare, Plus, Trash2, CheckCircle2, Clock, User, Heart, AlertCircle, Save, ArrowRightLeft, Target, BarChart2, ChevronUp, ChevronDown, FolderOpen, Folder, Users, Cloud } from 'lucide-react';
 
 interface OutreachHubProps {
   data: AppData;
@@ -23,6 +23,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
   const [newDateInput, setNewDateInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [moveModal, setMoveModal] = useState<{ show: boolean, memberId: string, currentSessionId: string } | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   // Collapsible States
   const [isUpcomingOpen, setIsUpcomingOpen] = useState(true);
@@ -71,21 +72,27 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
   };
 
   const handleGenerateSchedule = () => {
+      setIsSyncing(true);
       const ujMembers = data.members.filter(m => m.assignedChurch === 'UJ' && !['Teacher','Helper','Volunteer'].includes(m.type));
       const res = generateOutreachSchedule(selectedDates, ujMembers);
       if (res.success) {
           setSelectedDates([]);
           onUpdate();
+          setTimeout(() => setIsSyncing(false), 800);
       } else {
           setErrorMsg(res.message);
+          setIsSyncing(false);
           setTimeout(() => setErrorMsg(''), 4000);
       }
   };
 
   const handleDeleteSession = (id: string) => {
-      if(window.confirm('Are you sure you want to delete this visit schedule?')) {
+      if(window.confirm('Are you sure you want to permanently delete this visit schedule from the cloud?')) {
+          setIsSyncing(true);
           deleteOutreachSession(id);
+          // Immediate update to UI
           onUpdate();
+          setTimeout(() => setIsSyncing(false), 800);
       }
   };
 
@@ -102,6 +109,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
   }, [data.outreachSessions]);
 
   const toggleVisitForMember = (session: OutreachSession, memberId: string) => {
+      setIsSyncing(true);
       const currentVisited = session.visitedMemberIds || [];
       let newVisited;
       
@@ -121,10 +129,14 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
           completedBy: allDone ? currentUser.name : undefined
       });
       onUpdate();
+      
+      // Pseudo-timer to show sync state briefly (logic handles debounce in background)
+      setTimeout(() => setIsSyncing(false), 800);
   };
 
   const handleMoveMember = (targetSessionId: string) => {
       if (!moveModal) return;
+      setIsSyncing(true);
       const { memberId, currentSessionId } = moveModal;
       
       const currentSession = data.outreachSessions?.find(s => s.id === currentSessionId);
@@ -144,6 +156,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
           saveOutreachSession(targetSession);
           onUpdate();
           setMoveModal(null);
+          setTimeout(() => setIsSyncing(false), 800);
       }
   };
 
@@ -250,8 +263,15 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
 
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-20 relative">
       
+      {/* Sync Indicator */}
+      {isSyncing && (
+          <div className="fixed top-24 right-4 z-50 bg-slate-800 text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 shadow-xl animate-in fade-in slide-in-from-top-4">
+              <Cloud size={12} className="animate-pulse" /> Saving...
+          </div>
+      )}
+
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex overflow-x-auto no-scrollbar gap-2">
           <button onClick={() => setActiveTab('VISIT')} className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm whitespace-nowrap transition-colors ${activeTab === 'VISIT' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
               <MapPin size={18}/> Arrows Visits
@@ -358,7 +378,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                                                   <div className="flex items-center gap-3">
                                                       <button 
                                                         onClick={() => toggleVisitForMember(session, id)}
-                                                        className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${isVisited ? 'bg-green-500 border-green-500 text-white scale-110' : 'bg-white border-slate-300 text-transparent hover:border-indigo-400'}`}
+                                                        className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all ${isVisited ? 'bg-green-500 border-green-500 text-white scale-110 shadow-sm' : 'bg-white border-slate-300 text-transparent hover:border-indigo-400'}`}
                                                       >
                                                           <CheckCircle2 size={16} fill={isVisited ? "currentColor" : "none"}/>
                                                       </button>

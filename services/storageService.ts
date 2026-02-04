@@ -31,7 +31,7 @@ const loadData = (): AppData => {
         outreachSessions: [],
         prayerSchedule: [],
         targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
-        lastUpdated: 0 // IMPORTANT: Set to 0 so cloud data (which has timestamp) always wins on fresh install
+        lastUpdated: 0 
       };
     }
 
@@ -160,20 +160,37 @@ const fetchWithRetryHeaders = async (url: string, method: string, apiKey: string
     }
 };
 
-const syncToCloud = async () => {
+// DEBOUNCE TIMER
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
+
+const syncToCloud = async (immediate = false) => {
     const config = getCloudConfig();
     if (!config || !config.enabled || !config.apiKey || !config.binId) return;
 
-    try {
-        await fetchWithRetryHeaders(
-            `${config.url}/${config.binId}`, 
-            'PUT', 
-            config.apiKey, 
-            JSON.stringify(inMemoryData)
-        );
-        console.log("Data synced to cloud successfully.");
-    } catch (e) {
-        console.error("Failed to sync to cloud", e);
+    const performSync = async () => {
+        try {
+            await fetchWithRetryHeaders(
+                `${config.url}/${config.binId}`, 
+                'PUT', 
+                config.apiKey, 
+                JSON.stringify(inMemoryData)
+            );
+            console.log("Data synced to cloud successfully.");
+        } catch (e) {
+            console.error("Failed to sync to cloud", e);
+        }
+    };
+
+    if (syncTimer) {
+        clearTimeout(syncTimer);
+        syncTimer = null;
+    }
+
+    if (immediate) {
+        performSync();
+    } else {
+        // Debounce for 2 seconds to allow multiple quick actions (checking boxes)
+        syncTimer = setTimeout(performSync, 2000); 
     }
 };
 
@@ -220,7 +237,7 @@ export const syncFromCloud = async (force: boolean = false): Promise<{success: b
             if (!cloudData.prayerSchedule) cloudData.prayerSchedule = [];
             
             inMemoryData = cloudData;
-            persistData(false); // Save to local storage, don't push back to cloud immediately
+            persistData('NONE'); // Save to local storage without pushing back to cloud
             return { success: true, message: 'New data downloaded from cloud' };
         } else {
             return { success: true, message: 'Local data is up to date' };
@@ -231,13 +248,13 @@ export const syncFromCloud = async (force: boolean = false): Promise<{success: b
     }
 };
 
-const persistData = (shouldSyncToCloud: boolean = true) => {
+const persistData = (syncStrategy: 'IMMEDIATE' | 'DEBOUNCE' | 'NONE' = 'DEBOUNCE') => {
   try {
     inMemoryData.lastUpdated = Date.now();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(inMemoryData));
     
-    if (shouldSyncToCloud) {
-        syncToCloud();
+    if (syncStrategy !== 'NONE') {
+        syncToCloud(syncStrategy === 'IMMEDIATE');
     }
   } catch (e) {
     console.error("Failed to save to local storage", e);
@@ -281,7 +298,7 @@ export const markNotificationAsRead = (id: string) => {
     if (note) {
         note.isRead = true;
         isDirty = true;
-        persistData();
+        persistData('DEBOUNCE');
     }
 };
 
@@ -295,7 +312,7 @@ export const clearAllNotifications = (churchId: Church) => {
     });
     if (changed) {
         isDirty = true;
-        persistData();
+        persistData('DEBOUNCE');
     }
 };
 
@@ -334,7 +351,7 @@ const checkBirthdaysAndTeens = () => {
             }
         }
     });
-    if (isDirty) persistData();
+    if (isDirty) persistData('DEBOUNCE');
 };
 
 // --- AUTHENTICATION & SECURITY ---
@@ -410,7 +427,7 @@ export const authenticateUser = async (name: string, passcode: string): Promise<
         if (user.passcode === passcode) {
             isValid = true;
             user.passcode = await hashString(passcode);
-            persistData(); 
+            persistData('IMMEDIATE'); 
         }
     } else {
         const inputHash = await hashString(passcode);
@@ -463,7 +480,7 @@ export const importData = (jsonString: string): { success: boolean; message: str
     if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
 
     inMemoryData = parsed;
-    persistData(true); 
+    persistData('IMMEDIATE'); 
     isDirty = false;
     return { success: true, message: "Data imported successfully!" };
   } catch (e) {
@@ -486,7 +503,7 @@ export const addMember = (name: string, type: MemberType, assignedChurch: Church
   };
   inMemoryData.members.push(newMember);
   isDirty = true;
-  persistData();
+  persistData('IMMEDIATE');
   autoTransferMembersBasedOnAge();
   return newMember;
 };
@@ -500,7 +517,7 @@ export const updateMember = async (updatedMember: Member) => {
     }
     inMemoryData.members[index] = updatedMember;
     isDirty = true;
-    persistData();
+    persistData('DEBOUNCE');
     autoTransferMembersBasedOnAge();
   }
 };
@@ -509,7 +526,7 @@ export const updateMember = async (updatedMember: Member) => {
 export const deleteMember = (id: string) => {
     inMemoryData.members = inMemoryData.members.filter(m => m.id !== id);
     isDirty = true;
-    persistData();
+    persistData('IMMEDIATE');
 };
 
 export const bulkArchiveMembers = (ids: string[]) => {
@@ -522,14 +539,14 @@ export const bulkArchiveMembers = (ids: string[]) => {
   });
   if (hasChanges) {
     isDirty = true;
-    persistData();
+    persistData('DEBOUNCE');
   }
 };
 
 export const updateTargets = (newTargets: Record<string, number>) => {
     inMemoryData.targets = { ...inMemoryData.targets, ...newTargets };
     isDirty = true;
-    persistData();
+    persistData('DEBOUNCE');
 };
 
 // --- AUTOMATION RULES ---
@@ -597,7 +614,7 @@ const autoTransferMembersBasedOnAge = () => {
     });
     if (transferChanges) {
         isDirty = true;
-        persistData();
+        persistData('DEBOUNCE');
     }
 };
 
@@ -649,7 +666,7 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
         }
     });
   }
-  if (isDirty) persistData();
+  if (isDirty) persistData('DEBOUNCE');
 };
 
 export const saveAttendance = (date: string, churchId: Church, presentIds: string[], punctualIds: string[]) => {
@@ -666,7 +683,7 @@ export const saveAttendance = (date: string, churchId: Church, presentIds: strin
     inMemoryData.attendance.push(record);
   }
   isDirty = true;
-  persistData();
+  persistData('DEBOUNCE'); // Saving attendance involves multiple checkboxes, use debounce
   if (churchId !== 'CM') {
       checkAndAutoUpdateMemberStatus(churchId);
   }
@@ -681,14 +698,14 @@ export const saveOutreachSession = (session: OutreachSession) => {
     if (idx >= 0) inMemoryData.outreachSessions[idx] = session;
     else inMemoryData.outreachSessions.push(session);
     isDirty = true;
-    persistData();
+    persistData('DEBOUNCE'); // Toggle checkboxes
 };
 
 export const deleteOutreachSession = (id: string) => {
     if (!inMemoryData.outreachSessions) return;
     inMemoryData.outreachSessions = inMemoryData.outreachSessions.filter(s => s.id !== id);
     isDirty = true;
-    persistData();
+    persistData('IMMEDIATE'); // Deleting a schedule is a critical action, sync immediately
 };
 
 export const savePrayerSlot = (slot: PrayerSlot) => {
@@ -697,7 +714,7 @@ export const savePrayerSlot = (slot: PrayerSlot) => {
     if (idx >= 0) inMemoryData.prayerSchedule[idx] = slot;
     else inMemoryData.prayerSchedule.push(slot);
     isDirty = true;
-    persistData();
+    persistData('DEBOUNCE');
 };
 
 export const generateOutreachSchedule = (dates: string[], members: Member[]): { success: boolean, message: string } => {
@@ -757,7 +774,7 @@ export const generateOutreachSchedule = (dates: string[], members: Member[]): { 
     }
     
     isDirty = true;
-    persistData();
+    persistData('IMMEDIATE');
     return { success: true, message: 'Schedule generated successfully.' };
 };
 
@@ -778,7 +795,7 @@ export const addTransaction = (txn: Partial<Transaction>) => {
     if (!inMemoryData.transactions) inMemoryData.transactions = [];
     inMemoryData.transactions.push(newTxn);
     isDirty = true; 
-    persistData();
+    persistData('IMMEDIATE');
 };
 
 export const deleteTransaction = (id: string) => {
@@ -787,6 +804,6 @@ export const deleteTransaction = (id: string) => {
     inMemoryData.transactions = inMemoryData.transactions.filter(t => t.id !== id);
     if (inMemoryData.transactions.length !== initialLen) {
         isDirty = true;
-        persistData();
+        persistData('IMMEDIATE');
     }
 };
