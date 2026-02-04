@@ -12,6 +12,11 @@ interface AttendanceTakerProps {
   currentUser: Member;
 }
 
+const formatDateDDMMYYYY = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-GB'); // DD/MM/YYYY
+};
+
 const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activeChurch, currentUser }) => {
   const isAdmin = currentUser.role === 'ADMIN';
 
@@ -146,9 +151,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
     // First check cloud to ensure we have latest data
     const syncRes = await syncFromCloud();
     if (syncRes.success && syncRes.message?.includes('New data')) {
-        // If new data came in, we should ideally re-merge, but for simple attendance taker, 
-        // we might just warn or proceed. Since the UI state `presentIds` reflects what user WANTS,
-        // we persist that over whatever came from cloud if conflict, but `syncFromCloud` updates inMemoryData.
         onUpdate(); 
     }
 
@@ -306,9 +308,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   }, [data.attendance, effectiveChurch, attendanceMode, leaderboardTimeframe, data.members, isCombinedView]);
 
   const churchOptions = useMemo(() => {
-      const base: Church[] = ['I', 'K', 'LJ', 'UJ']; // Sorted Ascending based on age progression roughly, or alphabetical? Prompt said Ascending. I, K, L, U. I, K, LJ, UJ.
-      // I comes before K. K comes before L. L comes before U.
-      // If alphabetical: I, K, LJ, UJ.
+      const base: Church[] = ['I', 'K', 'LJ', 'UJ'];
       if (attendanceMode === 'STAFF') return ['All', 'CM', ...base].sort();
       return base; // Already sorted
   }, [attendanceMode]);
@@ -355,7 +355,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                         {sundays2026.map(d => {
                         const strDate = d.toISOString().split('T')[0];
                         const isToday = strDate === new Date().toISOString().split('T')[0];
-                        return <option key={strDate} value={strDate}>{isToday ? 'Today, ' : ''}{d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric'})}</option>
+                        return <option key={strDate} value={strDate}>{isToday ? 'Today, ' : ''}{formatDateDDMMYYYY(strDate)}</option>
                         })}
                     </select>
                 </div>

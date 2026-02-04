@@ -5,13 +5,16 @@ import Dashboard from './components/Dashboard';
 import AttendanceTaker from './components/AttendanceTaker';
 import ReportExport from './components/ReportExport';
 import MembersList from './components/MembersList';
+import Finances from './components/Finances';
+import OutreachHub from './components/OutreachHub'; // New Component
 import Login from './components/Login';
-import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw, Zap, ChevronDown, Bell, Check } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw, Zap, ChevronDown, Bell, Check, HeartHandshake } from 'lucide-react';
 
 enum View {
   DASHBOARD = 'Dashboard',
   ATTENDANCE = 'Attendance',
   MEMBERS = 'People Hub',
+  OUTREACH = 'Outreach', // New View
   EXPORT = 'Reports'
 }
 
@@ -138,6 +141,7 @@ const App: React.FC = () => {
   }
 
   const isAdmin = currentUser.role === 'ADMIN';
+  const showOutreach = isAdmin || activeChurch === 'UJ'; // Only UJ or Admins see Outreach
 
   const NavItem = ({ view, icon: Icon }: { view: View; icon: React.ElementType }) => (
     <button
@@ -247,6 +251,7 @@ const App: React.FC = () => {
             <NavItem view={View.DASHBOARD} icon={LayoutDashboard} />
             <NavItem view={View.ATTENDANCE} icon={CalendarCheck} />
             <NavItem view={View.MEMBERS} icon={Users} />
+            {showOutreach && <NavItem view={View.OUTREACH} icon={HeartHandshake} />}
             <NavItem view={View.EXPORT} icon={Share2} />
           </nav>
 
@@ -389,6 +394,11 @@ const App: React.FC = () => {
                 <div style={{ display: currentView === View.MEMBERS ? 'block' : 'none' }}>
                     <MembersList data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />
                 </div>
+                {showOutreach && (
+                    <div style={{ display: currentView === View.OUTREACH ? 'block' : 'none' }}>
+                        <OutreachHub data={data} onUpdate={refreshData} currentUser={currentUser} />
+                    </div>
+                )}
                 <div style={{ display: currentView === View.EXPORT ? 'block' : 'none' }}>
                     <ReportExport data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />
                 </div>
@@ -401,6 +411,7 @@ const App: React.FC = () => {
             <MobileNavItem view={View.DASHBOARD} icon={LayoutDashboard} label="Home" />
             <MobileNavItem view={View.ATTENDANCE} icon={CalendarCheck} label="Attend" />
             <MobileNavItem view={View.MEMBERS} icon={Users} label="People" />
+            {showOutreach && <MobileNavItem view={View.OUTREACH} icon={HeartHandshake} label="Outreach" />}
             <MobileNavItem view={View.EXPORT} icon={Share2} label="Reports" />
         </nav>
       </main>

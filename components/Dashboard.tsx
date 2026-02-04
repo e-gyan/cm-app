@@ -12,6 +12,11 @@ interface DashboardProps {
   currentUser: Member;
 }
 
+const formatDateDDMMYYYY = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); 
+};
+
 const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode; colorClass: string; trend?: number; subtitle?: string; target?: number; progressValue?: number }> = ({ title, value, icon, colorClass, trend, subtitle, target, progressValue }) => (
   <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-300 group">
     <div className="flex justify-between items-start mb-4">
@@ -315,7 +320,7 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
         // Trend Data with Growth Calculation
         const last5 = attendance.slice(-5).map((r, i) => {
             const count = getCount(r);
-            const date = new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            const date = formatDateDDMMYYYY(r.date);
             
             // Calculate growth compared to previous Sunday in the sorted list
             let growth = 0;

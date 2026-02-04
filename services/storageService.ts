@@ -1,4 +1,4 @@
-import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig, Transaction, Notification, NotificationType } from '../types';
+import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig, Transaction, Notification, NotificationType, OutreachSession, PrayerSlot } from '../types';
 import { INITIAL_MEMBERS, INITIAL_ATTENDANCE, DEFAULT_CLOUD_CONFIG } from '../constants';
 import { sanitizeInput, hashString, isValidSchema } from './securityService';
 
@@ -19,6 +19,8 @@ const loadData = (): AppData => {
       // Ensure transactions exists if loaded from legacy data
       if (!parsed.transactions) parsed.transactions = [];
       if (!parsed.notifications) parsed.notifications = [];
+      if (!parsed.outreachSessions) parsed.outreachSessions = []; // Init Outreach
+      if (!parsed.prayerSchedule) parsed.prayerSchedule = []; // Init Prayer
       if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
     } else {
       parsed = {
@@ -26,6 +28,8 @@ const loadData = (): AppData => {
         attendance: [...INITIAL_ATTENDANCE],
         transactions: [],
         notifications: [],
+        outreachSessions: [],
+        prayerSchedule: [],
         targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
         lastUpdated: 0 // IMPORTANT: Set to 0 so cloud data (which has timestamp) always wins on fresh install
       };
@@ -84,6 +88,8 @@ const loadData = (): AppData => {
         attendance: [...INITIAL_ATTENDANCE],
         transactions: [],
         notifications: [],
+        outreachSessions: [],
+        prayerSchedule: [],
         targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
         lastUpdated: 0
     };
@@ -200,6 +206,8 @@ export const syncFromCloud = async (force: boolean = false): Promise<{success: b
             cloudData.members.forEach(m => m.name = sanitizeInput(m.name));
             if (!cloudData.targets) cloudData.targets = { UJ: 0, I: 0, K: 0, LJ: 0 }; 
             if (!cloudData.notifications) cloudData.notifications = [];
+            if (!cloudData.outreachSessions) cloudData.outreachSessions = [];
+            if (!cloudData.prayerSchedule) cloudData.prayerSchedule = [];
             
             inMemoryData = cloudData;
             persistData(false); // Save to local storage, don't push back to cloud immediately
@@ -439,6 +447,8 @@ export const importData = (jsonString: string): { success: boolean; message: str
     });
     parsed.lastUpdated = Date.now();
     if (!parsed.notifications) parsed.notifications = [];
+    if (!parsed.outreachSessions) parsed.outreachSessions = [];
+    if (!parsed.prayerSchedule) parsed.prayerSchedule = [];
     if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
 
     inMemoryData = parsed;
@@ -652,6 +662,83 @@ export const saveAttendance = (date: string, churchId: Church, presentIds: strin
   autoTransferMembersBasedOnAge();
   checkBirthdaysAndTeens(); 
 };
+
+// --- OUTREACH & PRAYER METHODS ---
+export const saveOutreachSession = (session: OutreachSession) => {
+    if (!inMemoryData.outreachSessions) inMemoryData.outreachSessions = [];
+    const idx = inMemoryData.outreachSessions.findIndex(s => s.id === session.id);
+    if (idx >= 0) inMemoryData.outreachSessions[idx] = session;
+    else inMemoryData.outreachSessions.push(session);
+    isDirty = true;
+    persistData();
+};
+
+export const savePrayerSlot = (slot: PrayerSlot) => {
+    if (!inMemoryData.prayerSchedule) inMemoryData.prayerSchedule = [];
+    const idx = inMemoryData.prayerSchedule.findIndex(s => s.id === slot.id);
+    if (idx >= 0) inMemoryData.prayerSchedule[idx] = slot;
+    else inMemoryData.prayerSchedule.push(slot);
+    isDirty = true;
+    persistData();
+};
+
+export const generateOutreachSchedule = (dates: string[], members: Member[]) => {
+    if (dates.length === 0 || members.length === 0) return;
+    if (!inMemoryData.outreachSessions) inMemoryData.outreachSessions = [];
+
+    // Filter UJ pools
+    const active = members.filter(m => m.status === MemberStatus.ACTIVE && m.type === MemberType.MEMBER);
+    const fnf = members.filter(m => m.type === MemberType.FNF);
+    const inconsistent = members.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE);
+
+    // Create a large pool to draw from
+    // Mix Ratio: 2 Active, 1 FNF, 1 Inconsistent
+    let dateIndex = 0;
+    
+    // We want to create groups until we run out of dates or people
+    // Simple round robin allocation
+    while (dateIndex < dates.length) {
+        if (active.length < 2 && fnf.length < 1 && inconsistent.length < 1) break; // Not enough people left for a full group
+
+        const group: string[] = [];
+        // Take 2 active
+        for (let i=0; i<2; i++) { if (active.length > 0) group.push(active.shift()!.id); }
+        // Take 1 FNF
+        if (fnf.length > 0) group.push(fnf.shift()!.id);
+        // Take 1 Inconsistent
+        if (inconsistent.length > 0) group.push(inconsistent.shift()!.id);
+
+        // Fill remaining spots if specific types run out to ensure group of 4 (optional, but requested "Fair")
+        // If FNF runs out, maybe take another Inconsistent or Active
+        while (group.length < 4) {
+            if (inconsistent.length > 0) group.push(inconsistent.shift()!.id);
+            else if (fnf.length > 0) group.push(fnf.shift()!.id);
+            else if (active.length > 0) group.push(active.shift()!.id);
+            else break;
+        }
+
+        if (group.length > 0) {
+            const session: OutreachSession = {
+                id: crypto.randomUUID(),
+                date: dates[dateIndex],
+                startTime: '10:00',
+                endTime: '15:00',
+                assignedMemberIds: group,
+                status: 'PENDING'
+            };
+            inMemoryData.outreachSessions.push(session);
+        }
+        
+        dateIndex++;
+        // Loop dates if we have more people than dates? 
+        // User said "design the days of visit as the days goes". 
+        // We will assign one group per date provided. If user provides 4 Saturdays, we create 4 groups.
+    }
+    
+    isDirty = true;
+    persistData();
+};
+
 
 // --- FINANCIAL SERVICE METHODS ---
 export const addTransaction = (txn: Partial<Transaction>) => {

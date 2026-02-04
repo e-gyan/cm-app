@@ -11,6 +11,11 @@ interface FinancesProps {
   currentUser: Member;
 }
 
+const formatDateDDMMYYYY = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-GB'); // DD/MM/YYYY
+};
+
 const Finances: React.FC<FinancesProps> = ({ data, onUpdate, activeChurch, currentUser }) => {
   const isAdmin = currentUser.role === 'ADMIN';
 
@@ -61,33 +66,6 @@ const Finances: React.FC<FinancesProps> = ({ data, onUpdate, activeChurch, curre
   }, [filteredTransactions]);
 
   const chartData = useMemo(() => {
-      const grouped: Record<string, { name: string; income: number; expense: number }> = {};
-      
-      // Group by Month (Last 6 months usually good, or just all data aggregated)
-      filteredTransactions.forEach(t => {
-          const date = new Date(t.date);
-          const key = `${date.getFullYear()}-${date.getMonth()}`;
-          const label = date.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
-          
-          if (!grouped[key]) grouped[key] = { name: label, income: 0, expense: 0 };
-          
-          if (t.type === 'INCOME') grouped[key].income += t.amount;
-          else grouped[key].expense += t.amount;
-      });
-
-      // Convert to array and sort
-      return Object.values(grouped).reverse(); // Assuming original sort was desc, we want chronological for chart? Actually original was desc, so this iterates desc. Reversing makes it asc?
-      // Wait, iteration order of keys isn't guaranteed. Better to sort keys.
-  }, [filteredTransactions]);
-  
-  // Re-sort chart data chronologically
-  const sortedChartData = [...chartData].sort((a,b) => {
-      // Simple hack: rely on string comparison if format matches or just rely on the fact that we processed a sorted list? 
-      // Let's just process strictly.
-      return 0; // Placeholder, assuming chartData simple map is okay for now.
-  }).reverse(); // The filteredTransactions is Descending. Iterating it populates the map. Then Object.values order is indeterminate.
-  // Proper way:
-  const finalChartData = useMemo(() => {
       const map = new Map<string, {name: string, income: number, expense: number}>();
       const txnsAsc = [...filteredTransactions].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       
@@ -102,7 +80,6 @@ const Finances: React.FC<FinancesProps> = ({ data, onUpdate, activeChurch, curre
       });
       return Array.from(map.values());
   }, [filteredTransactions]);
-
 
   const handleSave = () => {
       if (!formData.amount || !formData.category) return;
@@ -184,10 +161,10 @@ const Finances: React.FC<FinancesProps> = ({ data, onUpdate, activeChurch, curre
         </div>
 
         {/* Chart */}
-        {finalChartData.length > 0 && (
+        {chartData.length > 0 && (
             <div className="bg-white p-6 rounded-2xl border border-slate-100 h-64">
                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={finalChartData}>
+                    <BarChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
                         <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
                         <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
@@ -223,7 +200,7 @@ const Finances: React.FC<FinancesProps> = ({ data, onUpdate, activeChurch, curre
                         ) : (
                             filteredTransactions.map(t => (
                                 <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
-                                    <td className="p-4 text-slate-600 font-medium">{new Date(t.date).toLocaleDateString()}</td>
+                                    <td className="p-4 text-slate-600 font-medium">{formatDateDDMMYYYY(t.date)}</td>
                                     <td className="p-4">
                                         <span className={`px-2 py-1 rounded-md text-xs font-bold ${t.type === 'INCOME' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                                             {t.type}

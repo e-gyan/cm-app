@@ -25,7 +25,7 @@ export interface Member {
   type: MemberType;
   joinedDate: string;
   status: MemberStatus;
-  birthDate?: string; // ISO Date string (YYYY-MM-DD)
+  birthDate?: string; // ISO Date string (DD/MM/YYYY)
   assignedChurch: Church;
   // Auth Fields
   role?: Role;
@@ -33,6 +33,11 @@ export interface Member {
   isAccessActive?: boolean;
   // Automation Fields
   transferPendingDate?: string; // ISO Date string for the 1-week notification period
+  // Contact & Location (New)
+  phone?: string;
+  parentPhone?: string;
+  address?: string;
+  gpsCoordinates?: string; // e.g., "5.6037, -0.1870" for Maps
 }
 
 export interface AttendanceRecord {
@@ -66,11 +71,34 @@ export interface Notification {
   isRead: boolean;
 }
 
+// --- NEW OUTREACH TYPES ---
+export interface OutreachSession {
+  id: string;
+  date: string; // YYYY-MM-DD
+  startTime: string; // "10:00"
+  endTime: string; // "15:00"
+  assignedMemberIds: string[]; // The group of 4
+  status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  notes?: string;
+  completedBy?: string;
+}
+
+export interface PrayerSlot {
+  id: string;
+  date: string; // YYYY-MM-DD
+  dayOfWeek: string; // Monday, Tuesday...
+  assignedMemberIds: string[]; // Who we are praying for
+  isCompleted: boolean;
+  durationMins: number; // Default 30
+}
+
 export interface AppData {
   members: Member[];
   attendance: AttendanceRecord[];
   transactions: Transaction[];
   notifications: Notification[];
+  outreachSessions?: OutreachSession[]; // New
+  prayerSchedule?: PrayerSlot[]; // New
   targets?: Record<string, number>; // Stores attendance goals e.g. { "UJ": 50, "I": 20 }
   lastUpdated?: number; // Timestamp for sync conflict resolution
 }

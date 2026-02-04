@@ -41,7 +41,11 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
       assignedChurch: activeChurch === 'CM' ? 'UJ' : activeChurch,
       role: 'NONE',
       passcode: '',
-      isAccessActive: false
+      isAccessActive: false,
+      phone: '',
+      parentPhone: '',
+      address: '',
+      gpsCoordinates: ''
   });
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -55,7 +59,11 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
         assignedChurch: member.assignedChurch || 'UJ',
         role: member.role || 'NONE',
         passcode: member.passcode || '',
-        isAccessActive: member.isAccessActive || false
+        isAccessActive: member.isAccessActive || false,
+        phone: member.phone || '',
+        parentPhone: member.parentPhone || '',
+        address: member.address || '',
+        gpsCoordinates: member.gpsCoordinates || ''
     });
     setIsEditModalOpen(true);
   };
@@ -70,7 +78,11 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
         assignedChurch: activeChurch === 'CM' ? 'UJ' : activeChurch,
         role: 'NONE',
         passcode: '',
-        isAccessActive: false
+        isAccessActive: false,
+        phone: '',
+        parentPhone: '',
+        address: '',
+        gpsCoordinates: ''
     });
     setIsCreateModalOpen(true);
   };
@@ -90,13 +102,15 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
         setIsEditModalOpen(false);
     } else {
         // CREATE NEW
-        addMember(
+        const newMember = addMember(
             cleanName, 
             formData.type!, 
             formData.assignedChurch!, 
             formData.birthDate!, 
             formData.status!
         );
+        // Update with extra fields that addMember doesn't support by default args
+        await updateMember({ ...newMember, ...formData, name: cleanName } as Member);
         setIsCreateModalOpen(false);
     }
     setEditingId(null);
@@ -155,28 +169,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
     const m = today.getMonth() - birth.getMonth();
     if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
     
-    // Logic matches "moving up" criteria based on age milestones
-    // 0-1 (I) moves to K at 2
-    // 2-5 (K) moves to LJ at 6
-    // 6-8 (LJ) moves to UJ at 9
-    // 9-13 (UJ) moves to Teen at 14 (Check start at 13)
-
-    // Generalized logic: check against current church context
-    // But since this function is generic, we return status based on global "Teen/Transition" concept
-    // However, the column header will change name.
-    
     if (age >= 13) return { label: 'YES', colorClass: 'bg-green-100 text-green-700 border-green-200' };
-    
-    // Check for "Soon" - within 5 months of turning next major age group?
-    // Let's stick to the Teen check logic for simplicity in data, but label "YES" means "Ready/Overdue"
-    // "SOON" means approaching.
-    
-    // For specific church checks, we might want custom logic, but user request implies just naming change for now.
-    // "if I church it should K Check" -> Meaning checking if they are ready for K.
-    // This logic is implicitly handled by the auto-transfer, but visual indicator helps.
-    
-    // Re-using existing logic for now, as it calculates generalized age readiness.
-    // 13th birthday check is specific to UJ.
     
     const thirteenthBirthday = new Date(birth);
     thirteenthBirthday.setFullYear(birth.getFullYear() + 13);
@@ -187,7 +180,6 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
     return { label: 'NO', colorClass: 'bg-red-50 text-red-600 border-red-100' };
   };
   
-  // Intelligent Column Header Name
   const getCheckColumnName = () => {
       if (activeChurch === 'I') return 'K Check';
       if (activeChurch === 'K') return 'LJ Check';
@@ -202,6 +194,12 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
         case MemberStatus.ARCHIVED: return 'bg-gray-100 text-gray-600';
         default: return 'bg-gray-100 text-gray-600';
     }
+  };
+
+  const formatDateDDMMYYYY = (dateStr: string) => {
+      if (!dateStr) return '--';
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-GB');
   };
 
   const AttendanceBadge = ({ member }: { member: Member }) => {
@@ -298,7 +296,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                         </td>
 
                         <td className="px-6 py-4">
-                            <span className="text-sm text-gray-600">{member.birthDate ? new Date(member.birthDate).toLocaleDateString() : '--'}</span>
+                            <span className="text-sm text-gray-600">{formatDateDDMMYYYY(member.birthDate || '')}</span>
                         </td>
 
                         {isTeacherSection && isAdmin ? (
@@ -373,7 +371,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                                 <div className="flex flex-wrap gap-2 mt-2">
                                     <span className={`text-xs px-2 py-1 rounded-md font-medium ${getStatusBadgeColor(member.status)}`}>{member.status}</span>
                                     <span className="text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-600 border border-gray-200 font-medium">{member.assignedChurch}</span>
-                                    {member.birthDate && <span className="text-xs px-2 py-1 rounded-md bg-blue-50 text-blue-600 border border-blue-100 font-medium">🎂 {new Date(member.birthDate).toLocaleDateString()}</span>}
+                                    {member.birthDate && <span className="text-xs px-2 py-1 rounded-md bg-blue-50 text-blue-600 border border-blue-100 font-medium">🎂 {formatDateDDMMYYYY(member.birthDate)}</span>}
                                     {!isTeacherSection && teenStatus.label !== 'NO' && <span className={`text-xs px-2 py-1 rounded-md border font-bold ${teenStatus.colorClass}`}>{getCheckColumnName()}: {teenStatus.label}</span>}
                                     {isTeacherSection && member.isAccessActive && <span className="text-xs px-2 py-1 rounded-md bg-green-50 text-green-700 border border-green-100 flex items-center gap-1 font-medium"><Key size={10}/> Access</span>}
                                 </div>
@@ -471,7 +469,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
   };
 
   const renderFormContent = () => (
-      <div className="space-y-4">
+      <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
             <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">Full Name</label>
                 <input 
@@ -515,6 +513,32 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                     </select>
                 </div>
             </div>
+            
+            {/* Contact Information (New Fields) */}
+            <div className="border-t pt-4">
+                 <h4 className="font-bold text-gray-800 mb-3 text-sm uppercase">Contact Details</h4>
+                 <div className="grid grid-cols-2 gap-4 mb-3">
+                     <div>
+                         <label className="block text-xs font-bold text-gray-500 mb-1">Phone</label>
+                         <input type="tel" className="w-full p-2 border rounded-lg" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="050..." />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-bold text-gray-500 mb-1">Parent Phone</label>
+                         <input type="tel" className="w-full p-2 border rounded-lg" value={formData.parentPhone} onChange={e => setFormData({...formData, parentPhone: e.target.value})} placeholder="Parent/Guardian" />
+                     </div>
+                 </div>
+                 <div className="space-y-3">
+                     <div>
+                         <label className="block text-xs font-bold text-gray-500 mb-1">Address / Landmark</label>
+                         <input type="text" className="w-full p-2 border rounded-lg" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} placeholder="House No, Street..." />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-bold text-gray-500 mb-1">GPS (Lat, Lng)</label>
+                         <input type="text" className="w-full p-2 border rounded-lg" value={formData.gpsCoordinates} onChange={e => setFormData({...formData, gpsCoordinates: e.target.value})} placeholder="e.g. 5.6037, -0.1870" />
+                         <p className="text-[10px] text-gray-400 mt-1">Copy coordinates from Google Maps for exact location.</p>
+                     </div>
+                 </div>
+            </div>
 
             {/* Teacher specific system access fields */}
             {hubTab === 'TEACHERS' && isAdmin && (
@@ -551,6 +575,8 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
       </div>
   );
 
+  // ... (Rest of component remains largely the same, logic is handled by renderFormContent)
+  // Just returning the full structure to ensure imports and layout are correct
   return (
     <div className="space-y-6 relative pb-20">
       <div className="flex items-center justify-between mb-4">
