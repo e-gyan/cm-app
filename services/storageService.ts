@@ -1,6 +1,6 @@
 import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig, Transaction, Notification, NotificationType, OutreachSession, PrayerSlot } from '../types';
 import { INITIAL_MEMBERS, INITIAL_ATTENDANCE, DEFAULT_CLOUD_CONFIG } from '../constants';
-import { sanitizeInput, hashString, isValidSchema } from './securityService';
+import { sanitizeInput, hashString, isValidSchema, hashPasscode, verifyPasscode } from './securityService';
 
 // STORAGE KEYS
 const STORAGE_KEY = 'UJ_CHURCH_DATA_2026_V5'; 
@@ -70,8 +70,9 @@ const loadData = (): AppData => {
     (async () => {
         let hasUpdates = false;
         for (const m of parsed.members) {
+            // Migrate Plaintext (len < 64) directly to PBKDF2
             if (m.passcode && m.passcode.length < 64) {
-                m.passcode = await hashString(m.passcode);
+                m.passcode = await hashPasscode(m.passcode);
                 hasUpdates = true;
             }
         }
@@ -163,9 +164,9 @@ const fetchWithRetryHeaders = async (url: string, method: string, apiKey: string
 // DEBOUNCE TIMER
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
-const syncToCloud = async (immediate = false) => {
+const syncToCloud = async (immediate = false): Promise<void> => {
     const config = getCloudConfig();
-    if (!config || !config.enabled || !config.apiKey || !config.binId) return;
+    if (!config || !config.enabled || !config.apiKey || !config.binId) return Promise.resolve();
 
     const performSync = async () => {
         try {
@@ -187,10 +188,11 @@ const syncToCloud = async (immediate = false) => {
     }
 
     if (immediate) {
-        performSync();
+        return performSync();
     } else {
         // Debounce for 2 seconds to allow multiple quick actions (checking boxes)
         syncTimer = setTimeout(performSync, 2000); 
+        return Promise.resolve();
     }
 };
 
@@ -248,17 +250,18 @@ export const syncFromCloud = async (force: boolean = false): Promise<{success: b
     }
 };
 
-const persistData = (syncStrategy: 'IMMEDIATE' | 'DEBOUNCE' | 'NONE' = 'DEBOUNCE') => {
+const persistData = (syncStrategy: 'IMMEDIATE' | 'DEBOUNCE' | 'NONE' = 'DEBOUNCE'): Promise<void> => {
   try {
     inMemoryData.lastUpdated = Date.now();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(inMemoryData));
     
     if (syncStrategy !== 'NONE') {
-        syncToCloud(syncStrategy === 'IMMEDIATE');
+        return syncToCloud(syncStrategy === 'IMMEDIATE');
     }
   } catch (e) {
     console.error("Failed to save to local storage", e);
   }
+  return Promise.resolve();
 };
 
 let isDirty = false;
@@ -423,18 +426,34 @@ export const authenticateUser = async (name: string, passcode: string): Promise<
     }
 
     let isValid = false;
+    let needsUpgrade = false;
+
+    // SCENARIO 1: Plaintext Legacy (len < 64)
     if (user.passcode && user.passcode.length < 64) {
         if (user.passcode === passcode) {
             isValid = true;
-            user.passcode = await hashString(passcode);
-            persistData('IMMEDIATE'); 
+            needsUpgrade = true;
         }
-    } else {
+    } 
+    // SCENARIO 2: SHA-256 Legacy (len == 64)
+    else if (user.passcode && user.passcode.length === 64) {
         const inputHash = await hashString(passcode);
-        if (user.passcode === inputHash) isValid = true;
+        if (user.passcode === inputHash) {
+            isValid = true;
+            needsUpgrade = true;
+        }
+    }
+    // SCENARIO 3: PBKDF2 Modern (len > 64, specifically 32(salt) + 1(:) + 64(key) = 97)
+    else {
+        isValid = await verifyPasscode(passcode, user.passcode || '');
     }
 
     if (isValid) {
+        if (needsUpgrade) {
+            user.passcode = await hashPasscode(passcode);
+            persistData('IMMEDIATE');
+        }
+
         localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify({ count: 0, lastAttempt: now, lockedUntil: null }));
         localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: user.id, timestamp: now }));
         syncFromCloud(); // Trigger background sync after login as well
@@ -488,7 +507,7 @@ export const importData = (jsonString: string): { success: boolean; message: str
   }
 };
 
-export const addMember = (name: string, type: MemberType, assignedChurch: Church, birthDate: string = '', status: MemberStatus = MemberStatus.ACTIVE): Member => {
+export const addMember = async (name: string, type: MemberType, assignedChurch: Church, birthDate: string = '', status: MemberStatus = MemberStatus.ACTIVE): Promise<Member> => {
   const cleanName = sanitizeInput(name);
   const newMember: Member = {
     id: crypto.randomUUID(),
@@ -503,18 +522,26 @@ export const addMember = (name: string, type: MemberType, assignedChurch: Church
   };
   inMemoryData.members.push(newMember);
   isDirty = true;
-  persistData('IMMEDIATE');
+  await persistData('IMMEDIATE');
   autoTransferMembersBasedOnAge();
   return newMember;
 };
+
+// This wrapper is for components that don't need async (AttendanceTaker uses sync version)
+// But to ensure compatibility we will keep the export signature flexible if possible, or assume caller handles promise.
+// AttendanceTaker just calls addMember, result is used. Promise is fine.
 
 export const updateMember = async (updatedMember: Member) => {
   const index = inMemoryData.members.findIndex(m => m.id === updatedMember.id);
   if (index !== -1) {
     updatedMember.name = sanitizeInput(updatedMember.name);
+    // Note: Passcode hashing is handled by the caller (MembersList) or migration logic, 
+    // unless it's a raw plain-text update from the UI.
+    // If we detect a short passcode here that looks like user input, hash it.
     if (updatedMember.passcode && updatedMember.passcode.length < 64 && updatedMember.role !== 'NONE') {
-        updatedMember.passcode = await hashString(updatedMember.passcode);
+        updatedMember.passcode = await hashPasscode(updatedMember.passcode);
     }
+    
     inMemoryData.members[index] = updatedMember;
     isDirty = true;
     persistData('DEBOUNCE');
@@ -695,17 +722,20 @@ export const saveAttendance = (date: string, churchId: Church, presentIds: strin
 export const saveOutreachSession = (session: OutreachSession) => {
     if (!inMemoryData.outreachSessions) inMemoryData.outreachSessions = [];
     const idx = inMemoryData.outreachSessions.findIndex(s => s.id === session.id);
+    // Ensure visitedMemberIds is init
+    if (!session.visitedMemberIds) session.visitedMemberIds = [];
+    
     if (idx >= 0) inMemoryData.outreachSessions[idx] = session;
     else inMemoryData.outreachSessions.push(session);
     isDirty = true;
     persistData('DEBOUNCE'); // Toggle checkboxes
 };
 
-export const deleteOutreachSession = (id: string) => {
+export const deleteOutreachSession = async (id: string) => {
     if (!inMemoryData.outreachSessions) return;
     inMemoryData.outreachSessions = inMemoryData.outreachSessions.filter(s => s.id !== id);
     isDirty = true;
-    persistData('IMMEDIATE'); // Deleting a schedule is a critical action, sync immediately
+    await persistData('IMMEDIATE'); // Deleting a schedule is a critical action, sync immediately and wait
 };
 
 export const savePrayerSlot = (slot: PrayerSlot) => {
@@ -788,18 +818,29 @@ export const generateOutreachSchedule = (dates: string[], members: Member[]): { 
 export const generatePrayerSchedule = (startWeekDate: Date, members: Member[]): { success: boolean, message: string } => {
     if (!inMemoryData.prayerSchedule) inMemoryData.prayerSchedule = [];
     
-    // Define the specific pools
-    // Logic: 3 Members, 1 FNF, 1 Inconsistent per day
-    let membersPool = members.filter(m => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE);
-    let fnfPool = members.filter(m => m.type === MemberType.FNF);
-    let incPool = members.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE);
+    // --- ROBUST POOL CREATION ---
+    // Pool A: Active Members
+    let active = members.filter(m => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE);
+    
+    // Pool B: FNF
+    let fnf = members.filter(m => m.type === MemberType.FNF);
+    
+    // Pool C: Inconsistent (Includes explicit 'INCONSISTENT' types OR 'NOT_ACTIVE' status of any type)
+    let inconsistent = members.filter(m => 
+        (m.type === MemberType.INCONSISTENT) || 
+        (m.status === MemberStatus.NOT_ACTIVE) ||
+        (m.type === MemberType.NOT_MEMBER)
+    );
 
-    // Shuffle helper
-    const shuffle = (arr: any[]) => arr.sort(() => Math.random() - 0.5);
-    
-    // We need enough people for 5 days * 5 people = 25 slots roughly, but we can reuse if pools are small
+    // Shuffle
+    const shuffle = (arr: Member[]) => arr.sort(() => Math.random() - 0.5);
+    active = shuffle([...active]);
+    fnf = shuffle([...fnf]);
+    inconsistent = shuffle([...inconsistent]);
+
     const days = 5; // Mon-Fri
-    
+    let generatedCount = 0;
+
     for (let i = 0; i < days; i++) {
         const d = new Date(startWeekDate);
         d.setDate(startWeekDate.getDate() + i);
@@ -808,37 +849,95 @@ export const generatePrayerSchedule = (startWeekDate: Date, members: Member[]): 
         // Skip if already exists
         if (inMemoryData.prayerSchedule.some(s => s.date === dateStr)) continue;
 
-        const dailyGroup: string[] = [];
+        const dailyIds: Set<string> = new Set();
 
-        // 1. Pick 3 Members
-        for (let j=0; j<3; j++) {
-            if (membersPool.length === 0) membersPool = shuffle(members.filter(m => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE)); // Refill/Reshuffle
-            if (membersPool.length > 0) dailyGroup.push(membersPool.shift()!.id);
+        // --- HELPER: GET MEMBER WITH AUTO-REFILL ---
+        // Tries to get from Primary Pool. If empty, tries Source (refill).
+        const getFromPool = (pool: Member[], source: Member[]): Member | null => {
+            if (pool.length === 0) {
+                if (source.length === 0) return null; // Source also empty
+                // Refill pool from source, shuffle, but exclude those already selected today if possible
+                pool.push(...shuffle([...source]));
+            }
+            
+            // Try to find one not in dailyIds
+            let candidate = pool.shift();
+            let tries = 0;
+            const maxTries = pool.length + 2; 
+
+            while (candidate && dailyIds.has(candidate.id) && tries < maxTries) {
+                pool.push(candidate); // Put back
+                candidate = pool.shift();
+                tries++;
+            }
+            
+            return candidate || null;
+        };
+
+        // --- SELECTION: EXACTLY 3 Members + 1 FNF + 1 Inconsistent ---
+        
+        // 1. Pick 3 Active Members
+        const sourceActive = members.filter(m => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE);
+        for(let k=0; k<3; k++) {
+            const m = getFromPool(active, sourceActive);
+            if(m) dailyIds.add(m.id);
         }
 
         // 2. Pick 1 FNF
-        if (fnfPool.length === 0) fnfPool = shuffle(members.filter(m => m.type === MemberType.FNF));
-        if (fnfPool.length > 0) dailyGroup.push(fnfPool.shift()!.id);
+        const sourceFNF = members.filter(m => m.type === MemberType.FNF);
+        let mFnf = getFromPool(fnf, sourceFNF);
+        
+        // FALLBACK FOR FNF: If no FNF available, take Inconsistent, then Active
+        if (!mFnf) {
+             const sourceInc = members.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE);
+             mFnf = getFromPool(inconsistent, sourceInc);
+        }
+        if (!mFnf) mFnf = getFromPool(active, sourceActive);
+        
+        if(mFnf && !dailyIds.has(mFnf.id)) dailyIds.add(mFnf.id);
 
         // 3. Pick 1 Inconsistent
-        if (incPool.length === 0) incPool = shuffle(members.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE));
-        if (incPool.length > 0) dailyGroup.push(incPool.shift()!.id);
+        const sourceInc = members.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE);
+        let mInc = getFromPool(inconsistent, sourceInc);
 
-        if (dailyGroup.length > 0) {
+        // FALLBACK FOR INC: If no Inc available, take FNF, then Active
+        if (!mInc) mInc = getFromPool(fnf, sourceFNF);
+        if (!mInc) mInc = getFromPool(active, sourceActive);
+
+        if(mInc && !dailyIds.has(mInc.id)) dailyIds.add(mInc.id);
+
+        // --- FINAL SAFETY FILL: FORCE 5 ---
+        // If duplicates or empty pools prevented reaching 5, fill with ANYONE available unique
+        if (dailyIds.size < 5) {
+            const allUnique = members.filter(m => !dailyIds.has(m.id) && !['Teacher','Helper','Volunteer'].includes(m.type));
+            const shuffledUnique = shuffle([...allUnique]);
+            
+            while(dailyIds.size < 5 && shuffledUnique.length > 0) {
+                const pick = shuffledUnique.shift();
+                if(pick) dailyIds.add(pick.id);
+            }
+        }
+
+        if (dailyIds.size > 0) {
             inMemoryData.prayerSchedule.push({
                 id: crypto.randomUUID(),
                 date: dateStr,
                 dayOfWeek: d.toLocaleDateString('en-US', { weekday: 'long'}),
-                assignedMemberIds: dailyGroup,
+                assignedMemberIds: Array.from(dailyIds),
                 isCompleted: false,
                 durationMins: 30
             });
+            generatedCount++;
         }
     }
 
     isDirty = true;
     persistData('IMMEDIATE');
-    return { success: true, message: 'Prayer schedule generated.' };
+    
+    if (generatedCount === 0) {
+        return { success: false, message: 'Schedule already exists for this week.' };
+    }
+    return { success: true, message: `Prayer schedule generated for ${generatedCount} days.` };
 };
 
 

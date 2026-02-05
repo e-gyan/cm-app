@@ -221,12 +221,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
     setTimeout(() => setSuccessMsg(''), 2000);
   };
 
-  const handleAddFNF = () => {
+  const handleAddFNF = async () => {
     if (!newMemberName.trim()) return;
     const cleanName = sanitizeInput(newMemberName);
     const targetChurch = isCombinedView ? 'UJ' : effectiveChurch as Church;
     
-    const newMember = addMember(cleanName, MemberType.FNF, targetChurch, '');
+    const newMember = await addMember(cleanName, MemberType.FNF, targetChurch, '');
     const newSet = new Set(presentIds);
     newSet.add(newMember.id);
     setPresentIds(newSet);

@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { AppData, Member, OutreachSession, PrayerSlot, MemberType } from '../types';
+import React, { useState, useMemo } from 'react';
+import { AppData, Member, OutreachSession, PrayerSlot, MemberType, MemberStatus } from '../types';
 import { generateOutreachSchedule, generatePrayerSchedule, saveOutreachSession, deleteOutreachSession, savePrayerSlot } from '../services/storageService';
-import { Calendar, MapPin, Phone, MessageSquare, Plus, Trash2, CheckCircle2, Clock, User, Heart, AlertCircle, Save, ArrowRightLeft, Target, BarChart2, ChevronUp, ChevronDown, FolderOpen, Folder, Users, Cloud, Check } from 'lucide-react';
+import { Calendar, MapPin, Plus, Trash2, CheckCircle2, Clock, Heart, AlertCircle, ArrowRightLeft, BarChart2, ChevronUp, ChevronDown, Check, X, CalendarDays, RefreshCw, Zap, Loader2, User, Cloud } from 'lucide-react';
 
 interface OutreachHubProps {
   data: AppData;
@@ -15,9 +15,26 @@ const formatDateDDMMYYYY = (dateStr: string) => {
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
+const getRelativeTime = (dateStr: string) => {
+    const target = new Date(dateStr);
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    target.setHours(0,0,0,0);
+    
+    const diff = (target.getTime() - today.getTime()) / (1000 * 3600 * 24);
+    
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Tomorrow';
+    if (diff === -1) return 'Yesterday';
+    if (diff > 0 && diff < 7) return target.toLocaleDateString('en-US', { weekday: 'long' });
+    return formatDateDDMMYYYY(dateStr);
+};
+
 const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }) => {
-  const [activeTab, setActiveTab] = useState<'VISIT' | 'PRAYER' | 'CONTACTS' | 'TRACK'>('VISIT');
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'VISIT' | 'PRAYER' | 'TRACK'>('VISIT');
+  const [isCreatorOpen, setIsCreatorOpen] = useState(false);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [genMsg, setGenMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);
   
   // Visitation State
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
@@ -35,7 +52,8 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       return new Date(d.setDate(diff));
   }
 
-  // --- LOGIC: VISITATION ---
+  // --- ACTIONS ---
+
   const handleAddDate = () => {
       if(newDateInput) {
           if (selectedDates.includes(newDateInput)) {
@@ -43,8 +61,8 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
              return;
           }
           if (data.outreachSessions?.some(s => s.date === newDateInput)) {
-              setErrorMsg(`Date ${formatDateDDMMYYYY(newDateInput)} already has a schedule.`);
-              setTimeout(() => setErrorMsg(''), 3000);
+              setErrorMsg('Date already scheduled.');
+              setTimeout(() => setErrorMsg(''), 2000);
               return;
           }
           setSelectedDates([...selectedDates, newDateInput].sort());
@@ -57,31 +75,35 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
   };
 
   const handleGenerateSchedule = () => {
-      setIsSyncing(true);
       const ujMembers = data.members.filter(m => m.assignedChurch === 'UJ' && !['Teacher','Helper','Volunteer'].includes(m.type));
       const res = generateOutreachSchedule(selectedDates, ujMembers);
       if (res.success) {
           setSelectedDates([]);
+          setIsCreatorOpen(false);
           onUpdate();
-          setTimeout(() => setIsSyncing(false), 800);
       } else {
           setErrorMsg(res.message);
-          setIsSyncing(false);
           setTimeout(() => setErrorMsg(''), 4000);
       }
   };
 
-  const handleDeleteSession = (id: string) => {
-      if(window.confirm('Are you sure you want to permanently delete this schedule from the cloud?')) {
-          setIsSyncing(true);
-          deleteOutreachSession(id);
-          onUpdate();
-          setTimeout(() => setIsSyncing(false), 800);
+  const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if(window.confirm('Are you sure you want to permanently delete this schedule and its data from the cloud?')) {
+          setLoadingId(id);
+          try {
+              await deleteOutreachSession(id);
+              onUpdate();
+          } catch (err) {
+              console.error(err);
+          } finally {
+              setLoadingId(null);
+          }
       }
   };
 
   const toggleVisitForMember = (session: OutreachSession, memberId: string) => {
-      setIsSyncing(true);
+      // Optimistic UI Update Logic
       const currentVisited = session.visitedMemberIds || [];
       let newVisited;
       
@@ -93,6 +115,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
 
       const allDone = session.assignedMemberIds.every(id => newVisited.includes(id));
       
+      // Save triggers debounce sync in background
       saveOutreachSession({ 
           ...session, 
           visitedMemberIds: newVisited,
@@ -100,23 +123,19 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
           completedBy: allDone ? currentUser.name : undefined
       });
       onUpdate();
-      setTimeout(() => setIsSyncing(false), 800);
   };
 
   const handleMoveMember = (targetSessionId: string) => {
       if (!moveModal) return;
-      setIsSyncing(true);
       const { memberId, currentSessionId } = moveModal;
       
       const currentSession = data.outreachSessions?.find(s => s.id === currentSessionId);
       const targetSession = data.outreachSessions?.find(s => s.id === targetSessionId);
       
       if (currentSession && targetSession) {
-          // Remove from current
           currentSession.assignedMemberIds = currentSession.assignedMemberIds.filter(id => id !== memberId);
           currentSession.visitedMemberIds = (currentSession.visitedMemberIds || []).filter(id => id !== memberId);
           
-          // Add to target
           if (!targetSession.assignedMemberIds.includes(memberId)) {
               targetSession.assignedMemberIds.push(memberId);
           }
@@ -125,28 +144,43 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
           saveOutreachSession(targetSession);
           onUpdate();
           setMoveModal(null);
-          setTimeout(() => setIsSyncing(false), 800);
       }
   };
 
-  // --- LOGIC: PRAYER ---
   const handleGeneratePrayer = () => {
-      setIsSyncing(true);
+      // Logic Fix: Pass ALL UJ members so algorithm can find Inconsistent/Not Active ones
       const ujMembers = data.members.filter(m => m.assignedChurch === 'UJ' && !['Teacher','Helper','Volunteer'].includes(m.type));
+      
       const res = generatePrayerSchedule(prayerWeek, ujMembers);
+      
       if (res.success) {
+          setGenMsg({ type: 'success', text: res.message });
           onUpdate();
-          setTimeout(() => setIsSyncing(false), 800);
+      } else {
+          setGenMsg({ type: 'error', text: res.message });
       }
+      setTimeout(() => setGenMsg(null), 4000);
   };
 
   const togglePrayerComplete = (slot: PrayerSlot) => {
-      setIsSyncing(true);
       savePrayerSlot({ ...slot, isCompleted: !slot.isCompleted });
       onUpdate();
-      setTimeout(() => setIsSyncing(false), 800);
   };
   
+  // --- DERIVED DATA ---
+
+  const sortedVisits = useMemo(() => {
+      const all = (data.outreachSessions || []);
+      const pending = all.filter(s => s.status === 'PENDING').sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      const completed = all.filter(s => s.status === 'COMPLETED').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+      // Separate "Next Up" from rest of pending
+      const nextUp = pending.length > 0 ? pending[0] : null;
+      const otherPending = pending.length > 0 ? pending.slice(1) : [];
+
+      return { nextUp, otherPending, completed };
+  }, [data.outreachSessions]);
+
   const weekSlots = useMemo(() => {
       if(!data.prayerSchedule) return [];
       const start = new Date(prayerWeek).toISOString().split('T')[0];
@@ -159,244 +193,230 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
         .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [data.prayerSchedule, prayerWeek]);
 
-
-  const sortedVisits = useMemo(() => {
-      const pending = (data.outreachSessions || []).filter(s => s.status === 'PENDING').sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      const completed = (data.outreachSessions || []).filter(s => s.status === 'COMPLETED').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      return { pending, completed };
-  }, [data.outreachSessions]);
-
   return (
-    <div className="space-y-6 pb-20 relative">
+    <div className="space-y-4 pb-20 relative min-h-screen">
       
-      {/* Sync Indicator */}
-      {isSyncing && (
-          <div className="fixed top-24 right-4 z-50 bg-slate-800 text-white px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 shadow-xl animate-in fade-in slide-in-from-top-4">
-              <Cloud size={14} className="animate-pulse" /> Saving to Cloud...
-          </div>
-      )}
-
-      {/* Tabs */}
-      <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex overflow-x-auto no-scrollbar gap-1">
-          <button onClick={() => setActiveTab('VISIT')} className={`flex-1 flex justify-center items-center gap-2 px-4 py-3 rounded-xl font-bold text-sm whitespace-nowrap transition-all ${activeTab === 'VISIT' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
-              <MapPin size={18}/> Arrows Visits
+      {/* HEADER TABS */}
+      <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex gap-1 sticky top-0 z-30">
+          <button onClick={() => setActiveTab('VISIT')} className={`flex-1 flex justify-center items-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'VISIT' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <MapPin size={16}/> Visits
           </button>
-          <button onClick={() => setActiveTab('PRAYER')} className={`flex-1 flex justify-center items-center gap-2 px-4 py-3 rounded-xl font-bold text-sm whitespace-nowrap transition-all ${activeTab === 'PRAYER' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
-              <Heart size={18}/> Arrows Prayers
+          <button onClick={() => setActiveTab('PRAYER')} className={`flex-1 flex justify-center items-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'PRAYER' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <Heart size={16}/> Prayer
           </button>
-          <button onClick={() => setActiveTab('TRACK')} className={`flex-1 flex justify-center items-center gap-2 px-4 py-3 rounded-xl font-bold text-sm whitespace-nowrap transition-all ${activeTab === 'TRACK' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
-              <BarChart2 size={18}/> Progress
+          <button onClick={() => setActiveTab('TRACK')} className={`flex-1 flex justify-center items-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'TRACK' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <BarChart2 size={16}/> Progress
           </button>
       </div>
 
-      {/* VISITATION TAB */}
+      {/* VISIT TAB */}
       {activeTab === 'VISIT' && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
               
-              {/* DATE PICKER & GENERATOR */}
-              <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Calendar size={20}/> Schedule Visits</h3>
-                    {selectedDates.length > 0 && (
-                        <span className="text-xs font-bold bg-indigo-50 text-indigo-700 px-2 py-1 rounded-full">{selectedDates.length} selected</span>
-                    )}
-                  </div>
+              {/* Creator Toggle */}
+              <button 
+                onClick={() => setIsCreatorOpen(!isCreatorOpen)}
+                className="w-full flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-2xl text-indigo-700 font-bold hover:bg-indigo-100 transition-colors"
+              >
+                  <span className="flex items-center gap-2"><Calendar size={20}/> Plan New Visits</span>
+                  {isCreatorOpen ? <ChevronUp size={20}/> : <Plus size={20}/>}
+              </button>
 
-                  <div className="flex flex-col gap-4">
-                      {/* Date Input Row */}
+              {/* Creator Drawer */}
+              {isCreatorOpen && (
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                       <div className="flex gap-2">
-                          <input 
-                            type="date" 
-                            className="flex-1 p-3 border border-slate-200 bg-slate-50 rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500" 
-                            value={newDateInput} 
-                            onChange={e => setNewDateInput(e.target.value)} 
-                          />
-                          <button 
-                            onClick={handleAddDate} 
-                            disabled={!newDateInput}
-                            className="px-4 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 disabled:opacity-50"
-                          >
-                            <Plus size={24}/>
-                          </button>
+                          <input type="date" className="flex-1 p-3 bg-slate-50 border-none rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500" value={newDateInput} onChange={e => setNewDateInput(e.target.value)} />
+                          <button onClick={handleAddDate} disabled={!newDateInput} className="px-4 bg-indigo-600 text-white rounded-xl"><Plus/></button>
                       </div>
-
-                      {/* Selected Chips */}
+                      
                       {selectedDates.length > 0 && (
-                          <div className="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                          <div className="flex flex-wrap gap-2">
                               {selectedDates.map(d => (
-                                  <div key={d} className="flex items-center gap-2 px-3 py-1.5 bg-white shadow-sm text-indigo-700 rounded-lg text-xs font-bold border border-slate-100 animate-in zoom-in">
-                                      {formatDateDDMMYYYY(d)} 
-                                      <button onClick={() => handleRemoveDate(d)} className="text-slate-400 hover:text-red-500"><Trash2 size={12}/></button>
-                                  </div>
+                                  <span key={d} className="px-3 py-1 bg-slate-100 rounded-lg text-xs font-bold flex items-center gap-2">
+                                      {formatDateDDMMYYYY(d)} <button onClick={() => handleRemoveDate(d)}><X size={14}/></button>
+                                  </span>
                               ))}
                           </div>
                       )}
-
-                      {/* Error Msg */}
-                      {errorMsg && (
-                          <div className="p-3 bg-red-50 text-red-600 text-xs font-bold rounded-xl flex items-center gap-2">
-                              <AlertCircle size={14}/> {errorMsg}
-                          </div>
-                      )}
-
-                      <button 
-                        onClick={handleGenerateSchedule}
-                        disabled={selectedDates.length === 0}
-                        className="w-full py-3.5 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 transition-all active:scale-95 disabled:opacity-50 disabled:shadow-none"
-                      >
-                          Generate Batch Schedule
-                      </button>
+                      
+                      <button onClick={handleGenerateSchedule} disabled={selectedDates.length === 0} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-md disabled:opacity-50">Generate Schedule</button>
+                      {errorMsg && <p className="text-xs text-red-500 font-bold text-center">{errorMsg}</p>}
                   </div>
-              </div>
+              )}
 
-              {/* SESSIONS LIST */}
-              <div className="space-y-6">
-                   {sortedVisits.pending.map(session => (
-                       <div key={session.id} className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-                           {/* Header */}
-                           <div className="bg-slate-50/50 p-4 border-b border-slate-100 flex justify-between items-center">
-                               <div>
-                                   <h4 className="font-bold text-lg text-slate-800">{formatDateDDMMYYYY(session.date)}</h4>
-                                   <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5">{session.assignedMemberIds.length} Children Assigned</p>
-                               </div>
-                               <button onClick={() => handleDeleteSession(session.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors">
-                                   <Trash2 size={18}/>
-                               </button>
-                           </div>
+              {/* TIMELINE VIEW */}
+              <div className="space-y-4">
+                  
+                  {/* NEXT UP CARD (Highlighted) */}
+                  {sortedVisits.nextUp && (
+                      <div className="relative">
+                          <div className="absolute -left-3 top-4 bottom-4 w-1 bg-gradient-to-b from-indigo-500 to-indigo-200 rounded-full hidden md:block"></div>
+                          <div className="bg-white rounded-3xl shadow-lg shadow-indigo-100 border border-indigo-100 overflow-hidden">
+                              <div className="bg-indigo-600 p-4 text-white flex justify-between items-center">
+                                  <div>
+                                      <div className="text-xs font-bold opacity-80 uppercase tracking-wider mb-1">Up Next</div>
+                                      <h3 className="text-2xl font-bold">{getRelativeTime(sortedVisits.nextUp.date)}</h3>
+                                  </div>
+                                  <div className="text-right">
+                                      <div className="text-3xl font-extrabold opacity-20"><CalendarDays size={40}/></div>
+                                  </div>
+                              </div>
+                              
+                              <div className="p-2">
+                                  <SessionChildList 
+                                    session={sortedVisits.nextUp} 
+                                    data={data} 
+                                    onToggle={toggleVisitForMember} 
+                                    onMove={(mid, sid) => setMoveModal({show: true, memberId: mid, currentSessionId: sid})}
+                                  />
+                              </div>
+                              
+                              <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+                                  <span className="text-xs font-bold text-slate-400">{sortedVisits.nextUp.assignedMemberIds.length} Kids Assigned</span>
+                                  <button 
+                                    onClick={(e) => handleDeleteSession(sortedVisits.nextUp!.id, e)}
+                                    disabled={loadingId === sortedVisits.nextUp.id}
+                                    className="text-slate-300 hover:text-red-500 p-2 disabled:opacity-50"
+                                  >
+                                      {loadingId === sortedVisits.nextUp.id ? <Loader2 size={16} className="animate-spin text-indigo-500"/> : <Trash2 size={16}/>}
+                                  </button>
+                              </div>
+                          </div>
+                      </div>
+                  )}
 
-                           {/* Grid of Children */}
-                           <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                               {session.assignedMemberIds.map(id => {
-                                   const m = data.members.find(mem => mem.id === id);
-                                   if (!m) return null;
-                                   const isVisited = session.visitedMemberIds?.includes(id);
+                  {/* OTHER PENDING */}
+                  {sortedVisits.otherPending.map(session => (
+                      <div key={session.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden opacity-90 hover:opacity-100 transition-opacity">
+                          <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                              <h4 className="font-bold text-slate-700">{formatDateDDMMYYYY(session.date)}</h4>
+                              <button 
+                                onClick={(e) => handleDeleteSession(session.id, e)}
+                                disabled={loadingId === session.id}
+                                className="text-slate-300 hover:text-red-500 disabled:opacity-50"
+                              >
+                                {loadingId === session.id ? <Loader2 size={16} className="animate-spin text-indigo-500"/> : <Trash2 size={16}/>}
+                              </button>
+                          </div>
+                          <div className="p-2">
+                              <SessionChildList 
+                                session={session} 
+                                data={data} 
+                                onToggle={toggleVisitForMember} 
+                                onMove={(mid, sid) => setMoveModal({show: true, memberId: mid, currentSessionId: sid})}
+                              />
+                          </div>
+                      </div>
+                  ))}
 
-                                   return (
-                                       <div 
-                                        key={id} 
-                                        onClick={() => toggleVisitForMember(session, id)}
-                                        className={`
-                                            relative p-3 rounded-2xl border cursor-pointer transition-all duration-200 select-none group
-                                            ${isVisited 
-                                                ? 'bg-indigo-600 border-indigo-600 shadow-md shadow-indigo-200 transform scale-[1.01]' 
-                                                : 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-sm'
-                                            }
-                                        `}
-                                       >
-                                           <div className="flex justify-between items-start">
-                                               <div>
-                                                   <h5 className={`font-bold text-sm ${isVisited ? 'text-white' : 'text-slate-800'}`}>{m.name}</h5>
-                                                   <div className="flex gap-1 mt-1">
-                                                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${isVisited ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>{m.type}</span>
-                                                       {m.address && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium truncate max-w-[80px] ${isVisited ? 'text-indigo-200' : 'text-slate-400'}`}>{m.address}</span>}
-                                                   </div>
-                                               </div>
-                                               <div className={`w-5 h-5 rounded-full flex items-center justify-center ${isVisited ? 'bg-white text-indigo-600' : 'bg-slate-100 text-slate-300'}`}>
-                                                   <Check size={12} strokeWidth={4}/>
-                                               </div>
-                                           </div>
-                                           
-                                           {/* Actions for this child */}
-                                           {!isVisited && (
-                                                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); setMoveModal({ show: true, memberId: id, currentSessionId: session.id }); }}
-                                                        className="p-1.5 bg-white text-slate-400 hover:text-orange-500 border border-slate-100 rounded-lg shadow-sm"
-                                                    >
-                                                        <ArrowRightLeft size={12}/>
-                                                    </button>
-                                                </div>
-                                           )}
-                                       </div>
-                                   );
-                               })}
-                           </div>
-                       </div>
-                   ))}
+                  {/* EMPTY STATE */}
+                  {!sortedVisits.nextUp && sortedVisits.otherPending.length === 0 && (
+                      <div className="text-center py-12 px-4 bg-white rounded-3xl border border-dashed border-slate-200">
+                          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300"><Calendar size={32}/></div>
+                          <h3 className="text-slate-500 font-bold mb-2">No Upcoming Visits</h3>
+                          <p className="text-xs text-slate-400">Use "Plan New Visits" to create a schedule.</p>
+                      </div>
+                  )}
 
-                   {/* Completed Section */}
-                   {sortedVisits.completed.length > 0 && (
-                       <div className="mt-8">
-                           <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 px-2">Completed History</h4>
-                           <div className="space-y-4">
-                               {sortedVisits.completed.map(session => (
-                                   <div key={session.id} className="bg-slate-50 rounded-2xl border border-slate-200 p-4 opacity-75 hover:opacity-100 transition-opacity">
-                                       <div className="flex justify-between items-center mb-2">
-                                           <div className="flex items-center gap-2">
-                                               <CheckCircle2 size={16} className="text-green-500"/>
-                                               <span className="font-bold text-slate-700 line-through">{formatDateDDMMYYYY(session.date)}</span>
-                                           </div>
-                                           <button onClick={() => handleDeleteSession(session.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={16}/></button>
-                                       </div>
-                                       <div className="text-xs text-slate-500 pl-6">
-                                           {session.assignedMemberIds.length} children visited by {session.completedBy || 'Teacher'}
-                                       </div>
-                                   </div>
-                               ))}
-                           </div>
-                       </div>
-                   )}
+                  {/* HISTORY */}
+                  {sortedVisits.completed.length > 0 && (
+                      <div className="pt-6">
+                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 text-center">Completed History</h4>
+                          <div className="space-y-3 opacity-60 hover:opacity-100 transition-opacity">
+                              {sortedVisits.completed.map(s => (
+                                  <div key={s.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex justify-between items-center">
+                                      <div className="flex items-center gap-3">
+                                          <div className="p-2 bg-green-100 text-green-600 rounded-full"><CheckCircle2 size={16}/></div>
+                                          <div>
+                                              <div className="font-bold text-slate-700 text-sm line-through">{formatDateDDMMYYYY(s.date)}</div>
+                                              <div className="text-[10px] text-slate-400">By {s.completedBy || 'Teacher'}</div>
+                                          </div>
+                                      </div>
+                                      <button 
+                                        onClick={(e) => handleDeleteSession(s.id, e)}
+                                        disabled={loadingId === s.id}
+                                        className="text-slate-300 hover:text-red-500 disabled:opacity-50"
+                                      >
+                                          {loadingId === s.id ? <Loader2 size={16} className="animate-spin text-indigo-500"/> : <Trash2 size={16}/>}
+                                      </button>
+                                  </div>
+                              ))}
+                          </div>
+                      </div>
+                  )}
               </div>
           </div>
       )}
 
       {/* PRAYER TAB */}
       {activeTab === 'PRAYER' && (
-          <div className="space-y-6">
-              <div className="flex items-center justify-between bg-white p-4 rounded-3xl border border-slate-100">
-                  <div>
-                      <h3 className="font-bold text-lg text-slate-800">Weekly Prayer</h3>
-                      <p className="text-xs text-slate-500 font-medium">3 Members • 1 FNF • 1 Inconsistent</p>
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+              <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
+                  <div className="relative z-10">
+                      <h3 className="text-2xl font-bold mb-1">Prayer Wall</h3>
+                      <p className="text-indigo-100 text-sm opacity-90 mb-4">Intercede for 5 children daily (3 Members, 1 FNF, 1 Inconsistent).</p>
+                      <button onClick={handleGeneratePrayer} className="px-4 py-2 bg-white text-indigo-600 rounded-xl font-bold text-xs shadow-sm hover:bg-indigo-50 active:scale-95 transition-all flex items-center gap-2">
+                          <RefreshCw size={14}/> Generate This Week
+                      </button>
                   </div>
-                  <button onClick={handleGeneratePrayer} className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-md shadow-indigo-200">
-                      Generate Week
-                  </button>
+                  <div className="absolute right-0 bottom-0 opacity-10 transform translate-x-4 translate-y-4">
+                      <Heart size={120} />
+                  </div>
               </div>
+              
+              {genMsg && (
+                  <div className={`p-4 rounded-xl flex items-center gap-2 text-sm font-bold ${genMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                      {genMsg.type === 'success' ? <CheckCircle2 size={18}/> : <AlertCircle size={18}/>}
+                      {genMsg.text}
+                  </div>
+              )}
 
-              <div className="space-y-4">
+              <div className="space-y-3">
                   {weekSlots.length === 0 ? (
-                      <div className="text-center p-12 text-slate-400 bg-white rounded-3xl border border-dashed border-slate-200">
-                          <p>No prayer schedule for this week.</p>
-                          <button onClick={handleGeneratePrayer} className="mt-2 text-indigo-600 font-bold hover:underline">Generate Now</button>
+                      <div className="p-8 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
+                          Schedule is empty for this week. Click Generate above.
                       </div>
                   ) : (
                       weekSlots.map(slot => (
-                          <div key={slot.id} className={`bg-white rounded-3xl border transition-all overflow-hidden ${slot.isCompleted ? 'border-green-200 shadow-sm' : 'border-slate-100 shadow-sm'}`}>
-                              <div className={`p-4 flex justify-between items-center ${slot.isCompleted ? 'bg-green-50' : 'bg-slate-50'}`}>
-                                  <div className="flex items-center gap-3">
-                                      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-lg ${slot.isCompleted ? 'bg-green-200 text-green-700' : 'bg-white border border-slate-200 text-slate-600'}`}>
-                                          {slot.dayOfWeek.substring(0,3)}
+                          <div key={slot.id} className={`bg-white rounded-2xl border transition-all ${slot.isCompleted ? 'border-green-200 shadow-none' : 'border-slate-100 shadow-sm'}`}>
+                              <div 
+                                onClick={() => togglePrayerComplete(slot)}
+                                className="p-4 cursor-pointer"
+                              >
+                                  <div className="flex justify-between items-start mb-3">
+                                      <div className="flex items-center gap-3">
+                                          <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-xs font-bold border ${slot.isCompleted ? 'bg-green-50 text-green-700 border-green-100' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                                              <span>{slot.dayOfWeek.substring(0,3).toUpperCase()}</span>
+                                          </div>
+                                          <div>
+                                              <h4 className={`font-bold text-sm ${slot.isCompleted ? 'text-green-800' : 'text-slate-800'}`}>{formatDateDDMMYYYY(slot.date)}</h4>
+                                              <p className="text-[10px] text-slate-400 font-medium">30 mins • 5 Children</p>
+                                          </div>
                                       </div>
-                                      <div>
-                                          <h4 className={`font-bold text-sm ${slot.isCompleted ? 'text-green-800' : 'text-slate-800'}`}>{formatDateDDMMYYYY(slot.date)}</h4>
-                                          <p className={`text-xs ${slot.isCompleted ? 'text-green-600' : 'text-slate-400'} font-medium`}>{slot.assignedMemberIds.length} Children Targeted</p>
+                                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${slot.isCompleted ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300 text-transparent'}`}>
+                                          <Check size={14} strokeWidth={4}/>
                                       </div>
                                   </div>
-                                  
-                                  <button 
-                                    onClick={() => togglePrayerComplete(slot)}
-                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${slot.isCompleted ? 'bg-green-500 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                  >
-                                      {slot.isCompleted ? <><CheckCircle2 size={14}/> Completed</> : "Mark Done"}
-                                  </button>
-                              </div>
 
-                              <div className="p-4 grid grid-cols-1 sm:grid-cols-5 gap-2">
-                                  {slot.assignedMemberIds.map(id => {
-                                      const m = data.members.find(mem => mem.id === id);
-                                      if (!m) return null;
-                                      // Determine badge color based on role
-                                      const isMem = m.type === 'Member';
-                                      const isFnf = m.type === 'FNF';
-                                      
-                                      return (
-                                          <div key={id} className={`p-3 rounded-xl border flex flex-col justify-center items-center text-center transition-opacity ${slot.isCompleted ? 'opacity-60 bg-green-50/50 border-green-100' : 'bg-white border-slate-100'}`}>
-                                              <span className={`w-2 h-2 rounded-full mb-2 ${isMem ? 'bg-indigo-400' : isFnf ? 'bg-amber-400' : 'bg-rose-400'}`}></span>
-                                              <p className="font-bold text-xs text-slate-700 leading-tight">{m.name}</p>
-                                              <span className="text-[10px] text-slate-400 mt-1 font-medium bg-slate-50 px-1.5 py-0.5 rounded">{m.type}</span>
-                                          </div>
-                                      );
-                                  })}
+                                  <div className="flex flex-wrap gap-2">
+                                      {slot.assignedMemberIds.map(id => {
+                                          const m = data.members.find(mem => mem.id === id);
+                                          if(!m) return null;
+                                          let colorClass = 'bg-slate-50 text-slate-600 border-slate-100';
+                                          if (m.type === MemberType.FNF) colorClass = 'bg-amber-50 text-amber-700 border-amber-100';
+                                          else if (m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE) colorClass = 'bg-rose-50 text-rose-700 border-rose-100';
+                                          else colorClass = 'bg-indigo-50 text-indigo-700 border-indigo-100';
+
+                                          if (slot.isCompleted) colorClass = 'bg-green-50 text-green-700 border-green-100';
+
+                                          return (
+                                              <span key={id} className={`text-[10px] px-2 py-1 rounded-md font-bold border ${colorClass}`}>
+                                                  {m.name}
+                                              </span>
+                                          )
+                                      })}
+                                  </div>
                               </div>
                           </div>
                       ))
@@ -405,36 +425,85 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
           </div>
       )}
 
+      {/* TRACKING TAB (Visuals Enhanced) */}
+      {activeTab === 'TRACK' && (
+          <div className="p-4 bg-white rounded-3xl border border-slate-100 shadow-sm text-center py-12 animate-in fade-in">
+              <div className="inline-block p-4 bg-indigo-50 text-indigo-500 rounded-full mb-4"><BarChart2 size={32}/></div>
+              <h3 className="text-lg font-bold text-slate-800">Progress Tracking</h3>
+              <p className="text-slate-500 text-sm max-w-xs mx-auto mt-2">Detailed analytics coming soon. Track coverage rates and prayer consistency here.</p>
+          </div>
+      )}
+
       {/* MOVE MODAL */}
       {moveModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-              <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
-                  <h3 className="font-bold text-lg mb-4 text-slate-800">Reschedule Visit</h3>
-                  <p className="text-sm text-slate-500 mb-4">Select a new date for this child:</p>
-                  
+              <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl">
+                  <h3 className="font-bold text-lg mb-1 text-slate-800">Reschedule</h3>
+                  <p className="text-sm text-slate-500 mb-4">Choose a new date for this child:</p>
                   <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
-                      {sortedVisits.pending
-                        .filter(s => s.id !== moveModal.currentSessionId)
-                        .map(s => (
-                          <button 
-                            key={s.id} 
-                            onClick={() => handleMoveMember(s.id)}
-                            className="w-full p-3 text-left border rounded-xl hover:bg-indigo-50 hover:border-indigo-200 transition-colors group"
-                          >
-                              <div className="font-bold text-slate-800 group-hover:text-indigo-700">{formatDateDDMMYYYY(s.date)}</div>
-                              <div className="text-xs text-slate-500 group-hover:text-indigo-500">{s.assignedMemberIds.length} kids assigned</div>
+                      {sortedVisits.nextUp && sortedVisits.nextUp.id !== moveModal.currentSessionId && (
+                          <button onClick={() => handleMoveMember(sortedVisits.nextUp!.id)} className="w-full p-4 text-left border rounded-2xl hover:bg-indigo-50 hover:border-indigo-200 transition-colors group">
+                              <div className="font-bold text-slate-800 group-hover:text-indigo-700">{formatDateDDMMYYYY(sortedVisits.nextUp.date)}</div>
+                              <div className="text-xs text-indigo-500 font-bold uppercase mt-1">Next Session</div>
+                          </button>
+                      )}
+                      {sortedVisits.otherPending.filter(s => s.id !== moveModal.currentSessionId).map(s => (
+                          <button key={s.id} onClick={() => handleMoveMember(s.id)} className="w-full p-4 text-left border rounded-2xl hover:bg-indigo-50 hover:border-indigo-200 transition-colors">
+                              <div className="font-bold text-slate-800">{formatDateDDMMYYYY(s.date)}</div>
                           </button>
                       ))}
-                      {sortedVisits.pending.filter(s => s.id !== moveModal.currentSessionId).length === 0 && (
-                          <p className="text-center text-slate-400 italic text-sm p-4 bg-slate-50 rounded-xl">No other pending sessions found. Create a new schedule first.</p>
-                      )}
                   </div>
-                  <button onClick={() => setMoveModal(null)} className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold transition-colors">Cancel</button>
+                  <button onClick={() => setMoveModal(null)} className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold">Cancel</button>
               </div>
           </div>
       )}
     </div>
   );
+};
+
+// --- SUB COMPONENTS ---
+
+const SessionChildList = ({ session, data, onToggle, onMove }: { session: OutreachSession, data: AppData, onToggle: (s: OutreachSession, id: string) => void, onMove: (mid: string, sid: string) => void }) => {
+    return (
+        <div className="divide-y divide-slate-50">
+            {session.assignedMemberIds.map(id => {
+                const m = data.members.find(mem => mem.id === id);
+                if (!m) return null;
+                const isVisited = session.visitedMemberIds?.includes(id);
+                
+                return (
+                    <div key={id} onClick={() => onToggle(session, id)} className="flex items-center justify-between p-3 hover:bg-slate-50 transition-colors cursor-pointer group">
+                        <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${isVisited ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                                {m.name.charAt(0)}
+                            </div>
+                            <div>
+                                <div className={`font-bold text-sm ${isVisited ? 'text-slate-400 line-through' : 'text-slate-800'}`}>{m.name}</div>
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold ${m.type === 'Member' ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600'}`}>{m.type}</span>
+                                    {m.address && <span className="text-[10px] text-slate-400 flex items-center gap-0.5"><MapPin size={8}/> {m.address.substring(0,15)}...</span>}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                            {!isVisited && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); onMove(id, session.id); }}
+                                    className="p-2 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                                >
+                                    <ArrowRightLeft size={16}/>
+                                </button>
+                            )}
+                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${isVisited ? 'bg-green-500 border-green-500 text-white scale-110' : 'border-slate-200 text-transparent hover:border-indigo-300'}`}>
+                                <Check size={14} strokeWidth={4}/>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
 };
 
 export default OutreachHub;
