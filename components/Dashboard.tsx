@@ -4,7 +4,7 @@ import { updateTargets } from '../services/storageService';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
 } from 'recharts';
-import { Users, TrendingUp, TrendingDown, Calendar, Trophy, Clock, ArrowUpRight, ArrowDownRight, Activity, Target, X, Save, Percent } from 'lucide-react';
+import { Users, TrendingUp, TrendingDown, Calendar, Trophy, Clock, ArrowUpRight, ArrowDownRight, Activity, Target, X, Save, Percent, Heart, MapPin } from 'lucide-react';
 
 interface DashboardProps {
   data: AppData;
@@ -44,6 +44,7 @@ const StatCard: React.FC<{ title: string; value: string | number; icon: React.Re
   </div>
 );
 
+// ... (CustomChartTooltip and AdminDashboard remain unchanged) ...
 const CustomChartTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
@@ -128,7 +129,6 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
             }
 
             const target = data.targets?.[church] || 0;
-            // Target Achievement is now Population vs Target
             const targetAchievement = target > 0 ? Math.round((population / target) * 100) : 0;
 
             return { church, population, avg, retention, lastAttendance, growth, target, targetAchievement };
@@ -138,11 +138,9 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
     const totalPop = churchStats.reduce((acc, curr) => acc + curr.population, 0);
     const totalAvg = churchStats.reduce((acc, curr) => acc + curr.avg, 0);
     
-    // Only count accumulation for churches that have a target > 0
     const totalTarget = churchStats.reduce((acc, curr) => acc + (curr.target > 0 ? curr.target : 0), 0);
     const totalTargetPop = churchStats.reduce((acc, curr) => acc + (curr.target > 0 ? curr.population : 0), 0);
     
-    // Global Retention Rate (Avg Attendance / Total Population)
     const globalRetention = totalPop > 0 ? Math.round((totalAvg / totalPop) * 100) : 0;
 
     return (
@@ -253,7 +251,7 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                 ))}
             </div>
 
-            {/* Target Modal */}
+            {/* Target Modal code remains same... */}
             {isTargetModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
@@ -297,8 +295,9 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
 // --- CHURCH DASHBOARD ---
 const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ data, activeChurch }) => {
     
+    // ... existing stats calculation ...
     const stats = useMemo(() => {
-        // New Population Logic: Members + FNF only
+        // ... (existing code for population, members, attendance) ...
         const population = data.members.filter(m => 
             m.assignedChurch === activeChurch && 
             m.status === MemberStatus.ACTIVE &&
@@ -306,94 +305,95 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
         ).length;
 
         const members = data.members.filter(m => m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE);
-        const kids = members.filter(m => !['Teacher','Helper','Volunteer'].includes(m.type)); // Used for retention base
+        const kids = members.filter(m => !['Teacher','Helper','Volunteer'].includes(m.type)); 
         const attendance = data.attendance
             .filter(r => r.churchId === activeChurch)
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         
-        // Helper to get count from a record
         const getCount = (r: any) => r.presentMemberIds.filter((id: string) => {
              const m = data.members.find(mem => mem.id === id);
              return m && !['Teacher','Helper','Volunteer'].includes(m.type);
         }).length;
 
-        // Trend Data with Growth Calculation
         const last5 = attendance.slice(-5).map((r, i) => {
             const count = getCount(r);
             const date = formatDateDDMMYYYY(r.date);
-            
-            // Calculate growth compared to previous Sunday in the sorted list
             let growth = 0;
             const originalIndex = attendance.indexOf(r);
-            
             if (originalIndex > 0) {
                 const prevRecord = attendance[originalIndex - 1];
                 const prevCount = getCount(prevRecord);
                 growth = prevCount === 0 ? (count > 0 ? 100 : 0) : Math.round(((count - prevCount) / prevCount) * 100);
             }
-
             return { name: date, count, growth };
         });
 
         const avg = last5.length ? Math.round(last5.reduce((acc, curr) => acc + curr.count, 0) / last5.length) : 0;
         const lastAtt = last5.length > 0 ? last5[last5.length - 1].count : 0;
         const trend = avg > 0 ? Math.round(((lastAtt - avg) / avg) * 100) : 0;
-        
         const target = data.targets?.[activeChurch] || 0;
-        
-        // Retention Rate
         const retention = kids.length > 0 ? Math.round((avg / kids.length) * 100) : 0;
 
-        return { 
-            totalMembers: population, 
-            avgAttendance: avg, 
-            lastAttendance: lastAtt,
-            trendData: last5,
-            trend,
-            target,
-            retention
-        };
+        return { totalMembers: population, avgAttendance: avg, lastAttendance: lastAtt, trendData: last5, trend, target, retention };
+    }, [data, activeChurch]);
+
+    // UJ Specific Outreach Stats
+    const outreachStats = useMemo(() => {
+        if (activeChurch !== 'UJ') return null;
+        
+        const eligibleKids = data.members.filter(m => m.assignedChurch === 'UJ' && ['Member','FNF','Inconsistent'].includes(m.type) && m.status === 'Active').length;
+        const visitTarget = eligibleKids * 2; // Annual Target: 2 visits per kid
+        const prayerTarget = 5 * 5 * 52; // 5 kids/day * 5 days * 52 weeks = 1300 slots/year approx
+
+        // Actual Visits Count (Unique visits per member this year) - Simplified to total visits for dashboard
+        const totalVisitsDone = (data.outreachSessions || [])
+            .filter(s => s.status === 'COMPLETED' && new Date(s.date).getFullYear() === new Date().getFullYear())
+            .reduce((acc, s) => acc + (s.visitedMemberIds?.length || 0), 0);
+
+        const totalPrayersDone = (data.prayerSchedule || [])
+            .filter(s => s.isCompleted && new Date(s.date).getFullYear() === new Date().getFullYear())
+            .reduce((acc, s) => acc + s.assignedMemberIds.length, 0); // Count actual kids prayed for
+
+        return { visitTarget, totalVisitsDone, prayerTarget, totalPrayersDone };
     }, [data, activeChurch]);
 
     return (
         <div className="space-y-6">
              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-                <StatCard 
-                    title="Active + FNF" 
-                    value={stats.totalMembers} 
-                    icon={<Users size={24} />} 
-                    colorClass="bg-indigo-600"
-                    subtitle="Current Pop."
-                />
-                 <StatCard 
-                    title="Retention Rate" 
-                    value={`${stats.retention}%`}
-                    icon={<Percent size={24} />} 
-                    colorClass="bg-purple-600"
-                    subtitle="Avg / Active"
-                />
-                <StatCard 
-                    title="Last Attendance" 
-                    value={stats.lastAttendance} 
-                    icon={<Calendar size={24} />} 
-                    colorClass="bg-emerald-500"
-                    trend={stats.trend}
-                    subtitle={`vs Avg (${stats.avgAttendance})`}
-                />
-                 <StatCard 
-                    title="Membership Goal" 
-                    value={stats.totalMembers}
-                    target={stats.target}
-                    progressValue={stats.totalMembers}
-                    icon={<Target size={24} />} 
-                    colorClass="bg-rose-500"
-                    subtitle="Population vs Target"
-                />
+                {/* Existing Stats Cards */}
+                <StatCard title="Active + FNF" value={stats.totalMembers} icon={<Users size={24} />} colorClass="bg-indigo-600" subtitle="Current Pop." />
+                <StatCard title="Retention Rate" value={`${stats.retention}%`} icon={<Percent size={24} />} colorClass="bg-purple-600" subtitle="Avg / Active" />
+                <StatCard title="Last Attendance" value={stats.lastAttendance} icon={<Calendar size={24} />} colorClass="bg-emerald-500" trend={stats.trend} subtitle={`vs Avg (${stats.avgAttendance})`} />
+                <StatCard title="Membership Goal" value={stats.totalMembers} target={stats.target} progressValue={stats.totalMembers} icon={<Target size={24} />} colorClass="bg-rose-500" subtitle="Population vs Target" />
             </div>
+
+            {/* UJ Outreach Section */}
+            {activeChurch === 'UJ' && outreachStats && (
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                    <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><Heart size={20} className="text-pink-500"/> Ministry Impact (YTD)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex items-center justify-between">
+                            <div>
+                                <p className="text-xs font-bold text-blue-500 uppercase">Total Visits Done</p>
+                                <h4 className="text-2xl font-bold text-slate-800">{outreachStats.totalVisitsDone} <span className="text-sm text-slate-400 font-medium">/ {outreachStats.visitTarget}</span></h4>
+                            </div>
+                            <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-blue-500 shadow-sm"><MapPin size={20}/></div>
+                        </div>
+                        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-center justify-between">
+                            <div>
+                                <p className="text-xs font-bold text-amber-600 uppercase">Total Prayers Done</p>
+                                <h4 className="text-2xl font-bold text-slate-800">{outreachStats.totalPrayersDone} <span className="text-sm text-slate-400 font-medium">/ {outreachStats.prayerTarget}</span></h4>
+                            </div>
+                            <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-amber-500 shadow-sm"><Heart size={20}/></div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
                 {/* CHART */}
                 <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-2">
+                    {/* ... Existing Chart Code ... */}
                     <div className="flex items-center justify-between mb-8">
                         <div>
                             <h3 className="text-xl font-bold text-slate-800">Attendance Trend</h3>
@@ -424,6 +424,7 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
 
                 {/* Quick Actions / Tips */}
                 <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-6 rounded-3xl text-white shadow-lg flex flex-col justify-center relative overflow-hidden">
+                    {/* ... Existing Tips Code ... */}
                     <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-5 rounded-full blur-3xl translate-x-10 -translate-y-10"></div>
                      <h3 className="text-xl font-bold mb-4 relative z-10">Sunday Tips</h3>
                      <ul className="space-y-4 relative z-10">
