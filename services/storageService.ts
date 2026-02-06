@@ -257,479 +257,34 @@ export const getAppData = (): AppData => {
   return inMemoryData;
 };
 
+// ... (Authentication, Import, Member Management, Attendance Management, Automation Rules code remains unchanged)
+// ... Skipping unchanged sections for brevity ... 
+
 // --- AUTHENTICATION & SECURITY ---
-
-interface LoginAttempt {
-    count: number;
-    lastAttempt: number;
-    lockedUntil: number | null;
-}
-
-const getLoginAttempts = (): LoginAttempt => {
-    const stored = localStorage.getItem(LOGIN_ATTEMPTS_KEY);
-    return stored ? JSON.parse(stored) : { count: 0, lastAttempt: 0, lockedUntil: null };
-};
-
-const saveLoginAttempts = (attempt: LoginAttempt) => {
-    localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(attempt));
-};
-
-export const restoreSession = (): Member | null => {
-    try {
-        const sessionStr = localStorage.getItem(SESSION_KEY);
-        if (!sessionStr) return null;
-
-        const session = JSON.parse(sessionStr);
-        const now = Date.now();
-
-        if (now - session.timestamp > 24 * 60 * 60 * 1000) {
-            localStorage.removeItem(SESSION_KEY);
-            return null;
-        }
-
-        const user = inMemoryData.members.find(m => m.id === session.userId);
-        if (user && user.isAccessActive && (user.role === 'ADMIN' || user.role === 'TEACHER')) {
-            return user;
-        }
-        
-        localStorage.removeItem(SESSION_KEY);
-        return null;
-    } catch (e) {
-        return null;
-    }
-};
-
-export const logoutUser = () => {
-    localStorage.removeItem(SESSION_KEY);
-};
-
-export const authenticateUser = async (name: string, passcode: string): Promise<{ success: boolean, member?: Member, message?: string }> => {
-    const attempts = getLoginAttempts();
-    const now = Date.now();
-
-    if (attempts.lockedUntil && now < attempts.lockedUntil) {
-        const remainingMinutes = Math.ceil((attempts.lockedUntil - now) / 60000);
-        return { success: false, message: `Account locked. Try again in ${remainingMinutes}m.` };
-    }
-
-    if (now - attempts.lastAttempt > 10 * 60 * 1000) {
-        attempts.count = 0;
-        attempts.lockedUntil = null;
-    }
-
-    const cleanName = sanitizeInput(name);
-    
-    const user = inMemoryData.members.find(m => 
-        (m.role === 'ADMIN' || m.role === 'TEACHER') && 
-        m.name.toLowerCase().trim() === cleanName.toLowerCase().trim()
-    );
-
-    if (!user) {
-        return recordFailedAttempt(attempts);
-    }
-
-    if (!user.isAccessActive) {
-        return { success: false, message: "Access deactivated. Contact Admin." };
-    }
-
-    let isValid = false;
-    
-    // 1. Check PBKDF2 (contains colon)
-    if (user.passcode && user.passcode.includes(':')) {
-        isValid = await verifyPasscode(passcode, user.passcode);
-    } 
-    // 2. Check Legacy SHA-256 (length 64)
-    else if (user.passcode && user.passcode.length === 64) {
-        const inputHash = await hashString(passcode);
-        if (user.passcode === inputHash) {
-             isValid = true;
-             // Upgrade to PBKDF2
-             user.passcode = await hashPasscode(passcode);
-             persistData('IMMEDIATE');
-        }
-    } 
-    // 3. Check Legacy Plaintext
-    else if (user.passcode === passcode) {
-         isValid = true;
-         // Upgrade to PBKDF2
-         user.passcode = await hashPasscode(passcode);
-         persistData('IMMEDIATE');
-    }
-
-    if (isValid) {
-        localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify({ count: 0, lastAttempt: now, lockedUntil: null }));
-        localStorage.setItem(SESSION_KEY, JSON.stringify({
-            userId: user.id,
-            timestamp: now
-        }));
-        
-        syncFromCloud(true);
-        return { success: true, member: user };
-    }
-
-    return recordFailedAttempt(attempts);
-};
-
-const recordFailedAttempt = (attempts: LoginAttempt) => {
-    const now = Date.now();
-    attempts.count++;
-    attempts.lastAttempt = now;
-
-    if (attempts.count >= 5) {
-        attempts.lockedUntil = now + 5 * 60 * 1000;
-        saveLoginAttempts(attempts);
-        return { success: false, message: "Too many failed attempts. Locked for 5m." };
-    }
-
-    saveLoginAttempts(attempts);
-    return { success: false, message: "Invalid credentials." };
-};
-
-// --- DATA IMPORT ---
-export const importData = (jsonString: string): { success: boolean; message: string } => {
-  try {
-    const parsed = JSON.parse(jsonString);
-    if (!isValidSchema(parsed)) {
-        return { success: false, message: "Invalid data file." };
-    }
-    parsed.members.forEach((m: any) => {
-        if (m.name) m.name = sanitizeInput(m.name);
-        if (!m.assignedChurch) m.assignedChurch = 'UJ';
-        if (!m.role) m.role = 'NONE';
-    });
-    parsed.attendance.forEach((r: any) => {
-        if (!r.churchId) r.churchId = 'UJ';
-    });
-    parsed.lastUpdated = Date.now();
-    if (!parsed.notifications) parsed.notifications = [];
-    if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
-    if (!parsed.outreachSessions) parsed.outreachSessions = [];
-    if (!parsed.prayerSchedule) parsed.prayerSchedule = [];
-
-    inMemoryData = parsed;
-    persistData('IMMEDIATE'); 
-    isDirty = false;
-    return { success: true, message: "Data imported successfully!" };
-  } catch (e) {
-    return { success: false, message: "Failed to parse JSON file." };
-  }
-};
-
-// --- MEMBER MANAGEMENT ---
-export const addMember = (
-    name: string, 
-    type: MemberType, 
-    assignedChurch: Church, 
-    birthDate: string = '', 
-    status: MemberStatus = MemberStatus.ACTIVE
-): Member => {
-  const cleanName = sanitizeInput(name);
-  const newMember: Member = {
-    id: crypto.randomUUID(),
-    name: cleanName,
-    type,
-    joinedDate: new Date().toISOString(),
-    status,
-    birthDate,
-    assignedChurch,
-    role: 'NONE', 
-    isAccessActive: false
-  };
-  inMemoryData.members.push(newMember);
-  isDirty = true;
-  persistData('DEBOUNCE');
-  autoTransferMembersBasedOnAge();
-  return newMember;
-};
-
-export const updateMember = async (updatedMember: Member) => {
-  const index = inMemoryData.members.findIndex(m => m.id === updatedMember.id);
-  if (index !== -1) {
-    updatedMember.name = sanitizeInput(updatedMember.name);
-    
-    // Hash passcode if changed and not yet hashed or using legacy
-    if (updatedMember.passcode && (!updatedMember.passcode.includes(':') && updatedMember.passcode.length < 64) && updatedMember.role !== 'NONE') {
-        updatedMember.passcode = await hashPasscode(updatedMember.passcode);
-    }
-
-    inMemoryData.members[index] = updatedMember;
-    isDirty = true;
-    persistData('DEBOUNCE');
-    autoTransferMembersBasedOnAge();
-  }
-};
-
-export const deleteMember = (id: string) => {
-    inMemoryData.members = inMemoryData.members.filter(m => m.id !== id);
-    isDirty = true;
-    persistData('IMMEDIATE');
-};
-
-export const bulkArchiveMembers = (ids: string[]) => {
-  let hasChanges = false;
-  inMemoryData.members.forEach(member => {
-    if (ids.includes(member.id)) {
-      member.status = MemberStatus.ARCHIVED;
-      hasChanges = true;
-    }
-  });
-  if (hasChanges) {
-    isDirty = true;
-    persistData('DEBOUNCE');
-  }
-};
-
-// --- ATTENDANCE MANAGEMENT ---
-export const saveAttendance = (date: string, churchId: Church, presentIds: string[], punctualIds: string[]) => {
-  const existingIndex = inMemoryData.attendance.findIndex(r => r.date === date && r.churchId === churchId);
-  const record: AttendanceRecord = {
-    date,
-    churchId,
-    presentMemberIds: presentIds,
-    punctualMemberIds: punctualIds
-  };
-  if (existingIndex >= 0) {
-    inMemoryData.attendance[existingIndex] = record;
-  } else {
-    inMemoryData.attendance.push(record);
-  }
-  isDirty = true;
-  persistData('DEBOUNCE');
-  if (churchId !== 'CM') {
-      checkAndAutoUpdateMemberStatus(churchId);
-  }
-  autoTransferMembersBasedOnAge();
-};
-
-// --- AUTOMATION RULES ---
-const calculateAge = (birthDate: string) => {
-    const birth = new Date(birthDate);
-    const today = new Date();
-    let age = today.getFullYear() - birth.getFullYear();
-    const m = today.getMonth() - birth.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-    return age;
-};
-
-const autoTransferMembersBasedOnAge = () => {
-    let transferChanges = false;
-    const today = new Date();
-
-    inMemoryData.members.forEach(member => {
-        if (member.assignedChurch === 'CM') return;
-        if (member.status !== MemberStatus.ACTIVE) return;
-        if (member.type !== MemberType.MEMBER) return;
-        if (!member.birthDate) return;
-
-        const age = calculateAge(member.birthDate);
-        let targetChurch: Church | 'ARCHIVE' | null = null;
-
-        if (age >= 0 && age <= 1) targetChurch = 'I';
-        else if (age >= 2 && age <= 5) targetChurch = 'K';
-        else if (age >= 6 && age <= 8) targetChurch = 'LJ';
-        else if (age >= 9 && age <= 13) targetChurch = 'UJ';
-        else if (age > 13) targetChurch = 'ARCHIVE';
-
-        if (targetChurch === 'ARCHIVE' && member.assignedChurch === 'UJ') {
-             if (!member.transferPendingDate) {
-                 member.transferPendingDate = today.toISOString();
-                 transferChanges = true;
-             } else {
-                 const pendingDate = new Date(member.transferPendingDate);
-                 const diffTime = Math.abs(today.getTime() - pendingDate.getTime());
-                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-                 
-                 if (diffDays >= 7) {
-                     member.status = MemberStatus.ARCHIVED;
-                     member.type = MemberType.NOT_MEMBER;
-                     member.transferPendingDate = undefined; 
-                     transferChanges = true;
-                 }
-             }
-             return;
-        }
-
-        if (targetChurch && targetChurch !== 'ARCHIVE') {
-            if (member.assignedChurch !== targetChurch) {
-                member.assignedChurch = targetChurch;
-                transferChanges = true;
-            }
-        }
-    });
-    
-    if (transferChanges) {
-        isDirty = true;
-        persistData('DEBOUNCE');
-    }
-};
-
-const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
-  if (churchId === 'CM') return;
-  const sortedAttendance = inMemoryData.attendance
-    .filter(r => r.churchId === churchId)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-  if (sortedAttendance.length < 7) return;
-  const churchMembers = inMemoryData.members.filter(m => m.assignedChurch === churchId);
-
-  // Mark Inconsistent
-  if (sortedAttendance.length >= 10) {
-    const last10Weeks = sortedAttendance.slice(0, 10);
-    const presentIds = new Set(last10Weeks.flatMap(r => r.presentMemberIds));
-
-    churchMembers.forEach(member => {
-      if (member.status !== MemberStatus.ACTIVE || member.role !== 'NONE') return;
-      if (new Date(member.joinedDate) > new Date(last10Weeks[last10Weeks.length-1].date)) return;
-
-      if (!presentIds.has(member.id) && member.type !== MemberType.INCONSISTENT) {
-          member.type = MemberType.INCONSISTENT;
-          member.status = MemberStatus.NOT_ACTIVE;
-          isDirty = true;
-      }
-    });
-  }
-
-  // Reactivate
-  const last7Weeks = sortedAttendance.slice(0, 7);
-  churchMembers.forEach(member => {
-      if (member.type === MemberType.INCONSISTENT || member.status === MemberStatus.NOT_ACTIVE) {
-          if (last7Weeks.every(r => r.presentMemberIds.includes(member.id))) {
-              member.type = MemberType.MEMBER;
-              member.status = MemberStatus.ACTIVE;
-              isDirty = true;
-          }
-      }
-  });
-
-  if (isDirty) persistData('DEBOUNCE');
-};
-
-export const checkBirthdaysAndTeens = () => {
-    const today = new Date();
-    const currentDay = today.getDate();
-    const currentMonth = today.getMonth();
-    const year = today.getFullYear();
-    const todayStr = today.toISOString().split('T')[0];
-
-    inMemoryData.members.forEach(m => {
-        if (m.status !== MemberStatus.ACTIVE || !m.birthDate) return;
-        const birth = new Date(m.birthDate);
-        
-        // Birthday
-        if (birth.getDate() === currentDay && birth.getMonth() === currentMonth) {
-            const exists = inMemoryData.notifications.some(n => 
-                n.type === 'BIRTHDAY' && n.relatedMemberId === m.id && n.createdAt.startsWith(todayStr));
-            
-            if (!exists) {
-                inMemoryData.notifications.push({
-                    id: crypto.randomUUID(),
-                    type: 'BIRTHDAY',
-                    message: `It's ${m.name}'s birthday today!`,
-                    createdAt: today.toISOString(),
-                    targetChurch: m.assignedChurch,
-                    relatedMemberId: m.id,
-                    isRead: false
-                });
-                isDirty = true;
-            }
-        }
-
-        // Teen Alert (Turning 13)
-        let age = year - birth.getFullYear();
-        const mMonth = today.getMonth() - birth.getMonth();
-        if (mMonth < 0 || (mMonth === 0 && today.getDate() < birth.getDate())) age--;
-
-        if (age === 13) {
-            const exists = inMemoryData.notifications.some(n => 
-                n.type === 'TEEN_ALERT' && n.relatedMemberId === m.id && n.createdAt.startsWith(year.toString()));
-
-            if (!exists) {
-                inMemoryData.notifications.push({
-                    id: crypto.randomUUID(),
-                    type: 'TEEN_ALERT',
-                    message: `${m.name} is 13. Transition to Youth?`,
-                    createdAt: today.toISOString(),
-                    targetChurch: m.assignedChurch,
-                    relatedMemberId: m.id,
-                    isRead: false
-                });
-                isDirty = true;
-            }
-        }
-    });
-    if (isDirty) persistData('DEBOUNCE');
-};
-
-// --- MISC MANAGEMENT ---
-export const updateTargets = (targets: Record<string, number>) => {
-  inMemoryData.targets = targets;
-  isDirty = true;
-  persistData('IMMEDIATE');
-};
-
-export const markNotificationAsRead = (id: string) => {
-    const note = inMemoryData.notifications.find(n => n.id === id);
-    if (note) {
-        note.isRead = true;
-        isDirty = true;
-        persistData('DEBOUNCE');
-    }
-};
-
-export const clearAllNotifications = (church: Church) => {
-    if (church === 'CM') {
-        inMemoryData.notifications = [];
-    } else {
-        inMemoryData.notifications = inMemoryData.notifications.filter(n => n.targetChurch !== church);
-    }
-    isDirty = true;
-    persistData('IMMEDIATE');
-};
-
-// --- FINANCIALS ---
-export const addTransaction = (txn: Partial<Transaction>) => {
-    if (!txn.amount || !txn.category || !txn.type) return;
-    const newTxn: Transaction = {
-        id: crypto.randomUUID(),
-        date: txn.date || new Date().toISOString().split('T')[0],
-        amount: Number(txn.amount),
-        type: txn.type,
-        category: txn.category,
-        description: txn.description || '',
-        churchId: txn.churchId || 'UJ',
-        recordedBy: txn.recordedBy || 'System',
-    };
-    if (!inMemoryData.transactions) inMemoryData.transactions = [];
-    inMemoryData.transactions.push(newTxn);
-    isDirty = true; 
-    persistData('IMMEDIATE');
-};
-
-export const deleteTransaction = (id: string) => {
-    if (!inMemoryData.transactions) return;
-    inMemoryData.transactions = inMemoryData.transactions.filter(t => t.id !== id);
-    isDirty = true;
-    persistData('IMMEDIATE');
-};
-
-// --- OUTREACH & PRAYER ---
-export const saveOutreachSession = (session: OutreachSession) => {
-    if (!inMemoryData.outreachSessions) inMemoryData.outreachSessions = [];
-    const idx = inMemoryData.outreachSessions.findIndex(s => s.id === session.id);
-    if (!session.visitedMemberIds) session.visitedMemberIds = [];
-    
-    if (idx >= 0) inMemoryData.outreachSessions[idx] = session;
-    else inMemoryData.outreachSessions.push(session);
-    isDirty = true;
-    return persistData('IMMEDIATE'); 
-};
-
-export const deleteOutreachSession = async (id: string) => {
-    if (!inMemoryData.outreachSessions) return;
-    inMemoryData.outreachSessions = inMemoryData.outreachSessions.filter(s => s.id !== id);
-    isDirty = true;
-    await persistData('IMMEDIATE'); 
-};
+interface LoginAttempt { count: number; lastAttempt: number; lockedUntil: number | null; }
+const getLoginAttempts = (): LoginAttempt => { const stored = localStorage.getItem(LOGIN_ATTEMPTS_KEY); return stored ? JSON.parse(stored) : { count: 0, lastAttempt: 0, lockedUntil: null }; };
+const saveLoginAttempts = (attempt: LoginAttempt) => { localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(attempt)); };
+export const restoreSession = (): Member | null => { try { const sessionStr = localStorage.getItem(SESSION_KEY); if (!sessionStr) return null; const session = JSON.parse(sessionStr); const now = Date.now(); if (now - session.timestamp > 24 * 60 * 60 * 1000) { localStorage.removeItem(SESSION_KEY); return null; } const user = inMemoryData.members.find(m => m.id === session.userId); if (user && user.isAccessActive && (user.role === 'ADMIN' || user.role === 'TEACHER')) { return user; } localStorage.removeItem(SESSION_KEY); return null; } catch (e) { return null; } };
+export const logoutUser = () => { localStorage.removeItem(SESSION_KEY); };
+export const authenticateUser = async (name: string, passcode: string): Promise<{ success: boolean, member?: Member, message?: string }> => { const attempts = getLoginAttempts(); const now = Date.now(); if (attempts.lockedUntil && now < attempts.lockedUntil) { const remainingMinutes = Math.ceil((attempts.lockedUntil - now) / 60000); return { success: false, message: `Account locked. Try again in ${remainingMinutes}m.` }; } if (now - attempts.lastAttempt > 10 * 60 * 1000) { attempts.count = 0; attempts.lockedUntil = null; } const cleanName = sanitizeInput(name); const user = inMemoryData.members.find(m => (m.role === 'ADMIN' || m.role === 'TEACHER') && m.name.toLowerCase().trim() === cleanName.toLowerCase().trim()); if (!user) { return recordFailedAttempt(attempts); } if (!user.isAccessActive) { return { success: false, message: "Access deactivated. Contact Admin." }; } let isValid = false; if (user.passcode && user.passcode.includes(':')) { isValid = await verifyPasscode(passcode, user.passcode); } else if (user.passcode && user.passcode.length === 64) { const inputHash = await hashString(passcode); if (user.passcode === inputHash) { isValid = true; user.passcode = await hashPasscode(passcode); persistData('IMMEDIATE'); } } else if (user.passcode === passcode) { isValid = true; user.passcode = await hashPasscode(passcode); persistData('IMMEDIATE'); } if (isValid) { localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify({ count: 0, lastAttempt: now, lockedUntil: null })); localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: user.id, timestamp: now })); syncFromCloud(true); return { success: true, member: user }; } return recordFailedAttempt(attempts); };
+const recordFailedAttempt = (attempts: LoginAttempt) => { const now = Date.now(); attempts.count++; attempts.lastAttempt = now; if (attempts.count >= 5) { attempts.lockedUntil = now + 5 * 60 * 1000; saveLoginAttempts(attempts); return { success: false, message: "Too many failed attempts. Locked for 5m." }; } saveLoginAttempts(attempts); return { success: false, message: "Invalid credentials." }; };
+export const importData = (jsonString: string): { success: boolean; message: string } => { try { const parsed = JSON.parse(jsonString); if (!isValidSchema(parsed)) { return { success: false, message: "Invalid data file." }; } parsed.members.forEach((m: any) => { if (m.name) m.name = sanitizeInput(m.name); if (!m.assignedChurch) m.assignedChurch = 'UJ'; if (!m.role) m.role = 'NONE'; }); parsed.attendance.forEach((r: any) => { if (!r.churchId) r.churchId = 'UJ'; }); parsed.lastUpdated = Date.now(); if (!parsed.notifications) parsed.notifications = []; if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 }; if (!parsed.outreachSessions) parsed.outreachSessions = []; if (!parsed.prayerSchedule) parsed.prayerSchedule = []; inMemoryData = parsed; persistData('IMMEDIATE'); isDirty = false; return { success: true, message: "Data imported successfully!" }; } catch (e) { return { success: false, message: "Failed to parse JSON file." }; } };
+export const addMember = (name: string, type: MemberType, assignedChurch: Church, birthDate: string = '', status: MemberStatus = MemberStatus.ACTIVE): Member => { const cleanName = sanitizeInput(name); const newMember: Member = { id: crypto.randomUUID(), name: cleanName, type, joinedDate: new Date().toISOString(), status, birthDate, assignedChurch, role: 'NONE', isAccessActive: false }; inMemoryData.members.push(newMember); isDirty = true; persistData('DEBOUNCE'); autoTransferMembersBasedOnAge(); return newMember; };
+export const updateMember = async (updatedMember: Member) => { const index = inMemoryData.members.findIndex(m => m.id === updatedMember.id); if (index !== -1) { updatedMember.name = sanitizeInput(updatedMember.name); if (updatedMember.passcode && (!updatedMember.passcode.includes(':') && updatedMember.passcode.length < 64) && updatedMember.role !== 'NONE') { updatedMember.passcode = await hashPasscode(updatedMember.passcode); } inMemoryData.members[index] = updatedMember; isDirty = true; persistData('DEBOUNCE'); autoTransferMembersBasedOnAge(); } };
+export const deleteMember = (id: string) => { inMemoryData.members = inMemoryData.members.filter(m => m.id !== id); isDirty = true; persistData('IMMEDIATE'); };
+export const bulkArchiveMembers = (ids: string[]) => { let hasChanges = false; inMemoryData.members.forEach(member => { if (ids.includes(member.id)) { member.status = MemberStatus.ARCHIVED; hasChanges = true; } }); if (hasChanges) { isDirty = true; persistData('DEBOUNCE'); } };
+const calculateAge = (birthDate: string) => { const birth = new Date(birthDate); const today = new Date(); let age = today.getFullYear() - birth.getFullYear(); const m = today.getMonth() - birth.getMonth(); if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--; return age; };
+const autoTransferMembersBasedOnAge = () => { let transferChanges = false; const today = new Date(); inMemoryData.members.forEach(member => { if (member.assignedChurch === 'CM') return; if (member.status !== MemberStatus.ACTIVE) return; if (member.type !== MemberType.MEMBER) return; if (!member.birthDate) return; const age = calculateAge(member.birthDate); let targetChurch: Church | 'ARCHIVE' | null = null; if (age >= 0 && age <= 1) targetChurch = 'I'; else if (age >= 2 && age <= 5) targetChurch = 'K'; else if (age >= 6 && age <= 8) targetChurch = 'LJ'; else if (age >= 9 && age <= 13) targetChurch = 'UJ'; else if (age > 13) targetChurch = 'ARCHIVE'; if (targetChurch === 'ARCHIVE' && member.assignedChurch === 'UJ') { if (!member.transferPendingDate) { member.transferPendingDate = today.toISOString(); transferChanges = true; } else { const pendingDate = new Date(member.transferPendingDate); const diffTime = Math.abs(today.getTime() - pendingDate.getTime()); const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); if (diffDays >= 7) { member.status = MemberStatus.ARCHIVED; member.type = MemberType.NOT_MEMBER; member.transferPendingDate = undefined; transferChanges = true; } } return; } if (targetChurch && targetChurch !== 'ARCHIVE') { if (member.assignedChurch !== targetChurch) { member.assignedChurch = targetChurch; transferChanges = true; } } }); if (transferChanges) { isDirty = true; persistData('DEBOUNCE'); } };
+const checkAndAutoUpdateMemberStatus = (churchId: Church) => { if (churchId === 'CM') return; const sortedAttendance = inMemoryData.attendance .filter(r => r.churchId === churchId) .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); if (sortedAttendance.length < 7) return; const churchMembers = inMemoryData.members.filter(m => m.assignedChurch === churchId); if (sortedAttendance.length >= 10) { const last10Weeks = sortedAttendance.slice(0, 10); const presentIds = new Set(last10Weeks.flatMap(r => r.presentMemberIds)); churchMembers.forEach(member => { if (member.status !== MemberStatus.ACTIVE || member.role !== 'NONE') return; if (new Date(member.joinedDate) > new Date(last10Weeks[last10Weeks.length-1].date)) return; if (!presentIds.has(member.id) && member.type !== MemberType.INCONSISTENT) { member.type = MemberType.INCONSISTENT; member.status = MemberStatus.NOT_ACTIVE; isDirty = true; } }); } const last7Weeks = sortedAttendance.slice(0, 7); churchMembers.forEach(member => { if (member.type === MemberType.INCONSISTENT || member.status === MemberStatus.NOT_ACTIVE) { if (last7Weeks.every(r => r.presentMemberIds.includes(member.id))) { member.type = MemberType.MEMBER; member.status = MemberStatus.ACTIVE; isDirty = true; } } }); if (isDirty) persistData('DEBOUNCE'); };
+export const checkBirthdaysAndTeens = () => { const today = new Date(); const currentDay = today.getDate(); const currentMonth = today.getMonth(); const year = today.getFullYear(); const todayStr = today.toISOString().split('T')[0]; inMemoryData.members.forEach(m => { if (m.status !== MemberStatus.ACTIVE || !m.birthDate) return; const birth = new Date(m.birthDate); if (birth.getDate() === currentDay && birth.getMonth() === currentMonth) { const exists = inMemoryData.notifications.some(n => n.type === 'BIRTHDAY' && n.relatedMemberId === m.id && n.createdAt.startsWith(todayStr)); if (!exists) { inMemoryData.notifications.push({ id: crypto.randomUUID(), type: 'BIRTHDAY', message: `It's ${m.name}'s birthday today!`, createdAt: today.toISOString(), targetChurch: m.assignedChurch, relatedMemberId: m.id, isRead: false }); isDirty = true; } } let age = year - birth.getFullYear(); const mMonth = today.getMonth() - birth.getMonth(); if (mMonth < 0 || (mMonth === 0 && today.getDate() < birth.getDate())) age--; if (age === 13) { const exists = inMemoryData.notifications.some(n => n.type === 'TEEN_ALERT' && n.relatedMemberId === m.id && n.createdAt.startsWith(year.toString())); if (!exists) { inMemoryData.notifications.push({ id: crypto.randomUUID(), type: 'TEEN_ALERT', message: `${m.name} is 13. Transition to Youth?`, createdAt: today.toISOString(), targetChurch: m.assignedChurch, relatedMemberId: m.id, isRead: false }); isDirty = true; } } }); if (isDirty) persistData('DEBOUNCE'); };
+export const updateTargets = (targets: Record<string, number>) => { inMemoryData.targets = targets; isDirty = true; persistData('IMMEDIATE'); };
+export const markNotificationAsRead = (id: string) => { const note = inMemoryData.notifications.find(n => n.id === id); if (note) { note.isRead = true; isDirty = true; persistData('DEBOUNCE'); } };
+export const clearAllNotifications = (church: Church) => { if (church === 'CM') { inMemoryData.notifications = []; } else { inMemoryData.notifications = inMemoryData.notifications.filter(n => n.targetChurch !== church); } isDirty = true; persistData('IMMEDIATE'); };
+export const addTransaction = (txn: Partial<Transaction>) => { if (!txn.amount || !txn.category || !txn.type) return; const newTxn: Transaction = { id: crypto.randomUUID(), date: txn.date || new Date().toISOString().split('T')[0], amount: Number(txn.amount), type: txn.type, category: txn.category, description: txn.description || '', churchId: txn.churchId || 'UJ', recordedBy: txn.recordedBy || 'System', }; if (!inMemoryData.transactions) inMemoryData.transactions = []; inMemoryData.transactions.push(newTxn); isDirty = true; persistData('IMMEDIATE'); };
+export const deleteTransaction = (id: string) => { if (!inMemoryData.transactions) return; inMemoryData.transactions = inMemoryData.transactions.filter(t => t.id !== id); isDirty = true; persistData('IMMEDIATE'); };
+export const saveOutreachSession = (session: OutreachSession) => { if (!inMemoryData.outreachSessions) inMemoryData.outreachSessions = []; const idx = inMemoryData.outreachSessions.findIndex(s => s.id === session.id); if (!session.visitedMemberIds) session.visitedMemberIds = []; if (idx >= 0) inMemoryData.outreachSessions[idx] = session; else inMemoryData.outreachSessions.push(session); isDirty = true; return persistData('IMMEDIATE'); };
+export const deleteOutreachSession = async (id: string) => { if (!inMemoryData.outreachSessions) return; inMemoryData.outreachSessions = inMemoryData.outreachSessions.filter(s => s.id !== id); isDirty = true; await persistData('IMMEDIATE'); };
+export const saveAttendance = (date: string, churchId: Church, presentIds: string[], punctualIds: string[]) => { const existingIndex = inMemoryData.attendance.findIndex(r => r.date === date && r.churchId === churchId); const record: AttendanceRecord = { date, churchId, presentMemberIds: presentIds, punctualMemberIds: punctualIds }; if (existingIndex >= 0) { inMemoryData.attendance[existingIndex] = record; } else { inMemoryData.attendance.push(record); } isDirty = true; persistData('DEBOUNCE'); if (churchId !== 'CM') { checkAndAutoUpdateMemberStatus(churchId); } autoTransferMembersBasedOnAge(); };
 
 export const savePrayerSlot = (slot: PrayerSlot) => {
     if (!inMemoryData.prayerSchedule) inMemoryData.prayerSchedule = [];
@@ -815,67 +370,112 @@ export const generateOutreachSchedule = (dates: string[], members: Member[]): { 
 export const generatePrayerSchedule = (startWeekDate: Date, members: Member[]): { success: boolean, message: string } => {
     if (!inMemoryData.prayerSchedule) inMemoryData.prayerSchedule = [];
     
+    // --- 1. Identify Missed Members from Expired Slots ---
     const today = new Date().toISOString().split('T')[0];
     const missedIds = new Set<string>();
+    
     inMemoryData.prayerSchedule.forEach(slot => {
+        // If expired (older than today) and NOT completed, those kids were missed.
         if (slot.date < today && !slot.isCompleted) {
             slot.assignedMemberIds.forEach(id => missedIds.add(id));
         }
     });
 
-    const cleanMembers = members.filter(m => !missedIds.has(m.id));
-    const missedMembers = members.filter(m => missedIds.has(m.id));
+    // --- 2. Filter Pool Strict (Active, FNF, Inconsistent) ---
+    // Only these types are allowed for prayer
+    const allowedTypes = [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT];
+    
+    // Split members into Missed (Priority) and Clean (Available)
+    const missedMembers = members.filter(m => missedIds.has(m.id) && allowedTypes.includes(m.type) && m.status !== MemberStatus.ARCHIVED);
+    const cleanMembers = members.filter(m => !missedIds.has(m.id) && allowedTypes.includes(m.type) && m.status !== MemberStatus.ARCHIVED);
 
+    // Sub-pools for clean members (used for refilling)
     let active = cleanMembers.filter(m => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE);
     let fnf = cleanMembers.filter(m => m.type === MemberType.FNF);
-    let inconsistent = cleanMembers.filter(m => (m.type === MemberType.INCONSISTENT) || (m.status === MemberStatus.NOT_ACTIVE));
+    let inconsistent = cleanMembers.filter(m => m.type === MemberType.INCONSISTENT || (m.status === MemberStatus.NOT_ACTIVE && allowedTypes.includes(m.type)));
 
     const shuffle = (arr: Member[]) => arr.sort(() => Math.random() - 0.5);
-    active = shuffle([...active]); fnf = shuffle([...fnf]); inconsistent = shuffle([...inconsistent]);
-
+    active = shuffle([...active]); 
+    fnf = shuffle([...fnf]); 
+    inconsistent = shuffle([...inconsistent]);
+    
+    // Missed members go to the front of the line
     const priorityPool = shuffle([...missedMembers]);
-    const days = 5; 
+
+    const days = 5; // Mon-Fri
     let generatedCount = 0;
 
     for (let i = 0; i < days; i++) {
         const d = new Date(startWeekDate);
         d.setDate(startWeekDate.getDate() + i);
         const dateStr = d.toISOString().split('T')[0];
+        
+        // Skip if schedule exists for this date
         if (inMemoryData.prayerSchedule.some(s => s.date === dateStr)) continue;
 
         const dailyIds: Set<string> = new Set();
-        while(priorityPool.length > 0 && dailyIds.size < 2) dailyIds.add(priorityPool.shift()!.id);
+        const TARGET_PER_DAY = 5; // STRICT 5 CHILDREN LIMIT
 
+        // A. Fill from Priority Pool (Missed)
+        while(priorityPool.length > 0 && dailyIds.size < TARGET_PER_DAY) {
+            dailyIds.add(priorityPool.shift()!.id);
+        }
+
+        // Helper to grab from pool with potential refill logic
         const getFromPool = (pool: Member[], source: Member[]): Member | null => {
-            if (pool.length === 0) pool.push(...shuffle([...source]));
+            if (pool.length === 0 && source.length > 0) {
+                // Refill if empty
+                pool.push(...shuffle([...source])); 
+            }
+            if (pool.length === 0) return null;
+
+            // Try to find someone not already picked TODAY
             let candidate = pool.shift();
             let tries = 0;
-            while (candidate && dailyIds.has(candidate.id) && tries < 5) {
-                pool.push(candidate); candidate = pool.shift(); tries++;
+            // simple check to avoid infinite loop if all source members are already picked today
+            while (candidate && dailyIds.has(candidate.id) && tries < source.length + 2) {
+                pool.push(candidate); // put back
+                candidate = pool.shift(); // try next
+                tries++;
             }
             return candidate || null;
         };
 
+        // Source copies for refill mechanism
         const sourceActive = members.filter(m => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE);
         const sourceFNF = members.filter(m => m.type === MemberType.FNF);
-        const sourceInc = members.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE);
+        const sourceInc = members.filter(m => m.type === MemberType.INCONSISTENT || (m.status === MemberStatus.NOT_ACTIVE && allowedTypes.includes(m.type)));
 
-        while(dailyIds.size < 3) {
-             const m = getFromPool(active, sourceActive);
-             if(m) dailyIds.add(m.id); else break;
+        // B. Ensure we try to get specific mix if spots available
+        // Try to get at least 1 FNF if not present
+        if (dailyIds.size < TARGET_PER_DAY) {
+             const hasFNF = Array.from(dailyIds).some(id => members.find(m => m.id === id)?.type === MemberType.FNF);
+             if (!hasFNF) {
+                 const m = getFromPool(fnf, sourceFNF);
+                 if (m) dailyIds.add(m.id);
+             }
         }
-        let mFnf = getFromPool(fnf, sourceFNF);
-        if(mFnf && !dailyIds.has(mFnf.id)) dailyIds.add(mFnf.id);
-        let mInc = getFromPool(inconsistent, sourceInc);
-        if(mInc && !dailyIds.has(mInc.id)) dailyIds.add(mInc.id);
 
-        if (dailyIds.size < 5) {
-            const allUnique = members.filter(m => !dailyIds.has(m.id) && !['Teacher','Helper','Volunteer'].includes(m.type));
-            const shuffledUnique = shuffle([...allUnique]);
-            while(dailyIds.size < 5 && shuffledUnique.length > 0) {
-                const pick = shuffledUnique.shift();
-                if(pick) dailyIds.add(pick.id);
-            }
+        // Try to get at least 1 Inconsistent if not present
+        if (dailyIds.size < TARGET_PER_DAY) {
+             const hasInc = Array.from(dailyIds).some(id => members.find(m => m.id === id)?.type === MemberType.INCONSISTENT);
+             if (!hasInc) {
+                 const m = getFromPool(inconsistent, sourceInc);
+                 if (m) dailyIds.add(m.id);
+             }
+        }
+
+        // C. Fill remaining spots with Active (primary) or fallbacks
+        while (dailyIds.size < TARGET_PER_DAY) {
+             let m = getFromPool(active, sourceActive);
+             if (!m) m = getFromPool(fnf, sourceFNF); // Fallback to FNF
+             if (!m) m = getFromPool(inconsistent, sourceInc); // Fallback to Inc
+             
+             if (m) {
+                 dailyIds.add(m.id);
+             } else {
+                 break; // No more members available at all
+             }
         }
 
         if (dailyIds.size > 0) {
@@ -893,5 +493,5 @@ export const generatePrayerSchedule = (startWeekDate: Date, members: Member[]): 
 
     isDirty = true;
     persistData('IMMEDIATE');
-    return { success: true, message: `Generated ${generatedCount} days.` };
+    return { success: true, message: `Generated ${generatedCount} days. ${missedIds.size > 0 ? `Inc. ${missedIds.size} missed prayers.` : ''}` };
 };

@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AppData, Member, OutreachSession, PrayerSlot, MemberType, MemberStatus } from '../types';
 import { generateOutreachSchedule, generatePrayerSchedule, saveOutreachSession, deleteOutreachSession, savePrayerSlot } from '../services/storageService';
-import { Calendar, MapPin, Plus, Trash2, CheckCircle2, Clock, Heart, AlertCircle, ArrowRightLeft, BarChart2, ChevronUp, ChevronDown, Check, X, CalendarDays, RefreshCw, Zap, Loader2, User, Cloud, Save, Target } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
+import { Calendar, MapPin, Plus, Trash2, CheckCircle2, Clock, Heart, AlertCircle, ArrowRightLeft, BarChart2, ChevronUp, ChevronDown, Check, X, CalendarDays, RefreshCw, Zap, Loader2, User, Cloud, Save, Target, Phone, MessageSquare, Map } from 'lucide-react';
 
 interface OutreachHubProps {
   data: AppData;
@@ -32,7 +31,7 @@ const getRelativeTime = (dateStr: string) => {
 };
 
 const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }) => {
-  const [activeTab, setActiveTab] = useState<'VISIT' | 'PRAYER' | 'TRACK'>('VISIT');
+  const [activeTab, setActiveTab] = useState<'VISIT' | 'PRAYER' | 'CONNECT' | 'TRACK'>('VISIT');
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [genMsg, setGenMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);
@@ -46,16 +45,13 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
   // UNIFIED LOCAL STATE FOR BATCH SAVING
   const [localSessions, setLocalSessions] = useState<OutreachSession[]>([]);
   const [localPrayerSlots, setLocalPrayerSlots] = useState<PrayerSlot[]>([]);
-  
-  // Track IDs of modified items
   const [unsavedChanges, setUnsavedChanges] = useState<Set<string>>(new Set()); 
-  const [changeCounts, setChangeCounts] = useState({ marked: 0, unmarked: 0 }); // Track interaction type
+  const [changeCounts, setChangeCounts] = useState({ marked: 0, unmarked: 0 }); 
   const [isSaving, setIsSaving] = useState(false);
-
-  // Completion Confirmation
   const [completionConfirm, setCompletionConfirm] = useState<{ show: boolean, sessionId: string } | null>(null);
 
-  // Prayer State
+  // Prayer UI State
+  const [isScheduleOpen, setIsScheduleOpen] = useState(true);
   const [prayerWeek, setPrayerWeek] = useState(getStartOfWeek(new Date()));
 
   function getStartOfWeek(date: Date) {
@@ -157,19 +153,13 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       }
 
       session.visitedMemberIds = newVisited;
-      
-      // Update counts
       setChangeCounts(prev => ({
           marked: prev.marked + (isMarking ? 1 : 0),
           unmarked: prev.unmarked + (isMarking ? 0 : 1)
       }));
 
-      // Check for full completion
       const allDone = session.assignedMemberIds.every(id => newVisited.includes(id));
-      
       if (allDone && !session.status.includes('COMPLETED')) {
-          // Trigger confirmation before marking session complete locally
-          // We update the visited list but wait on status
           setCompletionConfirm({ show: true, sessionId });
       } else if (!allDone) {
           session.status = 'PENDING';
@@ -191,7 +181,6 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
           newSessions[sessionIndex].status = confirm ? 'COMPLETED' : 'PENDING';
           if (confirm) newSessions[sessionIndex].completedBy = currentUser.name;
           setLocalSessions(newSessions);
-          // Already marked as dirty in toggle
       }
       setCompletionConfirm(null);
   };
@@ -207,11 +196,9 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
           const currentSession = { ...localSessions[currentIdx] };
           const targetSession = { ...localSessions[targetIdx] };
 
-          // Remove from old
           currentSession.assignedMemberIds = currentSession.assignedMemberIds.filter(id => id !== memberId);
           currentSession.visitedMemberIds = (currentSession.visitedMemberIds || []).filter(id => id !== memberId);
           
-          // Add to new
           if (!targetSession.assignedMemberIds.includes(memberId)) {
               targetSession.assignedMemberIds.push(memberId);
           }
@@ -260,20 +247,17 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       setUnsavedChanges(prev => new Set(prev).add(slotId));
   };
 
-  // --- UNIFIED SAVE ---
   const saveBatchChanges = async () => {
       setIsSaving(true);
       try {
           const promises: Promise<any>[] = [];
           
           unsavedChanges.forEach(id => {
-              // Check visits
               const session = localSessions.find(s => s.id === id);
               if (session) {
                   promises.push(saveOutreachSession(session));
                   return;
               }
-              // Check prayers
               const slot = localPrayerSlots.find(s => s.id === id);
               if (slot) {
                   promises.push(savePrayerSlot(slot));
@@ -285,7 +269,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
           setUnsavedChanges(new Set());
           setChangeCounts({ marked: 0, unmarked: 0 });
           onUpdate();
-          setGenMsg({ type: 'success', text: 'All changes saved to cloud!' });
+          setGenMsg({ type: 'success', text: 'All changes saved!' });
           setTimeout(() => setGenMsg(null), 3000);
       } catch (e) {
           console.error(e);
@@ -301,86 +285,48 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       const all = (localSessions || []);
       const pending = all.filter(s => s.status === 'PENDING').sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       const completed = all.filter(s => s.status === 'COMPLETED').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
-      // Separate "Next Up" from rest of pending
       const nextUp = pending.length > 0 ? pending[0] : null;
       const otherPending = pending.length > 0 ? pending.slice(1) : [];
-
       return { nextUp, otherPending, completed };
   }, [localSessions]);
 
-  const weekSlots = useMemo(() => {
-      if(localPrayerSlots.length === 0) return [];
-      const start = new Date(prayerWeek).toISOString().split('T')[0];
-      const end = new Date(prayerWeek);
-      end.setDate(end.getDate() + 5);
-      const endStr = end.toISOString().split('T')[0];
+  const prayerData = useMemo(() => {
+      if(localPrayerSlots.length === 0) return { active: [], expired: [] };
+      const today = new Date().toISOString().split('T')[0];
       
-      return localPrayerSlots
-        .filter(s => s.date >= start && s.date < endStr)
-        .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [localPrayerSlots, prayerWeek]);
-
-  // --- PROGRESS METRICS ---
-  const progressStats = useMemo(() => {
-      const year = new Date().getFullYear();
+      const all = [...localPrayerSlots].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       
-      // 1. Visit Progress
-      const eligibleKids = data.members.filter(m => m.assignedChurch === 'UJ' && ['Member','FNF','Inconsistent'].includes(m.type) && m.status === 'Active');
-      const targetVisits = eligibleKids.length * 2; // 2 visits per year
+      // Expired: Date is past AND not completed
+      const expired = all.filter(s => s.date < today && !s.isCompleted);
       
-      // Count unique visits per member
-      const memberVisitCounts: Record<string, number> = {};
-      const completedSessions = (data.outreachSessions || []).filter(s => s.status === 'COMPLETED' && new Date(s.date).getFullYear() === year);
-      
-      let actualVisits = 0;
-      completedSessions.forEach(s => {
-          s.visitedMemberIds?.forEach(id => {
-              memberVisitCounts[id] = (memberVisitCounts[id] || 0) + 1;
-              actualVisits++;
-          });
-      });
+      // Active: Today or Future, OR Past but Completed
+      const active = all.filter(s => s.date >= today || s.isCompleted);
 
-      // 2. Prayer Progress
-      const prayers = (data.prayerSchedule || []).filter(s => new Date(s.date).getFullYear() === year);
-      const weekPrayers = prayers.filter(s => {
-          const d = new Date(s.date);
-          const now = new Date();
-          const oneWeek = 7 * 24 * 60 * 60 * 1000;
-          return Math.abs(now.getTime() - d.getTime()) < oneWeek;
-      });
-      const monthPrayers = prayers.filter(s => new Date(s.date).getMonth() === new Date().getMonth());
-      const quarterPrayers = prayers.filter(s => Math.floor(new Date(s.date).getMonth() / 3) === Math.floor(new Date().getMonth() / 3));
+      return { active, expired };
+  }, [localPrayerSlots]);
 
-      const getPrayerStats = (list: PrayerSlot[]) => {
-          const total = list.length * 5; // 5 kids per slot
-          const done = list.filter(s => s.isCompleted).length * 5; // Approx
-          return { total, done, pct: total > 0 ? Math.round((done/total)*100) : 0 };
-      };
-
-      return {
-          visit: { target: targetVisits, actual: actualVisits, pct: targetVisits > 0 ? Math.round((actualVisits/targetVisits)*100) : 0 },
-          prayer: {
-              week: getPrayerStats(weekPrayers),
-              month: getPrayerStats(monthPrayers),
-              quarter: getPrayerStats(quarterPrayers),
-              year: getPrayerStats(prayers)
-          }
-      };
-  }, [data]);
+  // --- CONNECT TAB DATA ---
+  const connectList = useMemo(() => {
+      return data.members
+        .filter(m => m.assignedChurch === 'UJ' && [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT].includes(m.type) && m.status === MemberStatus.ACTIVE)
+        .sort((a, b) => a.name.localeCompare(b.name));
+  }, [data.members]);
 
   return (
     <div className="space-y-4 pb-24 relative min-h-screen">
       
       {/* HEADER TABS */}
-      <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex gap-1 sticky top-0 z-30">
-          <button onClick={() => setActiveTab('VISIT')} className={`flex-1 flex justify-center items-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'VISIT' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
+      <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex gap-1 sticky top-0 z-30 overflow-x-auto no-scrollbar">
+          <button onClick={() => setActiveTab('VISIT')} className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all ${activeTab === 'VISIT' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
               <MapPin size={16}/> Visits
           </button>
-          <button onClick={() => setActiveTab('PRAYER')} className={`flex-1 flex justify-center items-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'PRAYER' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
+          <button onClick={() => setActiveTab('PRAYER')} className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all ${activeTab === 'PRAYER' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
               <Heart size={16}/> Prayer
           </button>
-          <button onClick={() => setActiveTab('TRACK')} className={`flex-1 flex justify-center items-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'TRACK' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
+          <button onClick={() => setActiveTab('CONNECT')} className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all ${activeTab === 'CONNECT' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <Phone size={16}/> Connect
+          </button>
+          <button onClick={() => setActiveTab('TRACK')} className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all ${activeTab === 'TRACK' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}>
               <BarChart2 size={16}/> Progress
           </button>
       </div>
@@ -388,8 +334,6 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       {/* VISIT TAB */}
       {activeTab === 'VISIT' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-              
-              {/* Creator Toggle */}
               <button 
                 onClick={() => setIsCreatorOpen(!isCreatorOpen)}
                 className="w-full flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-2xl text-indigo-700 font-bold hover:bg-indigo-100 transition-colors"
@@ -398,14 +342,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                   {isCreatorOpen ? <ChevronUp size={20}/> : <Plus size={20}/>}
               </button>
 
-              {/* Creator Drawer */}
               {isCreatorOpen && (
                   <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                       <div className="flex gap-2">
                           <input type="date" className="flex-1 p-3 bg-slate-50 border-none rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500" value={newDateInput} onChange={e => setNewDateInput(e.target.value)} />
                           <button onClick={handleAddDate} disabled={!newDateInput} className="px-4 bg-indigo-600 text-white rounded-xl"><Plus/></button>
                       </div>
-                      
                       {selectedDates.length > 0 && (
                           <div className="flex flex-wrap gap-2">
                               {selectedDates.map(d => (
@@ -415,16 +357,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                               ))}
                           </div>
                       )}
-                      
                       <button onClick={handleGenerateSchedule} disabled={selectedDates.length === 0} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-md disabled:opacity-50">Generate Schedule</button>
                       {errorMsg && <p className="text-xs text-red-500 font-bold text-center">{errorMsg}</p>}
                   </div>
               )}
 
-              {/* TIMELINE VIEW */}
               <div className="space-y-4">
-                  
-                  {/* NEXT UP CARD */}
                   {sortedVisits.nextUp && (
                       <div className="relative">
                           <div className="absolute -left-3 top-4 bottom-4 w-1 bg-gradient-to-b from-indigo-500 to-indigo-200 rounded-full hidden md:block"></div>
@@ -438,7 +376,6 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                                       <div className="text-3xl font-extrabold opacity-20"><CalendarDays size={40}/></div>
                                   </div>
                               </div>
-                              
                               <div className="p-2">
                                   <SessionChildList 
                                     session={sortedVisits.nextUp} 
@@ -447,7 +384,6 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                                     onMove={(mid, sid) => setMoveModal({show: true, memberId: mid, currentSessionId: sid})}
                                   />
                               </div>
-                              
                               <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
                                   <span className="text-xs font-bold text-slate-400">{sortedVisits.nextUp.assignedMemberIds.length} Kids Assigned</span>
                                   <button 
@@ -462,7 +398,6 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                       </div>
                   )}
 
-                  {/* OTHER PENDING */}
                   {sortedVisits.otherPending.map(session => (
                       <div key={session.id} className={`bg-white rounded-2xl border shadow-sm overflow-hidden opacity-90 hover:opacity-100 transition-all ${unsavedChanges.has(session.id) ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-200'}`}>
                           <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
@@ -486,16 +421,6 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                       </div>
                   ))}
 
-                  {/* EMPTY STATE */}
-                  {!sortedVisits.nextUp && sortedVisits.otherPending.length === 0 && (
-                      <div className="text-center py-12 px-4 bg-white rounded-3xl border border-dashed border-slate-200">
-                          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300"><Calendar size={32}/></div>
-                          <h3 className="text-slate-500 font-bold mb-2">No Upcoming Visits</h3>
-                          <p className="text-xs text-slate-400">Use "Plan New Visits" to create a schedule.</p>
-                      </div>
-                  )}
-
-                  {/* HISTORY */}
                   {sortedVisits.completed.length > 0 && (
                       <div className="pt-6">
                           <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 text-center">Completed History</h4>
@@ -548,100 +473,94 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                   </div>
               )}
 
-              <div className="space-y-3">
-                  {weekSlots.length === 0 ? (
-                      <div className="p-8 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
-                          Schedule is empty for this week. Click Generate above.
+              {/* Expired / Missed Section */}
+              {prayerData.expired.length > 0 && (
+                  <div className="space-y-2 mb-4">
+                      <div className="flex items-center gap-2 px-2">
+                          <AlertCircle size={16} className="text-amber-500"/>
+                          <h4 className="text-xs font-bold text-amber-500 uppercase tracking-wider">Missed & Expired</h4>
                       </div>
-                  ) : (
-                      weekSlots.map(slot => (
-                          <div key={slot.id} className={`bg-white rounded-2xl border transition-all ${slot.isCompleted ? 'border-green-200 shadow-none' : 'border-slate-100 shadow-sm'} ${unsavedChanges.has(slot.id) ? 'ring-2 ring-amber-300' : ''}`}>
-                              <div 
-                                onClick={() => togglePrayerComplete(slot.id)}
-                                className="p-4 cursor-pointer"
-                              >
-                                  <div className="flex justify-between items-start mb-3">
-                                      <div className="flex items-center gap-3">
-                                          <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-xs font-bold border ${slot.isCompleted ? 'bg-green-50 text-green-700 border-green-100' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                                              <span>{slot.dayOfWeek.substring(0,3).toUpperCase()}</span>
-                                          </div>
-                                          <div>
-                                              <h4 className={`font-bold text-sm ${slot.isCompleted ? 'text-green-800' : 'text-slate-800'}`}>{formatDateDDMMYYYY(slot.date)}</h4>
-                                              <p className="text-[10px] text-slate-400 font-medium">{slot.assignedMemberIds.length} Children • 30 mins</p>
-                                          </div>
-                                      </div>
-                                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${slot.isCompleted ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300 text-transparent'}`}>
-                                          <Check size={14} strokeWidth={4}/>
-                                      </div>
-                                  </div>
-
-                                  <div className="flex flex-wrap gap-2">
-                                      {slot.assignedMemberIds.map(id => {
-                                          const m = data.members.find(mem => mem.id === id);
-                                          if(!m) return null;
-                                          let colorClass = 'bg-slate-50 text-slate-600 border-slate-100';
-                                          
-                                          if (m.type === MemberType.FNF) colorClass = 'bg-amber-50 text-amber-700 border-amber-100';
-                                          else if (m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE) colorClass = 'bg-rose-50 text-rose-700 border-rose-100';
-                                          else colorClass = 'bg-indigo-50 text-indigo-700 border-indigo-100';
-
-                                          if (slot.isCompleted) colorClass = 'bg-green-50 text-green-700 border-green-100 opacity-80';
-
-                                          return (
-                                              <div key={id} className={`flex items-center gap-1.5 text-[10px] px-2 py-1.5 rounded-lg font-bold border ${colorClass}`}>
-                                                  <span>{m.name}</span>
-                                              </div>
-                                          )
-                                      })}
-                                  </div>
-                              </div>
+                      <div className="opacity-75">
+                          {prayerData.expired.map(slot => (
+                              <PrayerSlotCard key={slot.id} slot={slot} data={data} unsavedChanges={unsavedChanges} onToggle={togglePrayerComplete} isExpired={true} />
+                          ))}
+                          <div className="text-center text-[10px] text-slate-400 mt-1">
+                              * Regenerate schedule to prioritize these missed children.
                           </div>
-                      ))
+                      </div>
+                  </div>
+              )}
+
+              {/* Active Schedule Collapsible */}
+              <div className="border border-slate-100 rounded-2xl bg-white overflow-hidden shadow-sm">
+                  <button 
+                    onClick={() => setIsScheduleOpen(!isScheduleOpen)}
+                    className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors"
+                  >
+                      <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                          <CalendarDays size={18} className="text-indigo-600"/> 
+                          Current Schedule ({prayerData.active.length})
+                      </h3>
+                      {isScheduleOpen ? <ChevronUp size={18} className="text-slate-400"/> : <ChevronDown size={18} className="text-slate-400"/>}
+                  </button>
+                  
+                  {isScheduleOpen && (
+                      <div className="p-3 space-y-3 bg-slate-50/50">
+                          {prayerData.active.length === 0 ? (
+                              <div className="p-8 text-center text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
+                                  No active schedule. Click Generate above.
+                              </div>
+                          ) : (
+                              prayerData.active.map(slot => (
+                                  <PrayerSlotCard key={slot.id} slot={slot} data={data} unsavedChanges={unsavedChanges} onToggle={togglePrayerComplete} />
+                              ))
+                          )}
+                      </div>
                   )}
               </div>
           </div>
       )}
 
-      {/* TRACKING TAB (Visuals Enhanced) */}
+      {/* CONNECT TAB */}
+      {activeTab === 'CONNECT' && (
+          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+              <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-blue-800 text-sm font-medium flex items-start gap-2">
+                  <Phone size={18} className="shrink-0 mt-0.5"/>
+                  <p>Tap icons to call, message, or get directions.</p>
+              </div>
+              
+              <CollapsibleContactSection 
+                  title="Active Members" 
+                  members={connectList.filter(m => m.type === MemberType.MEMBER)} 
+                  color="indigo" 
+                  icon={User} 
+              />
+              <CollapsibleContactSection 
+                  title="Friends & Family (FNF)" 
+                  members={connectList.filter(m => m.type === MemberType.FNF)} 
+                  color="amber" 
+                  icon={User} 
+              />
+              <CollapsibleContactSection 
+                  title="Inconsistent" 
+                  members={connectList.filter(m => m.type === MemberType.INCONSISTENT)} 
+                  color="rose" 
+                  icon={AlertCircle} 
+              />
+          </div>
+      )}
+
+      {/* TRACKING TAB */}
       {activeTab === 'TRACK' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                  <div className="flex items-center gap-3 mb-6">
-                      <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl"><Target size={20}/></div>
-                      <h3 className="font-bold text-lg text-slate-800">Annual Visitation Goal</h3>
-                  </div>
-                  
-                  <div className="mb-2 flex justify-between text-sm font-bold">
-                      <span className="text-slate-600">Actual Visits</span>
-                      <span className="text-indigo-600">{progressStats.visit.actual} <span className="text-slate-400">/ {progressStats.visit.target}</span></span>
-                  </div>
-                  <div className="h-4 bg-slate-100 rounded-full overflow-hidden mb-2">
-                      <div className="h-full bg-indigo-500 rounded-full transition-all duration-1000" style={{ width: `${Math.min(100, progressStats.visit.pct)}%` }}></div>
-                  </div>
-                  <p className="text-xs text-slate-400">Target: 2 visits per eligible child (Active, FNF, Inconsistent) per year.</p>
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm text-center">
+                  <h3 className="font-bold text-lg text-slate-800 mb-1">Progress Tracking</h3>
+                  <p className="text-xs text-slate-500">Monitoring Visitation (Goal: 2/year) and Prayer Coverage.</p>
               </div>
-
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                  <div className="flex items-center gap-3 mb-6">
-                      <div className="p-2 bg-amber-50 text-amber-600 rounded-xl"><Heart size={20}/></div>
-                      <h3 className="font-bold text-lg text-slate-800">Prayer Coverage Outcomes</h3>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                      {(['week','month','quarter','year'] as const).map(period => (
-                          <div key={period} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{period}</p>
-                              <div className="flex items-baseline gap-1">
-                                  <span className="text-2xl font-bold text-slate-800">{progressStats.prayer[period].done}</span>
-                                  <span className="text-xs font-medium text-slate-400">/ {progressStats.prayer[period].total}</span>
-                              </div>
-                              <div className="mt-2 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                                  <div className={`h-full rounded-full ${progressStats.prayer[period].pct > 70 ? 'bg-green-500' : 'bg-amber-500'}`} style={{width: `${progressStats.prayer[period].pct}%`}}></div>
-                              </div>
-                          </div>
-                      ))}
-                  </div>
-              </div>
+              
+              <CollapsibleProgressSection title="Active Members" members={connectList.filter(m => m.type === MemberType.MEMBER)} data={data} icon={User} color="indigo" />
+              <CollapsibleProgressSection title="Friends & Family (FNF)" members={connectList.filter(m => m.type === MemberType.FNF)} data={data} icon={User} color="amber" />
+              <CollapsibleProgressSection title="Inconsistent" members={connectList.filter(m => m.type === MemberType.INCONSISTENT)} data={data} icon={AlertCircle} color="rose" />
           </div>
       )}
 
@@ -684,7 +603,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
           </div>
       )}
 
-      {/* FLOATING SAVE BUTTON FOR BATCH ACTIONS */}
+      {/* FLOATING SAVE BUTTON */}
       {unsavedChanges.size > 0 && (activeTab === 'VISIT' || activeTab === 'PRAYER') && (
           <div className="fixed bottom-20 md:bottom-10 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4">
               <button 
@@ -697,8 +616,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                       <span className="text-sm">Save Changes</span>
                       <span className="text-[10px] font-medium opacity-80">
                           {changeCounts.marked > 0 ? `+${changeCounts.marked} marked` : ''} 
-                          //{changeCounts.marked > 0 && changeCounts.unmarked > 0 ? ', ' : ''}
-                          {changeCounts.unmarked > 0 ? `-${changeCounts.unmarked} unmarked` : ''}
+                          {changeCounts.unmarked > 0 ? ` -${changeCounts.unmarked} unmarked` : ''}
                       </span>
                   </div>
               </button>
@@ -709,6 +627,184 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
 };
 
 // --- SUB COMPONENTS ---
+
+const PrayerSlotCard = ({ slot, data, unsavedChanges, onToggle, isExpired }: any) => (
+    <div className={`bg-white rounded-2xl border transition-all ${slot.isCompleted ? 'border-green-200 shadow-none' : isExpired ? 'border-amber-200 bg-amber-50/50' : 'border-slate-100 shadow-sm'} ${unsavedChanges.has(slot.id) ? 'ring-2 ring-amber-300' : ''}`}>
+        <div onClick={() => onToggle(slot.id)} className="p-4 cursor-pointer">
+            <div className="flex justify-between items-start mb-3">
+                <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-xs font-bold border ${slot.isCompleted ? 'bg-green-50 text-green-700 border-green-100' : isExpired ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                        <span>{slot.dayOfWeek.substring(0,3).toUpperCase()}</span>
+                    </div>
+                    <div>
+                        <h4 className={`font-bold text-sm ${slot.isCompleted ? 'text-green-800' : 'text-slate-800'}`}>{formatDateDDMMYYYY(slot.date)}</h4>
+                        <p className="text-[10px] text-slate-400 font-medium">{slot.assignedMemberIds.length} Children • 30 mins</p>
+                    </div>
+                </div>
+                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${slot.isCompleted ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300 text-transparent'}`}>
+                    <Check size={14} strokeWidth={4}/>
+                </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {slot.assignedMemberIds.map((id: string) => {
+                    const m = data.members.find((mem: any) => mem.id === id);
+                    if(!m) return null;
+                    let colorClass = 'bg-slate-50 text-slate-600 border-slate-100';
+                    if (m.type === MemberType.FNF) colorClass = 'bg-amber-50 text-amber-700 border-amber-100';
+                    else if (m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE) colorClass = 'bg-rose-50 text-rose-700 border-rose-100';
+                    else colorClass = 'bg-indigo-50 text-indigo-700 border-indigo-100';
+                    if (slot.isCompleted) colorClass = 'bg-green-50 text-green-700 border-green-100 opacity-80';
+                    return <div key={id} className={`flex items-center gap-1.5 text-[10px] px-2 py-1.5 rounded-lg font-bold border ${colorClass}`}><span>{m.name}</span></div>;
+                })}
+            </div>
+        </div>
+    </div>
+);
+
+const CollapsibleProgressSection = ({ title, members, data, icon: Icon, color }: any) => {
+    const [isOpen, setIsOpen] = useState(false);
+    if(members.length === 0) return null;
+
+    const colorClasses: Record<string, string> = {
+        indigo: 'text-indigo-600 bg-indigo-50 border-indigo-100',
+        amber: 'text-amber-600 bg-amber-50 border-amber-100',
+        rose: 'text-rose-600 bg-rose-50 border-rose-100'
+    };
+
+    return (
+        <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+            <button onClick={() => setIsOpen(!isOpen)} className={`w-full p-4 flex items-center justify-between transition-colors ${isOpen ? 'bg-slate-50' : 'bg-white'}`}>
+                <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-xl ${colorClasses[color].replace('border-indigo-100','')}`}><Icon size={18}/></div>
+                    <span className="font-bold text-slate-800 text-sm">{title} ({members.length})</span>
+                </div>
+                {isOpen ? <ChevronUp size={18} className="text-slate-400"/> : <ChevronDown size={18} className="text-slate-400"/>}
+            </button>
+            
+            {isOpen && (
+                <div className="divide-y divide-slate-50">
+                    {members.map((m: Member) => {
+                        const stats = getMemberStats(m.id, data);
+                        return (
+                            <div key={m.id} className="p-4 hover:bg-slate-50 transition-colors">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h4 className="font-bold text-slate-700 text-sm">{m.name}</h4>
+                                    <div className="flex gap-1">
+                                        <Badge label="W" value={stats.prayer.week} />
+                                        <Badge label="M" value={stats.prayer.month} />
+                                        <Badge label="Q" value={stats.prayer.quarter} />
+                                        <Badge label="Y" value={stats.prayer.year} highlight />
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase mb-1">
+                                        <span>Visits</span>
+                                        <span>{stats.visits}/2</span>
+                                    </div>
+                                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                        <div className="h-full bg-blue-500 rounded-full" style={{width: `${Math.min(100, (stats.visits/2)*100)}%`}}></div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const CollapsibleContactSection = ({ title, members, icon: Icon, color }: any) => {
+    const [isOpen, setIsOpen] = useState(false);
+    if(members.length === 0) return null;
+
+    const colorClasses: Record<string, string> = {
+        indigo: 'text-indigo-600 bg-indigo-50 border-indigo-100',
+        amber: 'text-amber-600 bg-amber-50 border-amber-100',
+        rose: 'text-rose-600 bg-rose-50 border-rose-100'
+    };
+
+    return (
+        <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+            <button onClick={() => setIsOpen(!isOpen)} className={`w-full p-4 flex items-center justify-between transition-colors ${isOpen ? 'bg-slate-50' : 'bg-white'}`}>
+                <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-xl ${colorClasses[color].replace('border-indigo-100','')}`}><Icon size={18}/></div>
+                    <span className="font-bold text-slate-800 text-sm">{title} ({members.length})</span>
+                </div>
+                {isOpen ? <ChevronUp size={18} className="text-slate-400"/> : <ChevronDown size={18} className="text-slate-400"/>}
+            </button>
+            
+            {isOpen && (
+                <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50/50">
+                    {members.map((member: Member) => {
+                      const phone = member.phone || member.parentPhone;
+                      const hasPhone = !!phone;
+                      const gps = member.gpsCoordinates;
+                      const address = member.address;
+                      const hasLoc = !!gps || !!address;
+                      const mapLink = gps 
+                        ? `https://www.google.com/maps/dir/?api=1&destination=${gps}`
+                        : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address || '')}`;
+
+                      return (
+                          <div key={member.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
+                              <div>
+                                  <h4 className="font-bold text-slate-800 text-sm">{member.name}</h4>
+                                  {address && <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1"><MapPin size={10}/> {address.substring(0,20)}...</div>}
+                              </div>
+                              <div className="flex gap-2">
+                                  {hasPhone ? (
+                                      <>
+                                        <a href={`tel:${phone}`} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors"><Phone size={16}/></a>
+                                        <a href={`sms:${phone}`} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"><MessageSquare size={16}/></a>
+                                      </>
+                                  ) : (
+                                      <div className="p-2 bg-slate-50 text-slate-300 rounded-lg"><Phone size={16}/></div>
+                                  )}
+                                  {hasLoc ? (
+                                      <a href={mapLink} target="_blank" rel="noopener noreferrer" className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"><Map size={16}/></a>
+                                  ) : (
+                                      <div className="p-2 bg-slate-50 text-slate-300 rounded-lg"><Map size={16}/></div>
+                                  )}
+                              </div>
+                          </div>
+                      );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const Badge = ({ label, value, highlight }: any) => (
+    <div className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border flex flex-col items-center leading-none ${highlight ? 'bg-indigo-50 border-indigo-100 text-indigo-700' : 'bg-slate-50 border-slate-100 text-slate-500'}`}>
+        <span className="opacity-50 text-[8px]">{label}</span>
+        <span>{value}</span>
+    </div>
+);
+
+const getMemberStats = (memberId: string, data: AppData) => {
+    const year = new Date().getFullYear();
+    // Visits (Count completed sessions where visited)
+    const visits = (data.outreachSessions || [])
+        .filter(s => s.status === 'COMPLETED' && new Date(s.date).getFullYear() === year && s.visitedMemberIds?.includes(memberId))
+        .length;
+
+    // Prayers
+    const prayers = (data.prayerSchedule || []).filter(s => s.isCompleted && s.assignedMemberIds.includes(memberId));
+    const now = new Date();
+    const oneWeek = 7 * 24 * 60 * 60 * 1000;
+    
+    return {
+        visits,
+        prayer: {
+            week: prayers.filter(s => Math.abs(now.getTime() - new Date(s.date).getTime()) < oneWeek).length,
+            month: prayers.filter(s => new Date(s.date).getMonth() === now.getMonth() && new Date(s.date).getFullYear() === year).length,
+            quarter: prayers.filter(s => Math.floor(new Date(s.date).getMonth() / 3) === Math.floor(now.getMonth() / 3) && new Date(s.date).getFullYear() === year).length,
+            year: prayers.filter(s => new Date(s.date).getFullYear() === year).length
+        }
+    };
+};
 
 const SessionChildList = ({ session, data, onToggle, onMove }: { session: OutreachSession, data: AppData, onToggle: (sid: string, mid: string) => void, onMove: (mid: string, sid: string) => void }) => {
     return (
