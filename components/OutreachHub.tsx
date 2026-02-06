@@ -697,7 +697,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                       <span className="text-sm">Save Changes</span>
                       <span className="text-[10px] font-medium opacity-80">
                           {changeCounts.marked > 0 ? `+${changeCounts.marked} marked` : ''} 
-                          {changeCounts.marked > 0 && changeCounts.unmarked > 0 ? ', ' : ''}
+                          //{changeCounts.marked > 0 && changeCounts.unmarked > 0 ? ', ' : ''}
                           {changeCounts.unmarked > 0 ? `-${changeCounts.unmarked} unmarked` : ''}
                       </span>
                   </div>
