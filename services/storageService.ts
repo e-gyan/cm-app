@@ -1,4 +1,4 @@
-import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig, Transaction, Notification, NotificationType, OutreachSession, PrayerSlot, Role } from '../types';
+import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig, Transaction, Notification, NotificationType, OutreachSession, PrayerSlot, Role, ServiceType } from '../types';
 import { INITIAL_MEMBERS, INITIAL_ATTENDANCE, DEFAULT_CLOUD_CONFIG } from '../constants';
 import { sanitizeInput, hashString, isValidSchema, hashPasscode, verifyPasscode } from './securityService';
 
@@ -133,6 +133,7 @@ export const saveCloudConfig = (config: CloudConfig) => {
     }
 };
 
+// Helper to try Master Key first, then Access Key
 const fetchWithRetryHeaders = async (url: string, method: string, apiKey: string, body?: string) => {
     const headersMaster = {
         'Content-Type': 'application/json',
@@ -141,6 +142,8 @@ const fetchWithRetryHeaders = async (url: string, method: string, apiKey: string
 
     try {
         let response = await fetch(url, { method, headers: headersMaster, body });
+        
+        // If Master Key fails (401/403), try Access Key
         if (response.status === 401 || response.status === 403) {
             const headersAccess = {
                 'Content-Type': 'application/json',
@@ -257,10 +260,8 @@ export const getAppData = (): AppData => {
   return inMemoryData;
 };
 
-// ... (Authentication, Import, Member Management, Attendance Management, Automation Rules code remains unchanged)
-// ... Skipping unchanged sections for brevity ... 
-
-// --- AUTHENTICATION & SECURITY ---
+// ... (Authentication, Import, Member Management) ...
+// (Kept compact to focus on the fixes)
 interface LoginAttempt { count: number; lastAttempt: number; lockedUntil: number | null; }
 const getLoginAttempts = (): LoginAttempt => { const stored = localStorage.getItem(LOGIN_ATTEMPTS_KEY); return stored ? JSON.parse(stored) : { count: 0, lastAttempt: 0, lockedUntil: null }; };
 const saveLoginAttempts = (attempt: LoginAttempt) => { localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(attempt)); };
@@ -284,7 +285,29 @@ export const addTransaction = (txn: Partial<Transaction>) => { if (!txn.amount |
 export const deleteTransaction = (id: string) => { if (!inMemoryData.transactions) return; inMemoryData.transactions = inMemoryData.transactions.filter(t => t.id !== id); isDirty = true; persistData('IMMEDIATE'); };
 export const saveOutreachSession = (session: OutreachSession) => { if (!inMemoryData.outreachSessions) inMemoryData.outreachSessions = []; const idx = inMemoryData.outreachSessions.findIndex(s => s.id === session.id); if (!session.visitedMemberIds) session.visitedMemberIds = []; if (idx >= 0) inMemoryData.outreachSessions[idx] = session; else inMemoryData.outreachSessions.push(session); isDirty = true; return persistData('IMMEDIATE'); };
 export const deleteOutreachSession = async (id: string) => { if (!inMemoryData.outreachSessions) return; inMemoryData.outreachSessions = inMemoryData.outreachSessions.filter(s => s.id !== id); isDirty = true; await persistData('IMMEDIATE'); };
-export const saveAttendance = (date: string, churchId: Church, presentIds: string[], punctualIds: string[]) => { const existingIndex = inMemoryData.attendance.findIndex(r => r.date === date && r.churchId === churchId); const record: AttendanceRecord = { date, churchId, presentMemberIds: presentIds, punctualMemberIds: punctualIds }; if (existingIndex >= 0) { inMemoryData.attendance[existingIndex] = record; } else { inMemoryData.attendance.push(record); } isDirty = true; persistData('DEBOUNCE'); if (churchId !== 'CM') { checkAndAutoUpdateMemberStatus(churchId); } autoTransferMembersBasedOnAge(); };
+
+// Updated saveAttendance to accept serviceMap
+export const saveAttendance = (date: string, churchId: Church, presentIds: string[], punctualIds: string[], serviceMap?: Record<string, ServiceType>) => { 
+    const existingIndex = inMemoryData.attendance.findIndex(r => r.date === date && r.churchId === churchId); 
+    const record: AttendanceRecord = { 
+        date, 
+        churchId, 
+        presentMemberIds: presentIds, 
+        punctualMemberIds: punctualIds,
+        serviceMap: serviceMap // Persist the service map
+    }; 
+    if (existingIndex >= 0) { 
+        inMemoryData.attendance[existingIndex] = record; 
+    } else { 
+        inMemoryData.attendance.push(record); 
+    } 
+    isDirty = true; 
+    persistData('DEBOUNCE'); 
+    if (churchId !== 'CM') { 
+        checkAndAutoUpdateMemberStatus(churchId); 
+    } 
+    autoTransferMembersBasedOnAge(); 
+};
 
 export const savePrayerSlot = (slot: PrayerSlot) => {
     if (!inMemoryData.prayerSchedule) inMemoryData.prayerSchedule = [];
@@ -295,203 +318,5 @@ export const savePrayerSlot = (slot: PrayerSlot) => {
     return persistData('IMMEDIATE');
 };
 
-export const generateOutreachSchedule = (dates: string[], members: Member[]): { success: boolean, message: string } => {
-    if (dates.length === 0 || members.length === 0) return { success: false, message: 'No dates or members.' };
-    if (!inMemoryData.outreachSessions) inMemoryData.outreachSessions = [];
-
-    const existingDates = inMemoryData.outreachSessions.map(s => s.date);
-    const duplicates = dates.filter(d => existingDates.includes(d));
-    if (duplicates.length > 0) return { success: false, message: `Dates already exist.` };
-
-    const today = new Date().toISOString().split('T')[0];
-    const missedMemberIds = new Set<string>();
-    inMemoryData.outreachSessions.forEach(session => {
-        if (session.date < today && session.status !== 'COMPLETED') {
-            const visited = session.visitedMemberIds || [];
-            session.assignedMemberIds.forEach(id => {
-                if (!visited.includes(id)) missedMemberIds.add(id);
-            });
-        }
-    });
-
-    const missedMembers = members.filter(m => missedMemberIds.has(m.id));
-    const generalPool = members.filter(m => !missedMemberIds.has(m.id));
-
-    const active = generalPool.filter(m => m.status === MemberStatus.ACTIVE && m.type === MemberType.MEMBER);
-    const fnf = generalPool.filter(m => m.type === MemberType.FNF);
-    const inconsistent = generalPool.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE);
-
-    const shuffle = (array: Member[]) => array.sort(() => Math.random() - 0.5);
-    shuffle(active); shuffle(fnf); shuffle(inconsistent);
-
-    const priorityQueue = [...missedMembers]; 
-    let dateIndex = 0;
-    
-    while (dateIndex < dates.length) {
-        if (priorityQueue.length === 0 && active.length === 0 && fnf.length === 0 && inconsistent.length === 0) break;
-
-        const group: string[] = [];
-        const slotsPerDay = 4;
-
-        while (group.length < slotsPerDay && priorityQueue.length > 0) {
-            group.push(priorityQueue.shift()!.id);
-        }
-
-        if (group.length < slotsPerDay) {
-             if (fnf.length > 0) group.push(fnf.shift()!.id);
-             if (inconsistent.length > 0 && group.length < slotsPerDay) group.push(inconsistent.shift()!.id);
-             while (group.length < slotsPerDay) {
-                 if (active.length > 0) group.push(active.shift()!.id);
-                 else if (fnf.length > 0) group.push(fnf.shift()!.id);
-                 else if (inconsistent.length > 0) group.push(inconsistent.shift()!.id);
-                 else break;
-             }
-        }
-
-        if (group.length > 0) {
-            inMemoryData.outreachSessions.push({
-                id: crypto.randomUUID(),
-                date: dates[dateIndex],
-                startTime: '10:00',
-                endTime: '15:00',
-                assignedMemberIds: group,
-                visitedMemberIds: [], 
-                status: 'PENDING'
-            });
-        }
-        dateIndex++;
-    }
-    
-    isDirty = true;
-    persistData('IMMEDIATE');
-    return { success: true, message: `Scheduled ${dates.length} visits.` };
-};
-
-export const generatePrayerSchedule = (startWeekDate: Date, members: Member[]): { success: boolean, message: string } => {
-    if (!inMemoryData.prayerSchedule) inMemoryData.prayerSchedule = [];
-    
-    // --- 1. Identify Missed Members from Expired Slots ---
-    const today = new Date().toISOString().split('T')[0];
-    const missedIds = new Set<string>();
-    
-    inMemoryData.prayerSchedule.forEach(slot => {
-        // If expired (older than today) and NOT completed, those kids were missed.
-        if (slot.date < today && !slot.isCompleted) {
-            slot.assignedMemberIds.forEach(id => missedIds.add(id));
-        }
-    });
-
-    // --- 2. Filter Pool Strict (Active, FNF, Inconsistent) ---
-    // Only these types are allowed for prayer
-    const allowedTypes = [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT];
-    
-    // Split members into Missed (Priority) and Clean (Available)
-    const missedMembers = members.filter(m => missedIds.has(m.id) && allowedTypes.includes(m.type) && m.status !== MemberStatus.ARCHIVED);
-    const cleanMembers = members.filter(m => !missedIds.has(m.id) && allowedTypes.includes(m.type) && m.status !== MemberStatus.ARCHIVED);
-
-    // Sub-pools for clean members (used for refilling)
-    let active = cleanMembers.filter(m => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE);
-    let fnf = cleanMembers.filter(m => m.type === MemberType.FNF);
-    let inconsistent = cleanMembers.filter(m => m.type === MemberType.INCONSISTENT || (m.status === MemberStatus.NOT_ACTIVE && allowedTypes.includes(m.type)));
-
-    const shuffle = (arr: Member[]) => arr.sort(() => Math.random() - 0.5);
-    active = shuffle([...active]); 
-    fnf = shuffle([...fnf]); 
-    inconsistent = shuffle([...inconsistent]);
-    
-    // Missed members go to the front of the line
-    const priorityPool = shuffle([...missedMembers]);
-
-    const days = 5; // Mon-Fri
-    let generatedCount = 0;
-
-    for (let i = 0; i < days; i++) {
-        const d = new Date(startWeekDate);
-        d.setDate(startWeekDate.getDate() + i);
-        const dateStr = d.toISOString().split('T')[0];
-        
-        // Skip if schedule exists for this date
-        if (inMemoryData.prayerSchedule.some(s => s.date === dateStr)) continue;
-
-        const dailyIds: Set<string> = new Set();
-        const TARGET_PER_DAY = 5; // STRICT 5 CHILDREN LIMIT
-
-        // A. Fill from Priority Pool (Missed)
-        while(priorityPool.length > 0 && dailyIds.size < TARGET_PER_DAY) {
-            dailyIds.add(priorityPool.shift()!.id);
-        }
-
-        // Helper to grab from pool with potential refill logic
-        const getFromPool = (pool: Member[], source: Member[]): Member | null => {
-            if (pool.length === 0 && source.length > 0) {
-                // Refill if empty
-                pool.push(...shuffle([...source])); 
-            }
-            if (pool.length === 0) return null;
-
-            // Try to find someone not already picked TODAY
-            let candidate = pool.shift();
-            let tries = 0;
-            // simple check to avoid infinite loop if all source members are already picked today
-            while (candidate && dailyIds.has(candidate.id) && tries < source.length + 2) {
-                pool.push(candidate); // put back
-                candidate = pool.shift(); // try next
-                tries++;
-            }
-            return candidate || null;
-        };
-
-        // Source copies for refill mechanism
-        const sourceActive = members.filter(m => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE);
-        const sourceFNF = members.filter(m => m.type === MemberType.FNF);
-        const sourceInc = members.filter(m => m.type === MemberType.INCONSISTENT || (m.status === MemberStatus.NOT_ACTIVE && allowedTypes.includes(m.type)));
-
-        // B. Ensure we try to get specific mix if spots available
-        // Try to get at least 1 FNF if not present
-        if (dailyIds.size < TARGET_PER_DAY) {
-             const hasFNF = Array.from(dailyIds).some(id => members.find(m => m.id === id)?.type === MemberType.FNF);
-             if (!hasFNF) {
-                 const m = getFromPool(fnf, sourceFNF);
-                 if (m) dailyIds.add(m.id);
-             }
-        }
-
-        // Try to get at least 1 Inconsistent if not present
-        if (dailyIds.size < TARGET_PER_DAY) {
-             const hasInc = Array.from(dailyIds).some(id => members.find(m => m.id === id)?.type === MemberType.INCONSISTENT);
-             if (!hasInc) {
-                 const m = getFromPool(inconsistent, sourceInc);
-                 if (m) dailyIds.add(m.id);
-             }
-        }
-
-        // C. Fill remaining spots with Active (primary) or fallbacks
-        while (dailyIds.size < TARGET_PER_DAY) {
-             let m = getFromPool(active, sourceActive);
-             if (!m) m = getFromPool(fnf, sourceFNF); // Fallback to FNF
-             if (!m) m = getFromPool(inconsistent, sourceInc); // Fallback to Inc
-             
-             if (m) {
-                 dailyIds.add(m.id);
-             } else {
-                 break; // No more members available at all
-             }
-        }
-
-        if (dailyIds.size > 0) {
-            inMemoryData.prayerSchedule.push({
-                id: crypto.randomUUID(),
-                date: dateStr,
-                dayOfWeek: d.toLocaleDateString('en-US', { weekday: 'long'}),
-                assignedMemberIds: Array.from(dailyIds),
-                isCompleted: false,
-                durationMins: 30
-            });
-            generatedCount++;
-        }
-    }
-
-    isDirty = true;
-    persistData('IMMEDIATE');
-    return { success: true, message: `Generated ${generatedCount} days. ${missedIds.size > 0 ? `Inc. ${missedIds.size} missed prayers.` : ''}` };
-};
+export const generateOutreachSchedule = (dates: string[], members: Member[]): { success: boolean, message: string } => { if (dates.length === 0 || members.length === 0) return { success: false, message: 'No dates or members.' }; if (!inMemoryData.outreachSessions) inMemoryData.outreachSessions = []; const existingDates = inMemoryData.outreachSessions.map(s => s.date); const duplicates = dates.filter(d => existingDates.includes(d)); if (duplicates.length > 0) return { success: false, message: `Dates already exist.` }; const today = new Date().toISOString().split('T')[0]; const missedMemberIds = new Set<string>(); inMemoryData.outreachSessions.forEach(session => { if (session.date < today && session.status !== 'COMPLETED') { const visited = session.visitedMemberIds || []; session.assignedMemberIds.forEach(id => { if (!visited.includes(id)) missedMemberIds.add(id); }); } }); const missedMembers = members.filter(m => missedMemberIds.has(m.id)); const generalPool = members.filter(m => !missedMemberIds.has(m.id)); const active = generalPool.filter(m => m.status === MemberStatus.ACTIVE && m.type === MemberType.MEMBER); const fnf = generalPool.filter(m => m.type === MemberType.FNF); const inconsistent = generalPool.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE); const shuffle = (array: Member[]) => array.sort(() => Math.random() - 0.5); shuffle(active); shuffle(fnf); shuffle(inconsistent); const priorityQueue = [...missedMembers]; let dateIndex = 0; while (dateIndex < dates.length) { if (priorityQueue.length === 0 && active.length === 0 && fnf.length === 0 && inconsistent.length === 0) break; const group: string[] = []; const slotsPerDay = 4; while (group.length < slotsPerDay && priorityQueue.length > 0) { group.push(priorityQueue.shift()!.id); } if (group.length < slotsPerDay) { if (fnf.length > 0) group.push(fnf.shift()!.id); if (inconsistent.length > 0 && group.length < slotsPerDay) group.push(inconsistent.shift()!.id); while (group.length < slotsPerDay) { if (active.length > 0) group.push(active.shift()!.id); else if (fnf.length > 0) group.push(fnf.shift()!.id); else if (inconsistent.length > 0) group.push(inconsistent.shift()!.id); else break; } } if (group.length > 0) { inMemoryData.outreachSessions.push({ id: crypto.randomUUID(), date: dates[dateIndex], startTime: '10:00', endTime: '15:00', assignedMemberIds: group, visitedMemberIds: [], status: 'PENDING' }); } dateIndex++; } isDirty = true; persistData('IMMEDIATE'); return { success: true, message: `Scheduled ${dates.length} visits.` }; };
+export const generatePrayerSchedule = (startWeekDate: Date, members: Member[]): { success: boolean, message: string } => { if (!inMemoryData.prayerSchedule) inMemoryData.prayerSchedule = []; const today = new Date().toISOString().split('T')[0]; const missedIds = new Set<string>(); inMemoryData.prayerSchedule.forEach(slot => { if (slot.date < today && !slot.isCompleted) { slot.assignedMemberIds.forEach(id => missedIds.add(id)); } }); const allowedTypes = [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT]; const missedMembers = members.filter(m => missedIds.has(m.id) && allowedTypes.includes(m.type) && m.status !== MemberStatus.ARCHIVED); const cleanMembers = members.filter(m => !missedIds.has(m.id) && allowedTypes.includes(m.type) && m.status !== MemberStatus.ARCHIVED); let active = cleanMembers.filter(m => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE); let fnf = cleanMembers.filter(m => m.type === MemberType.FNF); let inconsistent = cleanMembers.filter(m => m.type === MemberType.INCONSISTENT || (m.status === MemberStatus.NOT_ACTIVE && allowedTypes.includes(m.type))); const shuffle = (arr: Member[]) => arr.sort(() => Math.random() - 0.5); active = shuffle([...active]); fnf = shuffle([...fnf]); inconsistent = shuffle([...inconsistent]); const priorityPool = shuffle([...missedMembers]); const days = 5; let generatedCount = 0; for (let i = 0; i < days; i++) { const d = new Date(startWeekDate); d.setDate(startWeekDate.getDate() + i); const dateStr = d.toISOString().split('T')[0]; if (inMemoryData.prayerSchedule.some(s => s.date === dateStr)) continue; const dailyIds: Set<string> = new Set(); const TARGET_PER_DAY = 5; while(priorityPool.length > 0 && dailyIds.size < TARGET_PER_DAY) { dailyIds.add(priorityPool.shift()!.id); } const getFromPool = (pool: Member[], source: Member[]): Member | null => { if (pool.length === 0 && source.length > 0) { pool.push(...shuffle([...source])); } if (pool.length === 0) return null; let candidate = pool.shift(); let tries = 0; while (candidate && dailyIds.has(candidate.id) && tries < source.length + 2) { pool.push(candidate); candidate = pool.shift(); tries++; } return candidate || null; }; const sourceActive = members.filter(m => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE); const sourceFNF = members.filter(m => m.type === MemberType.FNF); const sourceInc = members.filter(m => m.type === MemberType.INCONSISTENT || (m.status === MemberStatus.NOT_ACTIVE && allowedTypes.includes(m.type))); if (dailyIds.size < TARGET_PER_DAY) { const hasFNF = Array.from(dailyIds).some(id => members.find(m => m.id === id)?.type === MemberType.FNF); if (!hasFNF) { const m = getFromPool(fnf, sourceFNF); if (m) dailyIds.add(m.id); } } if (dailyIds.size < TARGET_PER_DAY) { const hasInc = Array.from(dailyIds).some(id => members.find(m => m.id === id)?.type === MemberType.INCONSISTENT); if (!hasInc) { const m = getFromPool(inconsistent, sourceInc); if (m) dailyIds.add(m.id); } } while (dailyIds.size < TARGET_PER_DAY) { let m = getFromPool(active, sourceActive); if (!m) m = getFromPool(fnf, sourceFNF); if (!m) m = getFromPool(inconsistent, sourceInc); if (m) { dailyIds.add(m.id); } else { break; } } if (dailyIds.size > 0) { inMemoryData.prayerSchedule.push({ id: crypto.randomUUID(), date: dateStr, dayOfWeek: d.toLocaleDateString('en-US', { weekday: 'long'}), assignedMemberIds: Array.from(dailyIds), isCompleted: false, durationMins: 30 }); generatedCount++; } } isDirty = true; persistData('IMMEDIATE'); return { success: true, message: `Generated ${generatedCount} days. ${missedIds.size > 0 ? `Inc. ${missedIds.size} missed prayers.` : ''}` }; };

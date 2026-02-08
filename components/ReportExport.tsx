@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { AppData, MemberType, Church, Member, MemberStatus } from '../types';
+import { AppData, MemberType, Church, Member, MemberStatus, ServiceType } from '../types';
 import { Copy, FileText, CheckCircle, Database, Download, Upload, AlertCircle, RefreshCw, Cloud, Lock, Code, MessageCircle, BookOpen, Compass, GitBranch, ArrowRight, ChevronDown, Calendar, Target, TrendingUp, Save } from 'lucide-react';
 import { getSundaysInYear, DEFAULT_CLOUD_CONFIG } from '../constants';
 import { importData, saveCloudConfig, syncFromCloud, updateTargets } from '../services/storageService';
@@ -13,7 +13,7 @@ interface ReportExportProps {
 
 const formatDateDDMMYYYY = (dateStr: string) => {
     const d = new Date(dateStr);
-    return d.toLocaleDateString('en-GB'); // DD/MM/YYYY
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
 const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurch, currentUser }) => {
@@ -170,12 +170,12 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
         year: 'numeric'
     });
 
+    let ujOutreachText = '';
+
     // --- UJ OUTREACH REPORT (Special Section) ---
     if (activeChurch === 'UJ') {
         const today = new Date().toISOString().split('T')[0];
         
-        // Find visits around this date (e.g. previous saturday)
-        // For simplicity, showing completed visits from the last 7 days
         const recentVisits = (data.outreachSessions || []).filter(s => {
             const d = new Date(s.date);
             const rDate = new Date(selectedDate);
@@ -184,7 +184,6 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
         });
 
         // Prayer stats for this week
-        const startOfWeek = new Date(selectedDate); // Approx
         const prayerSlots = (data.prayerSchedule || []).filter(s => s.isCompleted);
         const prayerCount = prayerSlots.length;
 
@@ -204,8 +203,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
         outreachSection += `\n*Prayer Tracking*\n`;
         outreachSection += `• ${prayerCount} Prayer Slots completed recently.\n`;
         
-        // This variable is appended to the standard report below
-        var ujOutreachText = outreachSection;
+        ujOutreachText = outreachSection;
     }
 
     // --- ADMIN GLOBAL REPORT (Figures Only) ---
@@ -233,21 +231,17 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
              const staffCount = staff.length;
              totalTeachers += staffCount;
 
-             // Logic: CM branch is specifically for staff/admin, so we don't count "members" there usually
-             // But if data exists, we report it.
              const membersCount = children.filter(m => m.type === MemberType.MEMBER).length;
              const fnfCount = children.filter(m => m.type === MemberType.FNF).length;
              const inconsistentCount = children.filter(m => m.type === MemberType.INCONSISTENT).length;
              const notMemberCount = children.filter(m => m.type === MemberType.NOT_MEMBER).length;
 
              const branchTotal = children.length;
-             // Only add children to ministry total if it's NOT the CM administrative branch, unless user mistakenly added kids there
              ministryTotal += branchTotal;
 
              if (branchTotal > 0 || staffCount > 0) {
                  report += `\n*${branch} CHURCH* (${branchTotal})\n`;
                  
-                 // CM Branch specifically usually only lists teachers
                  if (branch === 'CM') {
                      report += `Staff Present: ${staffCount}\n`;
                  } else {
@@ -277,7 +271,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
          return report;
     }
 
-    // --- SINGLE BRANCH REPORT (Names included) ---
+    // --- SINGLE BRANCH REPORT (Names included with Service Split) ---
     const record = data.attendance.find(r => r.date === selectedDate && r.churchId === activeChurch);
     if (!record && !ujOutreachText) return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
 
@@ -287,49 +281,83 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     presentMembers.sort((a, b) => a.name.localeCompare(b.name));
 
     const teachers = presentMembers.filter(m => m.type === MemberType.TEACHER);
-    const members = presentMembers.filter(m => m.type === MemberType.MEMBER);
-    const fnfs = presentMembers.filter(m => m.type === MemberType.FNF);
-    const inconsistent = presentMembers.filter(m => m.type === MemberType.INCONSISTENT);
-    const notMembers = presentMembers.filter(m => m.type === MemberType.NOT_MEMBER);
     
+    // Helper to get service
+    const getService = (id: string) => record?.serviceMap?.[id] || 'JOY'; // Default to Joy if legacy
+
+    // Punctual Lists
+    const punctualIds = record?.punctualMemberIds || [];
+    const joyPunctual = punctualIds.filter(id => getService(id) === 'JOY').map(id => data.members.find(m => m.id === id)).filter(Boolean);
+    const enlargePunctual = punctualIds.filter(id => getService(id) === 'ENLARGEMENT').map(id => data.members.find(m => m.id === id)).filter(Boolean);
+
     // Accounting count: Everyone excluding teachers
-    const accountingCount = presentMembers.length - teachers.length;
+    const allChildren = presentMembers.filter(m => !['Teacher', 'Helper', 'Volunteer'].includes(m.type));
+    const totalCount = allChildren.length;
+    
+    // Calculate Split
+    const totalJoy = allChildren.filter(m => getService(m.id) === 'JOY').length;
+    const totalEnlargement = allChildren.filter(m => getService(m.id) === 'ENLARGEMENT').length;
 
     let report = `*${activeChurch} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
     report += `------------------\n`;
-    report += `Total Present: ${accountingCount}\n\n`;
-
-    report += `*MEMBERS (${members.length})*\n`;
-    if (members.length > 0) {
-      members.forEach((m, idx) => {
-        report += `${idx + 1}. ${m.name}\n`;
-      });
+    report += `*TOTAL PRESENT: ${totalCount}*\n`;
+    if (totalJoy > 0 || totalEnlargement > 0) {
+        report += `(Joy: ${totalJoy} | Enlargement: ${totalEnlargement})\n\n`;
     } else {
-      report += `_None_\n`;
+        report += `\n`;
     }
 
-    if (fnfs.length > 0) {
-        report += `\n*FNF (${fnfs.length})*\n`;
-        fnfs.forEach((m, idx) => {
-          report += `${idx + 1}. ${m.name}\n`;
-        });
-    }
+    // --- PUNCTUAL STARS SECTION (SPLIT) ---
+    /*if (joyPunctual.length > 0 || enlargePunctual.length > 0) {
+        report += `*🌟 PUNCTUAL STARS 🌟*\n`;
+        if (joyPunctual.length > 0) {
+            report += `_Joy Service:_\n`;
+            joyPunctual.forEach((m) => report += `• ${m!.name}\n`);
+        }
+        if (enlargePunctual.length > 0) {
+            if (joyPunctual.length > 0) report += `\n`;
+            report += `_Enlargement Service:_\n`;
+            enlargePunctual.forEach((m) => report += `• ${m!.name}\n`);
+        }
+        report += `\n`;
+    }*/
 
-    if (inconsistent.length > 0) {
-        report += `\n*INCONSISTENT (${inconsistent.length})*\n`;
-        inconsistent.forEach((m, idx) => {
-          report += `${idx + 1}. ${m.name}\n`;
-        });
-    }
+    // --- Helper to render list with Joy/Enlargement split ---
+    const renderListWithServices = (list: Member[], title: string) => {
+        if (list.length === 0) return '';
+        
+        const joyAttendees = list.filter(m => getService(m.id) === 'JOY');
+        const enlargementAttendees = list.filter(m => getService(m.id) === 'ENLARGEMENT');
 
-    if (notMembers.length > 0) {
-        report += `\n*NOT A MEMBER (${notMembers.length})*\n`;
-        notMembers.forEach((m, idx) => {
-          report += `${idx + 1}. ${m.name}\n`;
-        });
-    }
+        let section = `*${title} (${list.length})*\n`;
+        
+        if (joyAttendees.length > 0) {
+            section += `_Joy Service:_\n`;
+            joyAttendees.forEach((m, i) => section += `${i + 1}. ${m.name}\n`);
+        }
 
-    // Append Outreach data for UJ
+        if (enlargementAttendees.length > 0) {
+            if (joyAttendees.length > 0) section += `\n`; // Spacer
+            section += `_Enlargement Service:_\n`;
+            enlargementAttendees.forEach((m, i) => section += `${i + 1}. ${m.name}\n`);
+        }
+        
+        return section + `\n`;
+    };
+
+    // Filter categories
+    const members = allChildren.filter(m => m.type === MemberType.MEMBER);
+    const fnfs = allChildren.filter(m => m.type === MemberType.FNF);
+    const inconsistent = allChildren.filter(m => m.type === MemberType.INCONSISTENT);
+    const notMembers = allChildren.filter(m => m.type === MemberType.NOT_MEMBER);
+
+    if (members.length > 0) report += renderListWithServices(members, 'MEMBERS');
+    else report += `*MEMBERS (0)*\n_None_\n\n`;
+
+    if (fnfs.length > 0) report += renderListWithServices(fnfs, 'FNF');
+    if (inconsistent.length > 0) report += renderListWithServices(inconsistent, 'INCONSISTENT');
+    if (notMembers.length > 0) report += renderListWithServices(notMembers, 'NOT A MEMBER');
+
     if (ujOutreachText) {
         report += ujOutreachText;
     }
@@ -350,25 +378,14 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
       window.open(url, '_blank');
   };
 
-  // --- Data Management Logic ---
-
-  const handleDownloadBackup = async () => {
-    // Force sync before download to ensure data integrity
-    setImportMsg({ type: 'success', text: 'Syncing with cloud before backup...' });
-    await syncFromCloud();
-    onUpdate(); // Refresh local data state
-    setImportMsg(null);
-
-    const jsonString = JSON.stringify(data, null, 2);
-    const blob = new Blob([jsonString], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    const dateStr = new Date().toISOString().split('T')[0];
-    link.download = `church_attendance_${dateStr}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownloadBackup = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", `cm_backup_${new Date().toISOString().split('T')[0]}.json`);
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -377,21 +394,268 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const content = e.target?.result as string;
-      const result = importData(content);
-      if (result.success) {
-        setImportMsg({ type: 'success', text: result.message });
-        onUpdate(); // Refresh app with new data
-      } else {
-        setImportMsg({ type: 'error', text: result.message });
-      }
-      setTimeout(() => setImportMsg(null), 3000);
+        const content = e.target?.result;
+        if (typeof content === 'string') {
+            const result = importData(content);
+            if (result.success) {
+                setImportMsg({ type: 'success', text: result.message });
+                onUpdate();
+            } else {
+                setImportMsg({ type: 'error', text: result.message });
+            }
+            setTimeout(() => setImportMsg(null), 3000);
+        }
     };
     reader.readAsText(file);
-    event.target.value = '';
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  // --- Render Functions ---
+
+  const renderKPIView = () => (
+      <div className="space-y-6">
+          <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-6 rounded-2xl text-white shadow-lg">
+              <h3 className="text-xl font-bold mb-2 flex items-center gap-2"><Target size={24}/> Ministry Targets</h3>
+              <p className="text-slate-300 text-sm mb-4">Set growth goals for each branch.</p>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {kpiStats.map(stat => (
+                      <div key={stat.church} className="bg-white/10 rounded-xl p-4 border border-white/10">
+                          <div className="flex justify-between items-center mb-2">
+                              <span className="font-bold text-lg">{stat.church}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${stat.population >= stat.target ? 'bg-green-500 text-white' : 'bg-white/20 text-slate-300'}`}>
+                                  {stat.target > 0 ? Math.round((stat.population / stat.target) * 100) : 0}%
+                              </span>
+                          </div>
+                          <div className="text-2xl font-bold">{stat.population} <span className="text-sm text-slate-400 font-normal">/ {stat.target}</span></div>
+                          <div className="w-full bg-black/20 h-1.5 rounded-full mt-2 overflow-hidden">
+                              <div className="bg-blue-500 h-full rounded-full" style={{width: `${Math.min(100, (stat.population / (stat.target || 1)) * 100)}%`}}></div>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+
+          {isAdmin && (
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><TrendingUp size={18}/> Edit Targets</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(c => (
+                          <div key={c}>
+                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{c} Target</label>
+                              <input 
+                                type="number" 
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800"
+                                value={editTargets[c]}
+                                onChange={(e) => setEditTargets({...editTargets, [c]: parseInt(e.target.value) || 0})}
+                              />
+                          </div>
+                      ))}
+                  </div>
+                  <button onClick={handleSaveTargets} className="mt-4 w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">
+                      <Save size={18}/> Save New Targets
+                  </button>
+              </div>
+          )}
+      </div>
+  );
+
+  return (
+    <div className="space-y-6 pb-20">
+        
+        {/* Header Section */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                <div>
+                    <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight">Reports and Insights</h2>
+                    <p className="text-slate-500 font-medium">Generate updates and manage system data.</p>
+                </div>
+                <div className="flex bg-slate-100 p-1 rounded-xl w-full md:w-auto">
+                    {[
+                        { id: 'WHATSAPP', icon: MessageCircle, label: 'Report' },
+                        { id: 'KPI', icon: Target, label: 'KPIs' },
+                        { id: 'DATA', icon: Database, label: 'Data' },
+                        { id: 'CLOUD', icon: Cloud, label: 'Sync' }
+                    ].map(tab => (
+                        <button 
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id as any)}
+                            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === tab.id ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <tab.icon size={16}/> <span className="hidden sm:inline">{tab.label}</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Notification Area */}
+            {importMsg && (
+                <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2 ${importMsg.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                    {importMsg.type === 'success' ? <CheckCircle size={20}/> : <AlertCircle size={20}/>}
+                    <span className="font-bold text-sm">{importMsg.text}</span>
+                </div>
+            )}
+
+            {/* TAB CONTENT */}
+            
+            {/* 1. WHATSAPP REPORT */}
+            {activeTab === 'WHATSAPP' && (
+                <div className="animate-in fade-in slide-in-from-bottom-2">
+                    <div className="mb-6">
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Select Report Date</label>
+                        <div className="relative">
+                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+                            <select 
+                                value={selectedDate} 
+                                onChange={(e) => setSelectedDate(e.target.value)}
+                                className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 appearance-none focus:ring-2 focus:ring-indigo-500 outline-none"
+                            >
+                                {sundays2026.map(d => (
+                                    <option key={d.toISOString()} value={d.toISOString().split('T')[0]}>
+                                        {formatDateDDMMYYYY(d.toISOString().split('T')[0])}
+                                    </option>
+                                ))}
+                            </select>
+                            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18}/>
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 font-mono text-xs text-slate-700 whitespace-pre-wrap max-h-96 overflow-y-auto mb-6 shadow-inner">
+                        {generateReport()}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <button 
+                            onClick={handleCopyReport}
+                            className={`flex items-center justify-center gap-2 py-3 rounded-xl font-bold transition-all ${copiedReport ? 'bg-green-600 text-white shadow-lg shadow-green-200' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+                        >
+                            {copiedReport ? <CheckCircle size={18}/> : <Copy size={18}/>}
+                            {copiedReport ? 'Copied!' : 'Copy Text'}
+                        </button>
+                        <button 
+                            onClick={handleOpenWhatsApp}
+                            className="flex items-center justify-center gap-2 py-3 bg-[#25D366] text-white rounded-xl font-bold hover:bg-[#20bd5a] shadow-lg shadow-green-100 transition-all active:scale-95"
+                        >
+                            <MessageCircle size={18}/> WhatsApp
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* 2. KPI VIEW */}
+            {activeTab === 'KPI' && renderKPIView()}
+
+            {/* 3. DATA MANAGEMENT */}
+            {activeTab === 'DATA' && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+                    <button 
+                        onClick={handleDownloadBackup}
+                        className="w-full flex items-center justify-between p-4 bg-white border border-slate-200 rounded-2xl hover:border-indigo-300 hover:shadow-md transition-all group"
+                    >
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl group-hover:scale-110 transition-transform"><Download size={20}/></div>
+                            <div className="text-left">
+                                <h4 className="font-bold text-slate-800">Backup Data</h4>
+                                <p className="text-xs text-slate-500">Download JSON file</p>
+                            </div>
+                        </div>
+                        <ArrowRight size={18} className="text-slate-300 group-hover:text-indigo-600"/>
+                    </button>
+
+                    <div className="relative group">
+                        <input 
+                            type="file" 
+                            ref={fileInputRef}
+                            onChange={handleFileUpload}
+                            accept=".json"
+                            className="hidden"
+                        />
+                        <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="w-full flex items-center justify-between p-4 bg-white border border-slate-200 rounded-2xl hover:border-indigo-300 hover:shadow-md transition-all"
+                        >
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl group-hover:scale-110 transition-transform"><Upload size={20}/></div>
+                                <div className="text-left">
+                                    <h4 className="font-bold text-slate-800">Restore Data</h4>
+                                    <p className="text-xs text-slate-500">Upload backup file</p>
+                                </div>
+                            </div>
+                            <ArrowRight size={18} className="text-slate-300 group-hover:text-indigo-600"/>
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* 4. CLOUD CONFIG */}
+            {activeTab === 'CLOUD' && (
+                <div className="animate-in fade-in slide-in-from-bottom-2">
+                    {isHardcoded ? (
+                        <div className="p-6 bg-green-50 border border-green-100 rounded-2xl text-center">
+                            <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                                <Lock size={24}/>
+                            </div>
+                            <h3 className="font-bold text-green-800 mb-1">Managed Cloud Config</h3>
+                            <p className="text-xs text-green-700 opacity-80 mb-4">Your cloud settings are securely managed by the application code.</p>
+                            <button 
+                                onClick={handleManualRefresh}
+                                disabled={isRefreshing}
+                                className="px-6 py-2 bg-white text-green-700 font-bold rounded-lg shadow-sm border border-green-200 text-sm flex items-center justify-center gap-2 mx-auto hover:bg-green-50"
+                            >
+                                <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''}/>
+                                {isRefreshing ? 'Syncing...' : 'Test Connection'}
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Master Key</label>
+                                <input 
+                                    type="password" 
+                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm"
+                                    value={apiKey}
+                                    onChange={e => setApiKey(e.target.value)}
+                                    placeholder="$2b$10$..."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Bin ID</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm"
+                                    value={binId}
+                                    onChange={e => setBinId(e.target.value)}
+                                    placeholder="65a..."
+                                />
+                            </div>
+                            {cloudMsg && <p className="text-xs text-red-500 font-bold">{cloudMsg}</p>}
+                            <div className="flex gap-2 mt-4">
+                                <button 
+                                    onClick={() => handleSaveCloudConfig()}
+                                    className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700"
+                                >
+                                    Save Config
+                                </button>
+                                {isCloudEnabled && (
+                                    <button 
+                                        onClick={handleManualRefresh}
+                                        className="px-4 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200"
+                                        disabled={isRefreshing}
+                                    >
+                                        <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''}/>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    </div>
+  );
   
-  const handleSaveCloudConfig = async () => {
+  // Helper for saving cloud config (defined inside render but better if extracted or properly typed above)
+  async function handleSaveCloudConfig() {
       if (!apiKey || !binId) {
           setCloudMsg('Please enter both API Key and Bin ID');
           return;
@@ -403,344 +667,18 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
           binId,
           url: 'https://api.jsonbin.io/v3/b'
       });
+      
       setIsCloudEnabled(true);
-      setCloudMsg('Connecting...');
+      setCloudMsg('');
+      setImportMsg({ type: 'success', text: 'Cloud configured successfully!' });
       
-      const result = await syncFromCloud();
-      if (result.success) {
-          setCloudMsg('Connected! Data synchronized.');
-          onUpdate();
-      } else {
-          setCloudMsg('Connection failed. Check credentials.');
-      }
-  };
-
-  const handleDisableCloud = () => {
-      saveCloudConfig({
-          enabled: false,
-          apiKey: '',
-          binId: '',
-          url: ''
-      });
-      setIsCloudEnabled(false);
-      if (!isHardcoded) {
-          setApiKey('');
-          setBinId('');
-      }
-      setCloudMsg('Cloud sync disabled.');
-  };
-
-  const reportText = generateReport();
-
-  return (
-    <div className="max-w-4xl mx-auto space-y-6">
+      setIsRefreshing(true);
+      await syncFromCloud();
+      setIsRefreshing(false);
+      onUpdate();
       
-      {/* Tabs */}
-      <div className="flex space-x-2 md:space-x-4 border-b border-gray-200 pb-3 overflow-x-auto no-scrollbar">
-        <button
-          onClick={() => setActiveTab('WHATSAPP')}
-          className={`pb-2 px-3 md:px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap outline-none ${activeTab === 'WHATSAPP' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-        >
-          <span className="flex items-center gap-2"><FileText size={16}/> Report</span>
-        </button>
-        {isAdmin && (
-            <button
-            onClick={() => setActiveTab('KPI')}
-            className={`pb-2 px-3 md:px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap outline-none ${activeTab === 'KPI' ? 'border-rose-600 text-rose-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-            >
-            <span className="flex items-center gap-2"><Target size={16}/> Targets & KPI</span>
-            </button>
-        )}
-        <button
-          onClick={() => setActiveTab('DATA')}
-          className={`pb-2 px-3 md:px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap outline-none ${activeTab === 'DATA' ? 'border-amber-600 text-amber-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-        >
-          <span className="flex items-center gap-2"><Database size={16}/> Backup</span>
-        </button>
-        {isAdmin && (
-            <button
-            onClick={() => setActiveTab('CLOUD')}
-            className={`pb-2 px-3 md:px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap outline-none ${activeTab === 'CLOUD' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-            >
-            <span className="flex items-center gap-2"><Cloud size={16}/> Cloud</span>
-            </button>
-        )}
-        <button
-          onClick={() => setActiveTab('HELP')}
-          className={`pb-2 px-3 md:px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap outline-none ${activeTab === 'HELP' ? 'border-purple-600 text-purple-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-        >
-          <span className="flex items-center gap-2"><BookOpen size={16}/> Guide</span>
-        </button>
-      </div>
-
-      {activeTab === 'WHATSAPP' && (
-        <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-left-2 relative">
-          
-          {importMsg && (
-             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-green-100 text-green-700 px-4 py-2 rounded-xl text-sm font-bold shadow-sm flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
-                 <CheckCircle size={16} /> {importMsg.text}
-             </div>
-          )}
-
-          {/* Header & Actions */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-             <div>
-                <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    Export Report
-                </h2>
-                <p className="text-xs text-gray-500 mt-1">{activeChurch === 'CM' ? 'Global Ministry Summary' : `${activeChurch} Church Detailed Report`}</p>
-             </div>
-             
-             {/* Action Buttons - Moved to top for Mobile */}
-             <div className="flex gap-2 w-full md:w-auto">
-                <button
-                    onClick={handleOpenWhatsApp}
-                    className="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-sm transition-all font-bold bg-[#25D366] text-white hover:bg-[#128C7E] active:scale-95 text-sm"
-                >
-                    <MessageCircle size={18} /> Share
-                </button>
-                <button
-                    onClick={handleCopyReport}
-                    className={`
-                    flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-sm transition-all font-bold active:scale-95 text-sm
-                    ${copiedReport ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}
-                    `}
-                >
-                    {copiedReport ? <><CheckCircle size={18} /> Copied</> : <><Copy size={18} /> Copy</>}
-                </button>
-             </div>
-          </div>
-          
-          {/* Date Selector */}
-          <div className="mb-4 flex gap-2">
-             <div className="relative flex-1">
-                 <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400">
-                    <Calendar size={18} />
-                 </div>
-                 <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-400">
-                    <ChevronDown size={16} />
-                 </div>
-                 <select 
-                  value={selectedDate} 
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-gray-50 border border-gray-200 text-gray-900 text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-10 pr-10 p-3.5 appearance-none transition-shadow cursor-pointer"
-                >
-                  <option value="">-- Select Date --</option>
-                  {sundays2026.map(d => {
-                    const strDate = d.toISOString().split('T')[0];
-                    const hasData = activeChurch === 'CM' 
-                        ? data.attendance.some(r => r.date === strDate)
-                        : data.attendance.some(r => r.date === strDate && r.churchId === activeChurch);
-                    
-                    return <option key={strDate} value={strDate}>{hasData ? '✅ ' : '⚪ '} {formatDateDDMMYYYY(strDate)}</option>
-                  })}
-                </select>
-             </div>
-             
-             {/* Manual Refresh Button */}
-             <button 
-                onClick={handleManualRefresh}
-                disabled={isRefreshing}
-                className="p-3.5 bg-slate-100 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors disabled:opacity-50"
-                title="Refresh Cloud Data"
-             >
-                 <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
-             </button>
-          </div>
-
-          {/* Report Preview */}
-          <div className="relative rounded-xl overflow-hidden border border-gray-200 shadow-inner">
-            <textarea
-                readOnly
-                value={reportText}
-                className="w-full h-[60vh] md:h-96 p-4 bg-gray-50/50 font-mono text-xs md:text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none leading-relaxed"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* KPI, HELP, CLOUD, DATA TABS REMAIN UNCHANGED BUT RENDERED */}
-      {activeTab === 'KPI' && isAdmin && (
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in">
-              <div className="mb-6 flex justify-between items-center">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2"><Target size={20} className="text-rose-500"/> Membership Targets</h3>
-                    <p className="text-sm text-gray-500">Set population goals (Active Members + FNF) for the current year.</p>
-                  </div>
-                  <button onClick={handleSaveTargets} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-colors shadow-sm active:scale-95">
-                      <Save size={16}/> Save Targets
-                  </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
-                  {kpiStats.map(stat => (
-                      <div key={stat.church} className="border border-gray-100 rounded-2xl p-4 hover:shadow-md transition-shadow relative overflow-hidden bg-white">
-                          <div className={`absolute top-0 right-0 p-2 rounded-bl-2xl text-xs font-bold text-white
-                            ${stat.church === 'UJ' ? 'bg-indigo-600' : 
-                              stat.church === 'I' ? 'bg-emerald-500' :
-                              stat.church === 'K' ? 'bg-rose-500' : 'bg-amber-500'}
-                          `}>
-                              {stat.church} Church
-                          </div>
-
-                          <div className="mt-4 flex flex-col gap-4">
-                              <div className="flex justify-between items-end">
-                                  <div>
-                                      <p className="text-xs text-gray-400 font-bold uppercase">Current Members</p>
-                                      <p className="text-3xl font-bold text-gray-800">{stat.population}</p>
-                                      <p className="text-[10px] text-gray-400">Active + FNF</p>
-                                  </div>
-                                  <div className="text-right">
-                                      <p className="text-xs text-gray-400 font-bold uppercase">Avg (5 Wks)</p>
-                                      <p className="text-xl font-bold text-gray-600">{stat.avg}</p>
-                                  </div>
-                              </div>
-                              
-                              <div>
-                                  <div className="flex justify-between text-xs font-bold text-gray-500 mb-1">
-                                      <span>Goal Progress</span>
-                                      <span>{stat.target > 0 ? Math.round((stat.population/stat.target)*100) : 0}%</span>
-                                  </div>
-                                  <div className="w-full bg-gray-100 rounded-full h-2">
-                                      <div className={`h-full rounded-full ${stat.church === 'UJ' ? 'bg-indigo-500' : stat.church === 'I' ? 'bg-emerald-500' : stat.church === 'K' ? 'bg-rose-500' : 'bg-amber-500'}`} style={{width: `${Math.min(100, (stat.population/(stat.target || 1))*100)}%`}}></div>
-                                  </div>
-                              </div>
-
-                              <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-                                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Target Count</label>
-                                  <input 
-                                      type="number" 
-                                      className="w-full p-2 bg-white border border-gray-200 rounded-lg font-bold text-gray-800 outline-none focus:ring-2 focus:ring-indigo-500"
-                                      value={editTargets[stat.church]}
-                                      onChange={(e) => setEditTargets({...editTargets, [stat.church]: parseInt(e.target.value) || 0})}
-                                  />
-                              </div>
-                          </div>
-                      </div>
-                  ))}
-              </div>
-              
-              {importMsg && (
-                  <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4">
-                      <CheckCircle size={18} className="text-green-400" />
-                      <span className="font-bold">{importMsg.text}</span>
-                  </div>
-              )}
-          </div>
-      )}
-
-      {activeTab === 'HELP' && (
-         <div className="space-y-8 animate-in fade-in">
-             {/* Help content truncated for brevity, assume same structure */}
-         </div>
-      )}
-
-      {activeTab === 'CLOUD' && isAdmin && (
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in">
-              <div className="mb-6">
-                <h3 className="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2"><Cloud size={20} className="text-blue-500"/> Seamless Cloud Sync</h3>
-                <p className="text-sm text-gray-500">
-                  Connect to a shared JSON storage (like JSONBin.io) to automatically sync data between all users. 
-                  <span className="block mt-1 font-medium text-amber-600 flex items-center gap-1"><Lock size={12}/> Admin Only Area</span>
-                </p>
-              </div>
-
-              {isCloudEnabled ? (
-                  <div className="bg-green-50 border border-green-200 rounded-2xl p-6 text-center">
-                      <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
-                          <CheckCircle size={32} />
-                      </div>
-                      <h4 className="text-xl font-bold text-green-800 mb-2">Sync Active</h4>
-                      <p className="text-green-700 mb-6">Your app is automatically syncing with the cloud.</p>
-                      
-                      <div className="flex gap-4 justify-center">
-                          <button onClick={async () => { setCloudMsg('Syncing...'); await syncFromCloud(); onUpdate(); setCloudMsg('Synced!'); }} className="px-4 py-2 bg-white border border-green-300 text-green-700 rounded-lg font-medium hover:bg-green-100 flex items-center gap-2 shadow-sm">
-                              <RefreshCw size={16}/> Sync Now
-                          </button>
-                          <button onClick={handleDisableCloud} className="px-4 py-2 bg-red-50 border border-red-200 text-red-600 rounded-lg font-medium hover:bg-red-100 shadow-sm">
-                              Disable Sync
-                          </button>
-                      </div>
-                      <p className="mt-4 text-xs text-green-600 font-medium">{cloudMsg}</p>
-                  </div>
-              ) : (
-                  <div className="space-y-4 max-w-md mx-auto">
-                      {isHardcoded && (
-                          <div className="bg-blue-50 text-blue-700 p-3 rounded-lg flex items-center gap-2 text-sm mb-4">
-                              <Code size={16}/>
-                              <span>Keys loaded from <strong>constants.ts</strong></span>
-                          </div>
-                      )}
-
-                      <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-1">X-Master-Key (API Key)</label>
-                          <input 
-                            type="password" 
-                            className="w-full p-3 border border-gray-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all disabled:bg-gray-100 disabled:text-gray-400" 
-                            placeholder="$2a$10$..." 
-                            value={apiKey} 
-                            onChange={e => setApiKey(e.target.value)}
-                            disabled={isHardcoded}
-                          />
-                      </div>
-                      <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-1">Bin ID</label>
-                          <input 
-                            type="text" 
-                            className="w-full p-3 border border-gray-200 rounded-xl font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all disabled:bg-gray-100 disabled:text-gray-400" 
-                            placeholder="678..." 
-                            value={binId} 
-                            onChange={e => setBinId(e.target.value)}
-                            disabled={isHardcoded}
-                          />
-                      </div>
-                      <button 
-                        onClick={handleSaveCloudConfig}
-                        className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md transition-all active:scale-95"
-                      >
-                        Connect & Sync
-                      </button>
-                      {cloudMsg && <p className="text-center text-sm text-red-500 mt-2 font-medium bg-red-50 py-2 rounded-lg">{cloudMsg}</p>}
-                  </div>
-              )}
-          </div>
-      )}
-
-      {activeTab === 'DATA' && (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-right-2">
-          {/* Content unchanged but rendered */}
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="border border-indigo-100 bg-indigo-50 p-6 rounded-2xl flex flex-col items-center text-center hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-4 shadow-sm">
-                <Download size={24} />
-              </div>
-              <h4 className="font-bold text-gray-800 mb-2">Backup File</h4>
-              <p className="text-xs text-gray-500 mb-6">Download a JSON file containing all members and attendance records.</p>
-              <button onClick={handleDownloadBackup} className="mt-auto w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-colors flex items-center justify-center gap-2 shadow-sm">
-                <Download size={18} /> Download
-              </button>
-            </div>
-            <div className="border border-amber-100 bg-amber-50 p-6 rounded-2xl flex flex-col items-center text-center relative hover:shadow-md transition-shadow">
-              <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mb-4 shadow-sm">
-                <Upload size={24} />
-              </div>
-              <h4 className="font-bold text-gray-800 mb-2">Restore File</h4>
-              <p className="text-xs text-gray-500 mb-6">Upload a JSON backup file to overwrite current data.</p>
-              <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".json" className="hidden" />
-              <button onClick={() => fileInputRef.current?.click()} className="mt-auto w-full py-3 bg-white border border-amber-200 text-amber-700 hover:bg-amber-100 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 shadow-sm">
-                <Upload size={18} /> Upload
-              </button>
-              {importMsg && (
-                <div className={`absolute bottom-2 left-0 right-0 mx-4 py-2 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-2 shadow-sm ${importMsg.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                  {importMsg.type === 'success' ? <CheckCircle size={14}/> : <AlertCircle size={14}/>} {importMsg.text}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+      setTimeout(() => setImportMsg(null), 3000);
+  }
 };
 
 export default ReportExport;

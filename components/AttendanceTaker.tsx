@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { AppData, Member, MemberType, MemberStatus, Church } from '../types';
+import { AppData, Member, MemberType, MemberStatus, Church, ServiceType } from '../types';
 import { getSundaysInYear } from '../constants';
-import { Search, Save, Check, Trophy, X, Calendar, UserPlus, Crown, CheckCircle2 } from 'lucide-react';
+import { Search, Save, Check, Trophy, X, Calendar, UserPlus, Crown, CheckCircle2, Sun, Zap, Filter } from 'lucide-react';
 import { addMember, saveAttendance, syncFromCloud } from '../services/storageService';
 import { sanitizeInput } from '../services/securityService';
 
@@ -24,11 +24,15 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [presentIds, setPresentIds] = useState<Set<string>>(new Set());
   const [punctualIds, setPunctualIds] = useState<Set<string>>(new Set());
+  
+  // New State for Service Logic
+  const [serviceMap, setServiceMap] = useState<Record<string, ServiceType>>({});
+  const [currentService, setCurrentService] = useState<ServiceType>('JOY'); // Default to Joy
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('All');
   
   // Internal Church Filter for Admins when activeChurch is 'CM'
-  // changed 'All' to 'COMBINED' to avoid collision with the specific church named 'All'
   const [internalChurchFilter, setInternalChurchFilter] = useState<Church | 'COMBINED'>('COMBINED');
 
   const [newMemberName, setNewMemberName] = useState('');
@@ -49,8 +53,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   // Helper to determine which branches are relevant based on mode and filter
   const getRelevantBranches = (churchFilter: Church | 'COMBINED', mode: 'MEMBERS' | 'STAFF'): Church[] => {
       if (churchFilter !== 'COMBINED') return [churchFilter];
-      // If Combined, return list based on mode
-      // Added 'All' to the list of branches for Staff mode
       return mode === 'STAFF' 
         ? ['UJ', 'I', 'K', 'LJ', 'CM', 'All'] 
         : ['UJ', 'I', 'K', 'LJ'];
@@ -59,6 +61,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   useEffect(() => {
     setPresentIds(new Set());
     setPunctualIds(new Set());
+    setServiceMap({});
 
     if (sundays2026.length > 0) {
         if (!selectedDate) {
@@ -82,6 +85,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
 
       const combinedPresent = new Set<string>();
       const combinedPunctual = new Set<string>();
+      const combinedServices: Record<string, ServiceType> = {};
 
       branchesToLoad.forEach(churchId => {
           const record = data.attendance.find(r => r.date === selectedDate && r.churchId === churchId);
@@ -100,46 +104,92 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                 return attendanceMode === 'STAFF' ? isStaff : !isStaff;
              });
 
-             targetIds.forEach(id => combinedPresent.add(id));
+             targetIds.forEach(id => {
+                 combinedPresent.add(id);
+                 // Load existing service assignment if available
+                 if (record.serviceMap && record.serviceMap[id]) {
+                     combinedServices[id] = record.serviceMap[id];
+                 }
+             });
              targetPunctual.forEach(id => combinedPunctual.add(id));
           }
       });
 
       setPresentIds(combinedPresent);
       setPunctualIds(combinedPunctual);
+      setServiceMap(combinedServices);
     }
   }, [selectedDate, data.attendance, effectiveChurch, attendanceMode, data.members]);
 
+  // --- TOGGLE LOGIC ---
   const handleToggle = (id: string) => {
-    const newSet = new Set(presentIds);
-    if (newSet.has(id)) {
-      newSet.delete(id);
-      const newPunctual = new Set(punctualIds);
-      if (newPunctual.has(id)) {
-          newPunctual.delete(id);
-          setPunctualIds(newPunctual);
-      }
+    const newPresent = new Set(presentIds);
+    const newServiceMap = { ...serviceMap };
+    
+    // If not currently present, mark present with CURRENT selected service
+    if (!newPresent.has(id)) {
+        newPresent.add(id);
+        newServiceMap[id] = currentService;
     } else {
-      newSet.add(id);
+        // If already present...
+        const assignedService = newServiceMap[id];
+        
+        // If assigned service matches current selection, toggle OFF (absent)
+        if (assignedService === currentService) {
+            newPresent.delete(id);
+            delete newServiceMap[id];
+            
+            // Remove from punctual if they become absent
+            if (punctualIds.has(id)) {
+                const newPunctual = new Set(punctualIds);
+                newPunctual.delete(id);
+                setPunctualIds(newPunctual);
+            }
+        } else {
+            // If assigned service DIFFERENT from current selection, SWITCH service
+            // e.g. Was 'JOY', now clicking while 'ENLARGEMENT' is active -> Switch to 'ENLARGEMENT'
+            newServiceMap[id] = currentService;
+        }
     }
-    setPresentIds(newSet);
+    
+    setPresentIds(newPresent);
+    setServiceMap(newServiceMap);
   };
 
   const handlePunctualToggle = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (!enablePunctuality) return;
     const newPunctual = new Set(punctualIds);
+    
+    // Determine the service of the target member (or default to current selected service)
+    const targetService = serviceMap[id] || currentService;
+
     if (newPunctual.has(id)) {
       newPunctual.delete(id);
     } else {
-      // In Combined mode, we might want to limit per church, but global limit is safer for UI
-      if (!isCombinedView && newPunctual.size >= 3) return; 
+      if (!isCombinedView) {
+          // Count existing punctual stars for THIS specific service
+          let currentServiceCount = 0;
+          newPunctual.forEach(pid => {
+              const s = serviceMap[pid] || 'JOY'; // Fallback to joy if legacy
+              if (s === targetService) currentServiceCount++;
+          });
+
+          if (currentServiceCount >= 3) {
+              alert(`Maximum 3 punctual stars allowed for ${targetService} Service.`);
+              return;
+          }
+      }
       
       newPunctual.add(id);
+      
+      // If they weren't present, add them to attendance under current service
       if (!presentIds.has(id)) {
         const newPresent = new Set(presentIds);
         newPresent.add(id);
         setPresentIds(newPresent);
+        const newServices = { ...serviceMap, [id]: currentService };
+        setServiceMap(newServices);
       }
     }
     setPunctualIds(newPunctual);
@@ -148,7 +198,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const handleSave = async () => {
     if (!selectedDate) return;
 
-    // First check cloud to ensure we have latest data
     const syncRes = await syncFromCloud();
     if (syncRes.success && syncRes.message?.includes('New data')) {
         onUpdate(); 
@@ -158,10 +207,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
     let hasActualChanges = false;
 
     branchesToSave.forEach(churchId => {
-        // Load existing record to preserve the "other" group (e.g. if editing Staff, keep Members)
         const existingRecord = data.attendance.find(r => r.date === selectedDate && r.churchId === churchId);
         
-        // Filter the current UI state to find IDs belonging to THIS church
         const currentBranchPresentIds: string[] = [...presentIds].filter(id => {
             const m = data.members.find(mem => mem.id === id);
             return m && m.assignedChurch === churchId;
@@ -174,6 +221,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
 
         let finalPresent: string[] = [];
         let finalPunctual: string[] = [];
+        let finalServiceMap: Record<string, ServiceType> = existingRecord?.serviceMap ? { ...existingRecord.serviceMap } : {};
 
         if (existingRecord) {
             if (attendanceMode === 'STAFF') {
@@ -204,15 +252,36 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
             finalPunctual = currentBranchPunctualIds;
         }
 
-        // Compare with existing to determine change status
+        // Update Service Map Logic:
+        // We only update the map for people currently being saved in this context.
+        // We do NOT delete map entries for people hidden (e.g., Joy members hidden in Enlargement view).
+        finalPresent.forEach(id => {
+            if (serviceMap[id]) {
+                finalServiceMap[id] = serviceMap[id];
+            }
+        });
+        
+        // Clean up map entries for people who are NOT in the final present list at all
+        const cleanServiceMap: Record<string, ServiceType> = {};
+        Object.keys(finalServiceMap).forEach((k) => {
+            const key = k as string;
+            if (finalPresent.includes(key)) {
+                cleanServiceMap[key] = finalServiceMap[key];
+            }
+        });
+        finalServiceMap = cleanServiceMap;
+
+        // Determine changes
         const oldPresent = existingRecord ? existingRecord.presentMemberIds.sort().join(',') : '';
         const newPresent = finalPresent.sort().join(',');
         const oldPunctual = existingRecord ? (existingRecord.punctualMemberIds || []).sort().join(',') : '';
         const newPunctual = finalPunctual.sort().join(',');
+        const oldMapStr = JSON.stringify(existingRecord?.serviceMap || {});
+        const newMapStr = JSON.stringify(finalServiceMap);
 
-        if (oldPresent !== newPresent || oldPunctual !== newPunctual) {
+        if (oldPresent !== newPresent || oldPunctual !== newPunctual || oldMapStr !== newMapStr) {
             hasActualChanges = true;
-            saveAttendance(selectedDate, churchId, finalPresent, finalPunctual);
+            saveAttendance(selectedDate, churchId, finalPresent, finalPunctual, finalServiceMap);
         }
     });
 
@@ -230,6 +299,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
     const newSet = new Set(presentIds);
     newSet.add(newMember.id);
     setPresentIds(newSet);
+    
+    // Add to current service map
+    setServiceMap(prev => ({ ...prev, [newMember.id]: currentService }));
     
     setNewMemberName('');
     setIsAddingFNF(false);
@@ -249,15 +321,22 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const filteredMembers = membersToList.filter(m => {
     const matchesSearch = m.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = filterType === 'All' || m.type === filterType;
+    
+    // --- SPECIAL LOGIC: HIDE JOY ATTENDEES IN ENLARGEMENT VIEW ---
+    if (attendanceMode === 'MEMBERS' && currentService === 'ENLARGEMENT') {
+        // If the member is already marked as 'JOY' in the current map, hide them.
+        if (serviceMap[m.id] === 'JOY') {
+            return false;
+        }
+    }
+
     return matchesSearch && matchesType;
   });
 
   const sortedMembers = [...filteredMembers].sort((a, b) => {
-    // Sort by Church first if in Combined view
     if (isCombinedView && a.assignedChurch !== b.assignedChurch) {
         return a.assignedChurch.localeCompare(b.assignedChurch);
     }
-    
     if (a.transferPendingDate && !b.transferPendingDate) return -1;
     if (!a.transferPendingDate && b.transferPendingDate) return 1;
     
@@ -273,7 +352,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
     return a.name.localeCompare(b.name);
   });
 
+  // Calculate hidden count to show user
+  const hiddenJoyCount = attendanceMode === 'MEMBERS' && currentService === 'ENLARGEMENT' 
+    ? membersToList.filter(m => serviceMap[m.id] === 'JOY').length
+    : 0;
+
   const displayCount = filteredMembers.filter(m => presentIds.has(m.id)).length;
+  // Total present in state (including hidden)
+  const totalSavedInState = presentIds.size;
   
   // Leaderboard Calc
   const leaderboardData = useMemo(() => {
@@ -303,14 +389,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
 
       return Object.entries(scores)
           .sort(([, a], [, b]) => b - a)
-          .slice(0, 10) // Top 10
+          .slice(0, 10)
           .map(([id, score], index) => ({ rank: index + 1, id, name: data.members.find(mem => mem.id === id)?.name || 'Unknown', count: score }));
   }, [data.attendance, effectiveChurch, attendanceMode, leaderboardTimeframe, data.members, isCombinedView]);
 
   const churchOptions = useMemo(() => {
       const base: Church[] = ['I', 'K', 'LJ', 'UJ'];
       if (attendanceMode === 'STAFF') return ['All', 'CM', ...base].sort();
-      return base; // Already sorted
+      return base; 
   }, [attendanceMode]);
 
   return (
@@ -319,11 +405,28 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
       {/* 1. TOP BAR */}
       <div className="shrink-0 space-y-3 z-20 pb-2">
           
-          {/* Row 1: Main Controls (Church, Date, Save) */}
+          {/* SERVICE TOGGLE (Visible only in Member Mode for UJ, I, K, LJ) */}
+          {attendanceMode === 'MEMBERS' && (effectiveChurch !== 'CM' || isCombinedView) && (
+              <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100 mb-1">
+                  <button 
+                    onClick={() => setCurrentService('JOY')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all ${currentService === 'JOY' ? 'bg-amber-100 text-amber-700 shadow-sm' : 'text-slate-400 hover:bg-slate-50'}`}
+                  >
+                      <Sun size={18} fill={currentService === 'JOY' ? "currentColor" : "none"} /> Joy Service
+                  </button>
+                  <button 
+                    onClick={() => setCurrentService('ENLARGEMENT')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all ${currentService === 'ENLARGEMENT' ? 'bg-sky-100 text-sky-700 shadow-sm' : 'text-slate-400 hover:bg-slate-50'}`}
+                  >
+                      <Zap size={18} fill={currentService === 'ENLARGEMENT' ? "currentColor" : "none"} /> Enlargement
+                  </button>
+              </div>
+          )}
+
+          {/* Row 1: Main Controls */}
           <div className="bg-white rounded-3xl p-3 md:p-4 shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-3">
             
             <div className="flex gap-2 w-full items-center">
-                {/* Admin Church Selector */}
                 {activeChurch === 'CM' && (
                     <div className="relative w-28 md:w-48 shrink-0">
                         <div className="absolute inset-y-0 left-0 flex items-center pl-2 pointer-events-none text-indigo-600">
@@ -342,7 +445,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                     </div>
                 )}
 
-                 {/* Date Selector */}
                 <div className="relative flex-1 min-w-0">
                     <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                         <Calendar size={16} />
@@ -360,18 +462,16 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                     </select>
                 </div>
 
-                {/* Save Button (Always Visible) */}
                 <button 
                     onClick={handleSave}
                     className="flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95 shrink-0"
                 >
                     <Save size={18} />
                     <span className="hidden sm:inline">Save</span>
-                    <span className="bg-white/20 px-1.5 py-0.5 rounded text-xs font-mono">{displayCount}</span>
+                    <span className="bg-white/20 px-1.5 py-0.5 rounded text-xs font-mono">{totalSavedInState}</span>
                 </button>
             </div>
             
-            {/* Desktop-only secondary actions */}
             <div className="hidden md:flex items-center gap-2 w-full md:w-auto">
                 {isAdmin && (
                     <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
@@ -406,10 +506,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                     />
                 </div>
                 
-                {/* Horizontal Filter Scroll */}
                 <div className="flex gap-2 overflow-x-auto pb-1 px-1 no-scrollbar items-center">
-                    
-                    {/* Mobile Quick Actions */}
                     <div className="md:hidden flex items-center gap-1 pr-2 border-r border-slate-200 mr-1 shrink-0">
                          {enablePunctuality && (
                             <button onClick={() => setShowLeaderboard(true)} className="p-1.5 text-amber-600 bg-amber-50 rounded-lg border border-amber-100">
@@ -428,7 +525,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                         <button key={type} onClick={() => setFilterType(type)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterType === type ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>{type}</button>
                     ))}
                     
-                    {/* Admin Switcher on Mobile */}
                     <div className="md:hidden flex items-center gap-1 border-l pl-2 ml-1">
                          {isAdmin && (
                             <button onClick={() => { setAttendanceMode(attendanceMode === 'MEMBERS' ? 'STAFF' : 'MEMBERS'); }} className={`px-2 py-1 text-[10px] font-bold rounded border ${attendanceMode === 'STAFF' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-white text-slate-500'}`}>
@@ -440,6 +536,21 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
              </div>
           </div>
       </div>
+
+      {hiddenJoyCount > 0 && (
+          <div className="mx-2 mb-2 px-4 py-2 bg-amber-50 border border-amber-100 rounded-xl flex items-center justify-between animate-in fade-in slide-in-from-top-1">
+              <div className="flex items-center gap-2 text-xs font-bold text-amber-700">
+                  <Filter size={14} />
+                  <span>Hiding {hiddenJoyCount} members present for Joy Service</span>
+              </div>
+              <button 
+                onClick={() => setCurrentService('JOY')}
+                className="text-[10px] font-bold bg-white px-2 py-1 rounded border border-amber-200 text-amber-600 hover:bg-amber-100"
+              >
+                  View Joy List
+              </button>
+          </div>
+      )}
 
       {isAddingFNF && (
         <div className="shrink-0 p-4 mb-2 bg-amber-50 rounded-2xl border border-amber-200 flex gap-2 animate-in slide-in-from-top-2">
@@ -459,35 +570,63 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                  {sortedMembers.map(member => {
                     const isPresent = presentIds.has(member.id);
                     const isPunctual = punctualIds.has(member.id);
+                    const assignedService = serviceMap[member.id];
                     const isGraduating = !!member.transferPendingDate;
                     
+                    // Card Styling based on Service Type
+                    let cardStyle = 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md';
+                    let textStyle = 'text-slate-800';
+                    let iconStyle = 'bg-slate-100 text-slate-300';
+                    
+                    if (isPresent) {
+                        if (assignedService === 'JOY') {
+                            cardStyle = 'bg-amber-50 border-amber-300 shadow-md shadow-amber-100 transform scale-[1.01]';
+                            textStyle = 'text-amber-900';
+                            iconStyle = 'bg-white text-amber-500 border border-amber-200';
+                        } else if (assignedService === 'ENLARGEMENT') {
+                            cardStyle = 'bg-sky-50 border-sky-300 shadow-md shadow-sky-100 transform scale-[1.01]';
+                            textStyle = 'text-sky-900';
+                            iconStyle = 'bg-white text-sky-500 border border-sky-200';
+                        } else {
+                            // Fallback for generic present or staff
+                            cardStyle = 'bg-indigo-600 border-indigo-600 shadow-lg shadow-indigo-200 transform scale-[1.01]';
+                            textStyle = 'text-white';
+                            iconStyle = 'bg-white text-indigo-600';
+                        }
+                    }
+
                     return (
                         <div 
                             key={member.id}
                             onClick={() => handleToggle(member.id)}
                             className={`
                                 relative p-4 rounded-2xl cursor-pointer transition-all duration-200 select-none group border
-                                ${isPresent 
-                                    ? 'bg-indigo-600 border-indigo-600 shadow-lg shadow-indigo-200 transform scale-[1.01]' 
-                                    : 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md'
-                                }
+                                ${cardStyle}
                             `}
                         >
                             <div className="flex justify-between items-start">
                                 <div>
-                                    <h4 className={`font-bold text-lg leading-tight ${isPresent ? 'text-white' : 'text-slate-800'}`}>{member.name}</h4>
+                                    <h4 className={`font-bold text-lg leading-tight ${textStyle}`}>{member.name}</h4>
                                     <div className="flex flex-wrap gap-1 mt-1">
-                                         <p className={`text-xs font-medium uppercase tracking-wider ${isPresent ? 'text-indigo-200' : 'text-slate-400'}`}>
+                                         <p className={`text-xs font-medium uppercase tracking-wider ${isPresent ? 'opacity-80' : 'text-slate-400'}`}>
                                             {member.type}
                                          </p>
                                          {(isCombinedView || effectiveChurch === 'CM') && (
-                                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isPresent ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                             <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isPresent ? 'bg-white/30' : 'bg-slate-100 text-slate-500'}`}>
                                                  {member.assignedChurch}
                                              </span>
                                          )}
                                     </div>
+                                    
+                                    {/* Service Badge if Present */}
+                                    {isPresent && assignedService && (
+                                        <div className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase border ${assignedService === 'JOY' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-sky-100 text-sky-700 border-sky-200'}`}>
+                                            {assignedService === 'JOY' ? <Sun size={10}/> : <Zap size={10}/>}
+                                            {assignedService}
+                                        </div>
+                                    )}
                                 </div>
-                                <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${isPresent ? 'bg-white text-indigo-600' : 'bg-slate-100 text-slate-300'}`}>
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${iconStyle}`}>
                                     <Check size={14} strokeWidth={4} />
                                 </div>
                             </div>
@@ -497,20 +636,20 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                                 {enablePunctuality && (
                                     <button 
                                         onClick={(e) => handlePunctualToggle(e, member.id)}
-                                        disabled={!isPunctual && !isCombinedView && punctualIds.size >= 3}
+                                        disabled={!isPunctual && !isCombinedView && punctualIds.size >= 6} // Hard cap total just in case, logic handled in function
                                         className={`p-1.5 rounded-lg transition-all ${
                                             isPunctual 
                                                 ? 'bg-amber-400 text-white shadow-sm' 
                                                 : isPresent 
-                                                    ? 'bg-indigo-500 text-indigo-300 hover:bg-indigo-400 hover:text-white' 
+                                                    ? 'bg-black/10 hover:bg-black/20 text-current' 
                                                     : 'bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-500'
-                                        } ${(!isPunctual && !isCombinedView && punctualIds.size >= 3) ? 'opacity-30 cursor-not-allowed' : ''}`}
+                                        }`}
                                     >
                                         <Trophy size={16} fill={isPunctual ? "currentColor" : "none"} />
                                     </button>
                                 )}
                                 {isGraduating && (
-                                    <div className={`px-2 py-1 rounded-lg text-[10px] font-bold ${isPresent ? 'bg-indigo-500 text-white' : 'bg-blue-50 text-blue-600'}`}>
+                                    <div className={`px-2 py-1 rounded-lg text-[10px] font-bold ${isPresent ? 'bg-white/20' : 'bg-blue-50 text-blue-600'}`}>
                                         MOVING UP
                                     </div>
                                 )}

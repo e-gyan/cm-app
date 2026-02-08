@@ -19,6 +19,8 @@ export type Church = 'UJ' | 'I' | 'K' | 'LJ' | 'CM' | 'All';
 
 export type Role = 'ADMIN' | 'TEACHER' | 'NONE';
 
+export type ServiceType = 'JOY' | 'ENLARGEMENT';
+
 export interface Member {
   id: string;
   name: string;
@@ -44,6 +46,7 @@ export interface AttendanceRecord {
   date: string; // ISO Date string (YYYY-MM-DD)
   presentMemberIds: string[];
   punctualMemberIds?: string[]; // IDs of the top 3 punctual members
+  serviceMap?: Record<string, ServiceType>; // Map member ID to specific service
   notes?: string;
   churchId: Church;
 }
