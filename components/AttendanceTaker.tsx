@@ -255,7 +255,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
         // Update Service Map Logic:
         // We only update the map for people currently being saved in this context.
         // We do NOT delete map entries for people hidden (e.g., Joy members hidden in Enlargement view).
-        finalPresent.forEach(id => {
+        finalPresent.forEach((id: string) => {
             if (serviceMap[id]) {
                 finalServiceMap[id] = serviceMap[id];
             }

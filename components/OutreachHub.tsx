@@ -1,13 +1,15 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AppData, Member, OutreachSession, PrayerSlot, MemberType, MemberStatus } from '../types';
 import { generateOutreachSchedule, generatePrayerSchedule, saveOutreachSession, deleteOutreachSession, savePrayerSlot } from '../services/storageService';
-import { Calendar, MapPin, Plus, Trash2, CheckCircle2, Clock, Heart, AlertCircle, ArrowRightLeft, BarChart2, ChevronUp, ChevronDown, Check, X, CalendarDays, RefreshCw, Zap, Loader2, User, Cloud, Save, Target, Phone, MessageSquare, Map, CalendarPlus } from 'lucide-react';
+import { Calendar, MapPin, Plus, Trash2, CheckCircle2, Clock, Heart, AlertCircle, ArrowRightLeft, BarChart2, ChevronUp, ChevronDown, Check, X, CalendarDays, RefreshCw, Zap, Loader2, User, Cloud, Save, Target, Phone, MessageSquare, Map, CalendarPlus, ExternalLink } from 'lucide-react';
 
 interface OutreachHubProps {
   data: AppData;
   onUpdate: () => void;
   currentUser: Member;
 }
+
+const GOOGLE_CALENDAR_ID = 'b7a17362d923e887199867f0fedff992c6e2d2ff6bb206fc0c9cd900d476ec8c@group.calendar.google.com';
 
 const formatDateDDMMYYYY = (dateStr: string) => {
     if (!dateStr) return '--';
@@ -37,40 +39,24 @@ const formatDuration = (mins: number) => {
     return m > 0 ? `${hrs}h ${m}m` : `${hrs}h`;
 };
 
-const addToCalendar = (title: string, date: string, description: string) => {
-    // Basic .ics generation
-    const d = new Date(date);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
+const addToGoogleCalendar = (title: string, dateStr: string, description: string, durationMins: number = 30, isVisit: boolean = false) => {
+    const start = new Date(dateStr);
+    // Set default times (Visit: 10am, Prayer: 6am)
+    start.setHours(isVisit ? 10 : 6, 0, 0, 0);
     
-    // Start 6am, End 6:30am (Default prayer) or 10am-3pm (Visit)
-    const isVisit = title.toLowerCase().includes('visit');
-    const startT = isVisit ? '100000' : '060000';
-    const endT = isVisit ? '150000' : '063000';
+    const end = new Date(start.getTime() + durationMins * 60000);
 
-    const icsContent = 
-`BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//CM System//Outreach//EN
-BEGIN:VEVENT
-UID:${Date.now()}@cmsystem.app
-DTSTAMP:${year}${month}${day}T${startT}Z
-DTSTART:${year}${month}${day}T${startT}
-DTEND:${year}${month}${day}T${endT}
-SUMMARY:${title}
-DESCRIPTION:${description}
-END:VEVENT
-END:VCALENDAR`;
+    // Format for Google: YYYYMMDDTHHMMSSZ
+    const format = (d: Date) => d.toISOString().replace(/-|:|\.\d+/g, '');
 
-    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${title.replace(/\s+/g, '_')}.ics`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const url = new URL('https://calendar.google.com/calendar/render');
+    url.searchParams.append('action', 'TEMPLATE');
+    url.searchParams.append('text', title);
+    url.searchParams.append('dates', `${format(start)}/${format(end)}`);
+    url.searchParams.append('details', description);
+    url.searchParams.append('src', GOOGLE_CALENDAR_ID);
+    
+    window.open(url.toString(), '_blank');
 };
 
 const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }) => {
@@ -433,9 +419,9 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                                   <span className="text-xs font-bold text-slate-400">{sortedVisits.nextUp.assignedMemberIds.length} Kids Assigned</span>
                                   <div className="flex gap-2">
                                       <button 
-                                        onClick={() => addToCalendar(`Outreach Visit`, sortedVisits.nextUp!.date, `Visit to ${sortedVisits.nextUp?.assignedMemberIds.length} kids`)}
+                                        onClick={() => addToGoogleCalendar(`Outreach Visit`, sortedVisits.nextUp!.date, `Visit to ${sortedVisits.nextUp?.assignedMemberIds.length} kids`, 300, true)}
                                         className="text-slate-300 hover:text-indigo-500 p-2"
-                                        title="Add to Calendar"
+                                        title="Add to Google Calendar"
                                       >
                                           <CalendarPlus size={16}/>
                                       </button>
@@ -458,8 +444,9 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                               <h4 className="font-bold text-slate-700">{formatDateDDMMYYYY(session.date)}</h4>
                               <div className="flex gap-2">
                                   <button 
-                                    onClick={() => addToCalendar(`Outreach Visit`, session.date, `Visit to ${session.assignedMemberIds.length} kids`)}
+                                    onClick={() => addToGoogleCalendar(`Outreach Visit`, session.date, `Visit to ${session.assignedMemberIds.length} kids`, 300, true)}
                                     className="text-slate-300 hover:text-indigo-500 p-1"
+                                    title="Add to Google Calendar"
                                   >
                                       <CalendarPlus size={16}/>
                                   </button>
@@ -733,10 +720,10 @@ const PrayerSlotCard = ({ slot, data, unsavedChanges, onToggle, isExpired }: any
                         <button 
                             onClick={(e) => {
                                 e.stopPropagation();
-                                addToCalendar(`Prayer for 5 Children`, slot.date, `Praying for: ${memberNames}`);
+                                addToGoogleCalendar(`Prayer for 5 Children`, slot.date, `Praying for: ${memberNames}`, 30);
                             }}
                             className="text-slate-300 hover:text-indigo-500 p-1"
-                            title="Add to Calendar"
+                            title="Add to Google Calendar"
                         >
                             <CalendarPlus size={16}/>
                         </button>
