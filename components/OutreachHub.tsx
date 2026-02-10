@@ -108,6 +108,45 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       }
   }, [data.outreachSessions, data.prayerSchedule, unsavedChanges.size]);
 
+  // --- AUTO GENERATION FOR CURRENT WEEK ---
+  useEffect(() => {
+      const checkAndAutoGenerate = () => {
+          if (!data.members || data.members.length === 0) return;
+          
+          const today = new Date();
+          const startOfCurrentWeek = getStartOfWeek(today);
+          const startStr = startOfCurrentWeek.toISOString().split('T')[0];
+          
+          // Check if we have *any* slots for this week (Mon-Fri)
+          let hasSlots = false;
+          for(let i=0; i<5; i++) {
+              const checkDate = new Date(startOfCurrentWeek);
+              checkDate.setDate(startOfCurrentWeek.getDate() + i);
+              const dateStr = checkDate.toISOString().split('T')[0];
+              if (data.prayerSchedule?.some(s => s.date === dateStr)) {
+                  hasSlots = true;
+                  break;
+              }
+          }
+
+          if (!hasSlots) {
+              const ujMembers = data.members.filter(m => m.assignedChurch === 'UJ' && !['Teacher','Helper','Volunteer'].includes(m.type));
+              if (ujMembers.length > 0) {
+                  const res = generatePrayerSchedule(startOfCurrentWeek, ujMembers);
+                  if (res.success) {
+                      onUpdate();
+                      setGenMsg({ type: 'success', text: "New weekly schedule auto-generated" });
+                      setTimeout(() => setGenMsg(null), 3000);
+                  }
+              }
+          }
+      };
+      
+      // Short delay to ensure data is loaded
+      const timer = setTimeout(checkAndAutoGenerate, 1000);
+      return () => clearTimeout(timer);
+  }, [data.prayerSchedule?.length]); // Dep on length to avoid infinite loop but trigger on initial load
+
   // --- ACTIONS ---
 
   const handleAddDate = () => {
@@ -546,15 +585,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                   defaultOpen={true}
               />
 
-              {/* Completed History Section */}
-              <CollapsibleSection 
-                  title="Completed History" 
+              {/* Completed History Section (Grouped by Month) */}
+              <CollapsibleHistorySection 
                   items={prayerData.completed} 
                   data={data} 
                   unsavedChanges={unsavedChanges} 
                   onToggle={togglePrayerComplete} 
-                  color="green"
-                  icon={CheckCircle2}
               />
           </div>
       )}
@@ -666,7 +702,81 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
 
 // --- SUB COMPONENTS ---
 
-const CollapsibleSection = ({ title, items, data, unsavedChanges, onToggle, isExpired, color, icon: Icon, defaultOpen = false }: any) => {
+interface CollapsibleHistorySectionProps {
+    items: PrayerSlot[];
+    data: AppData;
+    unsavedChanges: Set<string>;
+    onToggle: (id: string) => void;
+}
+
+const CollapsibleHistorySection = ({ items, data, unsavedChanges, onToggle }: CollapsibleHistorySectionProps) => {
+    const [isOpen, setIsOpen] = useState(false);
+    
+    // Group By Month Year
+    const groupedHistory = useMemo(() => {
+        const groups: Record<string, PrayerSlot[]> = {};
+        if (!items) return groups;
+        
+        items.forEach((slot: PrayerSlot) => {
+            const d = new Date(slot.date);
+            const key = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(slot);
+        });
+        
+        // Sort groups (Current month first)
+        // Since object keys aren't ordered, we'll handle sorting in render
+        return groups;
+    }, [items]);
+
+    if (!items || items.length === 0) return null;
+
+    return (
+        <div className="border border-slate-100 rounded-2xl bg-white overflow-hidden shadow-sm">
+            <button 
+                onClick={() => setIsOpen(!isOpen)}
+                className={`w-full flex items-center justify-between p-4 transition-colors ${isOpen ? 'text-green-600 bg-green-50/50' : 'bg-white hover:bg-slate-50'}`}
+            >
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                    <CheckCircle2 size={18} className="text-green-500"/> 
+                    Completed History ({items.length})
+                </h3>
+                {isOpen ? <ChevronUp size={18} className="text-slate-400"/> : <ChevronDown size={18} className="text-slate-400"/>}
+            </button>
+            
+            {isOpen && (
+                <div className="p-3 space-y-4 bg-slate-50/30">
+                    {Object.entries(groupedHistory)
+                        .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime()) // Hacky sort by string date, actually usually works for Month Year if standard
+                        .map(([month, slots]) => (
+                        <div key={month}>
+                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 pl-2 sticky top-0 bg-slate-50/90 backdrop-blur py-1 z-10">{month}</h4>
+                            <div className="space-y-3">
+                                {slots.map((slot: PrayerSlot) => (
+                                    <PrayerSlotCard key={slot.id} slot={slot} data={data} unsavedChanges={unsavedChanges} onToggle={onToggle} isExpired={false} />
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+interface CollapsibleSectionProps {
+    title: string;
+    items: PrayerSlot[];
+    data: AppData;
+    unsavedChanges: Set<string>;
+    onToggle: (id: string) => void;
+    isExpired?: boolean;
+    color: string;
+    icon: React.ElementType;
+    defaultOpen?: boolean;
+}
+
+const CollapsibleSection = ({ title, items, data, unsavedChanges, onToggle, isExpired, color, icon: Icon, defaultOpen = false }: CollapsibleSectionProps) => {
     const [isOpen, setIsOpen] = useState(defaultOpen);
     if (!items || items.length === 0) return null;
 
@@ -720,7 +830,8 @@ const PrayerSlotCard = ({ slot, data, unsavedChanges, onToggle, isExpired }: any
                         <button 
                             onClick={(e) => {
                                 e.stopPropagation();
-                                addToGoogleCalendar(`Prayer for 5 Children`, slot.date, `Praying for: ${memberNames}`, 30);
+                                // Updated to use memberNames as the title
+                                addToGoogleCalendar(`Prayer: ${memberNames}`, slot.date, `Praying for: ${memberNames}`, 30);
                             }}
                             className="text-slate-300 hover:text-indigo-500 p-1"
                             title="Add to Google Calendar"
@@ -749,7 +860,15 @@ const PrayerSlotCard = ({ slot, data, unsavedChanges, onToggle, isExpired }: any
     );
 };
 
-const CollapsibleProgressSection = ({ title, members, data, icon: Icon, color }: any) => {
+interface CollapsibleProgressSectionProps {
+    title: string;
+    members: Member[];
+    data: AppData;
+    icon: React.ElementType;
+    color: string;
+}
+
+const CollapsibleProgressSection = ({ title, members, data, icon: Icon, color }: CollapsibleProgressSectionProps) => {
     const [isOpen, setIsOpen] = useState(false);
     if(members.length === 0) return null;
 
@@ -802,7 +921,14 @@ const CollapsibleProgressSection = ({ title, members, data, icon: Icon, color }:
     );
 };
 
-const CollapsibleContactSection = ({ title, members, icon: Icon, color }: any) => {
+interface CollapsibleContactSectionProps {
+    title: string;
+    members: Member[];
+    icon: React.ElementType;
+    color: string;
+}
+
+const CollapsibleContactSection = ({ title, members, icon: Icon, color }: CollapsibleContactSectionProps) => {
     const [isOpen, setIsOpen] = useState(false);
     if(members.length === 0) return null;
 

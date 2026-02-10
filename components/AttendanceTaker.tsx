@@ -229,7 +229,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                     const m = data.members.find(mem => mem.id === id);
                     return m && !['Teacher','Helper','Volunteer'].includes(m.type);
                 });
-                const existingMembersPunctual = (existingRecord.punctualMemberIds || []).filter(id => {
+                const existingMembersPunctual = (existingRecord.punctualMemberIds || []).filter((id: string) => {
                     const m = data.members.find(mem => mem.id === id);
                     return m && !['Teacher','Helper','Volunteer'].includes(m.type);
                 });
@@ -240,7 +240,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                     const m = data.members.find(mem => mem.id === id);
                     return m && ['Teacher','Helper','Volunteer'].includes(m.type);
                 });
-                const existingStaffPunctual = (existingRecord.punctualMemberIds || []).filter(id => {
+                const existingStaffPunctual = (existingRecord.punctualMemberIds || []).filter((id: string) => {
                     const m = data.members.find(mem => mem.id === id);
                     return m && ['Teacher','Helper','Volunteer'].includes(m.type);
                 });
