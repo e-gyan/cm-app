@@ -458,7 +458,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                                   <span className="text-xs font-bold text-slate-400">{sortedVisits.nextUp.assignedMemberIds.length} Kids Assigned</span>
                                   <div className="flex gap-2">
                                       <button 
-                                        onClick={() => addToGoogleCalendar(`Outreach Visit`, sortedVisits.nextUp!.date, `Visit to ${sortedVisits.nextUp?.assignedMemberIds.length} kids`, 300, true)}
+                                        onClick={() => {
+                                            const names = sortedVisits.nextUp!.assignedMemberIds.map(id => data.members.find(m => m.id === id)?.name).filter(Boolean).join(', ');
+                                            addToGoogleCalendar(`Visit: ${names}`, sortedVisits.nextUp!.date, `Visit to: ${names}`, 300, true);
+                                        }}
                                         className="text-slate-300 hover:text-indigo-500 p-2"
                                         title="Add to Google Calendar"
                                       >
@@ -483,7 +486,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                               <h4 className="font-bold text-slate-700">{formatDateDDMMYYYY(session.date)}</h4>
                               <div className="flex gap-2">
                                   <button 
-                                    onClick={() => addToGoogleCalendar(`Outreach Visit`, session.date, `Visit to ${session.assignedMemberIds.length} kids`, 300, true)}
+                                    onClick={() => {
+                                        const names = session.assignedMemberIds.map(id => data.members.find(m => m.id === id)?.name).filter(Boolean).join(', ');
+                                        addToGoogleCalendar(`Visit: ${names}`, session.date, `Visit to: ${names}`, 300, true);
+                                    }}
                                     className="text-slate-300 hover:text-indigo-500 p-1"
                                     title="Add to Google Calendar"
                                   >
@@ -748,7 +754,7 @@ const CollapsibleHistorySection = ({ items, data, unsavedChanges, onToggle }: Co
                 <div className="p-3 space-y-4 bg-slate-50/30">
                     {Object.entries(groupedHistory)
                         .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime()) // Hacky sort by string date, actually usually works for Month Year if standard
-                        .map(([month, slots]) => (
+                        .map(([month, slots]: [string, PrayerSlot[]]) => (
                         <div key={month}>
                             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 pl-2 sticky top-0 bg-slate-50/90 backdrop-blur py-1 z-10">{month}</h4>
                             <div className="space-y-3">
