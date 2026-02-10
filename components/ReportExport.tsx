@@ -271,21 +271,6 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
         report += `\n`;
     }
 
-    // --- PUNCTUAL STARS SECTION (SPLIT) ---
-    if (joyPunctual.length > 0 || enlargePunctual.length > 0) {
-        report += `*🌟 PUNCTUAL STARS 🌟*\n`;
-        if (joyPunctual.length > 0) {
-            report += `_Joy Service:_\n`;
-            joyPunctual.forEach((m) => report += `• ${m!.name}\n`);
-        }
-        if (enlargePunctual.length > 0) {
-            if (joyPunctual.length > 0) report += `\n`;
-            report += `_Enlargement Service:_\n`;
-            enlargePunctual.forEach((m) => report += `• ${m!.name}\n`);
-        }
-        report += `\n`;
-    }
-
     // --- Helper to render list with Joy/Enlargement split ---
     const renderListWithServices = (list: Member[], title: string) => {
         if (list.length === 0) return '';

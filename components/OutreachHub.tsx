@@ -59,6 +59,36 @@ const addToGoogleCalendar = (title: string, dateStr: string, description: string
     window.open(url.toString(), '_blank');
 };
 
+const downloadICS = (filename: string, events: { title: string, start: Date, end: Date, description: string }[]) => {
+    let icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Childrens Ministry//Attendance App//EN\n";
+    
+    const formatICSDate = (date: Date) => {
+        // Format to floating time YYYYMMDDTHHMMSS (No Z) so it stays absolute to user's selected calendar timezone
+        return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'; // Actually, let's use UTC 'Z' for consistency if we set UTC hours correctly
+    };
+
+    events.forEach(evt => {
+        icsContent += "BEGIN:VEVENT\n";
+        icsContent += `UID:${crypto.randomUUID()}\n`;
+        icsContent += `DTSTAMP:${formatICSDate(new Date())}\n`;
+        icsContent += `DTSTART:${formatICSDate(evt.start)}\n`;
+        icsContent += `DTEND:${formatICSDate(evt.end)}\n`;
+        icsContent += `SUMMARY:${evt.title}\n`;
+        icsContent += `DESCRIPTION:${evt.description}\n`;
+        icsContent += "END:VEVENT\n";
+    });
+
+    icsContent += "END:VCALENDAR";
+
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
 const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }) => {
   const [activeTab, setActiveTab] = useState<'VISIT' | 'PRAYER' | 'CONNECT' | 'TRACK'>('VISIT');
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
@@ -145,7 +175,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       // Short delay to ensure data is loaded
       const timer = setTimeout(checkAndAutoGenerate, 1000);
       return () => clearTimeout(timer);
-  }, [data.prayerSchedule?.length]); // Dep on length to avoid infinite loop but trigger on initial load
+  }, [data.prayerSchedule?.length]);
 
   // --- ACTIONS ---
 
@@ -346,7 +376,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       }
   };
   
-  // --- DERIVED DATA ---
+  // --- DERIVED DATA & EXPORT LOGIC ---
 
   const sortedVisits = useMemo(() => {
       const all = (localSessions || []);
@@ -362,18 +392,55 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       const today = new Date().toISOString().split('T')[0];
       
       const all = [...localPrayerSlots].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      
-      // Expired: Date is past AND not completed
       const expired = all.filter(s => s.date < today && !s.isCompleted);
-      
-      // Completed: Any date, isCompleted = true
       const completed = all.filter(s => s.isCompleted);
-
-      // Active: Today or Future AND Not Completed
       const active = all.filter(s => s.date >= today && !s.isCompleted);
 
       return { active, expired, completed };
   }, [localPrayerSlots]);
+
+  const handleExportVisits = () => {
+      const pendingVisits = [sortedVisits.nextUp, ...sortedVisits.otherPending].filter(Boolean) as OutreachSession[];
+      if (pendingVisits.length === 0) return;
+
+      const events = pendingVisits.map(s => {
+          const names = s.assignedMemberIds.map(id => data.members.find(m => m.id === id)?.name).filter(Boolean).join(', ');
+          
+          // Construct UTC Dates manually for consistent ICS export (10 AM Local)
+          const start = new Date(s.date);
+          start.setUTCHours(10, 0, 0, 0); // 10:00 UTC (will render as 10:00 in calendar if we don't assume timezone offset)
+          const end = new Date(start.getTime() + 5 * 60 * 60 * 1000); // 15:00 UTC
+
+          return {
+              title: `Visit: ${names}`,
+              start,
+              end,
+              description: `Outreach visit to: ${names}`
+          };
+      });
+      downloadICS('visitation_schedule.ics', events);
+  };
+
+  const handleExportPrayer = () => {
+      if (prayerData.active.length === 0) return;
+
+      const events = prayerData.active.map(s => {
+          const names = s.assignedMemberIds.map(id => data.members.find(m => m.id === id)?.name).filter(Boolean).join(', ');
+          
+          // Construct UTC Dates (6 AM Local)
+          const start = new Date(s.date);
+          start.setUTCHours(6, 0, 0, 0); 
+          const end = new Date(start.getTime() + 30 * 60 * 1000); // 30 mins
+
+          return {
+              title: `Prayer: ${names}`,
+              start,
+              end,
+              description: `Praying for: ${names}`
+          };
+      });
+      downloadICS('prayer_schedule.ics', events);
+  };
 
   // --- CONNECT TAB DATA ---
   const connectList = useMemo(() => {
@@ -433,6 +500,17 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
               )}
 
               <div className="space-y-4">
+                  {(sortedVisits.nextUp || sortedVisits.otherPending.length > 0) && (
+                      <div className="flex justify-end">
+                          <button 
+                            onClick={handleExportVisits} 
+                            className="flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-indigo-600 rounded-xl font-bold text-xs shadow-sm hover:bg-indigo-50 transition-colors"
+                          >
+                              <CalendarPlus size={16}/> Add Schedule to Calendar
+                          </button>
+                      </div>
+                  )}
+
                   {sortedVisits.nextUp && (
                       <div className="relative">
                           <div className="absolute -left-3 top-4 bottom-4 w-1 bg-gradient-to-b from-indigo-500 to-indigo-200 rounded-full hidden md:block"></div>
@@ -589,6 +667,17 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                   color="indigo"
                   icon={CalendarDays}
                   defaultOpen={true}
+                  headerAction={
+                      prayerData.active.length > 0 && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleExportPrayer(); }} 
+                            className="p-1.5 text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors mr-2" 
+                            title="Add All to Calendar"
+                          >
+                              <CalendarPlus size={18}/>
+                          </button>
+                      )
+                  }
               />
 
               {/* Completed History Section (Grouped by Month) */}
@@ -780,9 +869,10 @@ interface CollapsibleSectionProps {
     color: string;
     icon: React.ElementType;
     defaultOpen?: boolean;
+    headerAction?: React.ReactNode;
 }
 
-const CollapsibleSection = ({ title, items, data, unsavedChanges, onToggle, isExpired, color, icon: Icon, defaultOpen = false }: CollapsibleSectionProps) => {
+const CollapsibleSection = ({ title, items, data, unsavedChanges, onToggle, isExpired, color, icon: Icon, defaultOpen = false, headerAction }: CollapsibleSectionProps) => {
     const [isOpen, setIsOpen] = useState(defaultOpen);
     if (!items || items.length === 0) return null;
 
@@ -794,16 +884,20 @@ const CollapsibleSection = ({ title, items, data, unsavedChanges, onToggle, isEx
 
     return (
         <div className="border border-slate-100 rounded-2xl bg-white overflow-hidden shadow-sm">
-            <button 
-                onClick={() => setIsOpen(!isOpen)}
-                className={`w-full flex items-center justify-between p-4 transition-colors ${isOpen ? colorClasses[color] : 'bg-white hover:bg-slate-50'}`}
-            >
-                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                    <Icon size={18} className={color === 'amber' ? 'text-amber-500' : color === 'green' ? 'text-green-500' : 'text-indigo-600'}/> 
-                    {title} ({items.length})
-                </h3>
-                {isOpen ? <ChevronUp size={18} className="text-slate-400"/> : <ChevronDown size={18} className="text-slate-400"/>}
-            </button>
+            <div className={`w-full flex items-center justify-between p-4 transition-colors ${isOpen ? colorClasses[color] : 'bg-white hover:bg-slate-50'}`}>
+                <div onClick={() => setIsOpen(!isOpen)} className="flex-1 flex items-center gap-2 cursor-pointer">
+                    <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                        <Icon size={18} className={color === 'amber' ? 'text-amber-500' : color === 'green' ? 'text-green-500' : 'text-indigo-600'}/> 
+                        {title} ({items.length})
+                    </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                    {headerAction}
+                    <button onClick={() => setIsOpen(!isOpen)}>
+                        {isOpen ? <ChevronUp size={18} className="text-slate-400"/> : <ChevronDown size={18} className="text-slate-400"/>}
+                    </button>
+                </div>
+            </div>
             
             {isOpen && (
                 <div className="p-3 space-y-3 bg-slate-50/30">
