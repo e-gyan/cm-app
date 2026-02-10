@@ -263,10 +263,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
         
         // Clean up map entries for people who are NOT in the final present list at all
         const cleanServiceMap: Record<string, ServiceType> = {};
-        Object.keys(finalServiceMap).forEach((k) => {
-            const key = k as string;
+        Object.entries(finalServiceMap).forEach(([key, value]) => {
             if (finalPresent.includes(key)) {
-                cleanServiceMap[key] = finalServiceMap[key];
+                cleanServiceMap[key] = value;
             }
         });
         finalServiceMap = cleanServiceMap;

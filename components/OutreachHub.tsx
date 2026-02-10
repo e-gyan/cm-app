@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AppData, Member, OutreachSession, PrayerSlot, MemberType, MemberStatus } from '../types';
 import { generateOutreachSchedule, generatePrayerSchedule, saveOutreachSession, deleteOutreachSession, savePrayerSlot } from '../services/storageService';
-import { Calendar, MapPin, Plus, Trash2, CheckCircle2, Clock, Heart, AlertCircle, ArrowRightLeft, BarChart2, ChevronUp, ChevronDown, Check, X, CalendarDays, RefreshCw, Zap, Loader2, User, Cloud, Save, Target, Phone, MessageSquare, Map } from 'lucide-react';
+import { Calendar, MapPin, Plus, Trash2, CheckCircle2, Clock, Heart, AlertCircle, ArrowRightLeft, BarChart2, ChevronUp, ChevronDown, Check, X, CalendarDays, RefreshCw, Zap, Loader2, User, Cloud, Save, Target, Phone, MessageSquare, Map, CalendarPlus } from 'lucide-react';
 
 interface OutreachHubProps {
   data: AppData;
@@ -30,6 +30,49 @@ const getRelativeTime = (dateStr: string) => {
     return formatDateDDMMYYYY(dateStr);
 };
 
+const formatDuration = (mins: number) => {
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m > 0 ? `${hrs}h ${m}m` : `${hrs}h`;
+};
+
+const addToCalendar = (title: string, date: string, description: string) => {
+    // Basic .ics generation
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    
+    // Start 6am, End 6:30am (Default prayer) or 10am-3pm (Visit)
+    const isVisit = title.toLowerCase().includes('visit');
+    const startT = isVisit ? '100000' : '060000';
+    const endT = isVisit ? '150000' : '063000';
+
+    const icsContent = 
+`BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//CM System//Outreach//EN
+BEGIN:VEVENT
+UID:${Date.now()}@cmsystem.app
+DTSTAMP:${year}${month}${day}T${startT}Z
+DTSTART:${year}${month}${day}T${startT}
+DTEND:${year}${month}${day}T${endT}
+SUMMARY:${title}
+DESCRIPTION:${description}
+END:VEVENT
+END:VCALENDAR`;
+
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${title.replace(/\s+/g, '_')}.ics`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
 const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }) => {
   const [activeTab, setActiveTab] = useState<'VISIT' | 'PRAYER' | 'CONNECT' | 'TRACK'>('VISIT');
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
@@ -51,7 +94,6 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
   const [completionConfirm, setCompletionConfirm] = useState<{ show: boolean, sessionId: string } | null>(null);
 
   // Prayer UI State
-  const [isScheduleOpen, setIsScheduleOpen] = useState(true);
   const [prayerWeek, setPrayerWeek] = useState(getStartOfWeek(new Date()));
 
   function getStartOfWeek(date: Date) {
@@ -291,7 +333,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
   }, [localSessions]);
 
   const prayerData = useMemo(() => {
-      if(localPrayerSlots.length === 0) return { active: [], expired: [] };
+      if(localPrayerSlots.length === 0) return { active: [], expired: [], completed: [] };
       const today = new Date().toISOString().split('T')[0];
       
       const all = [...localPrayerSlots].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -299,10 +341,13 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       // Expired: Date is past AND not completed
       const expired = all.filter(s => s.date < today && !s.isCompleted);
       
-      // Active: Today or Future, OR Past but Completed
-      const active = all.filter(s => s.date >= today || s.isCompleted);
+      // Completed: Any date, isCompleted = true
+      const completed = all.filter(s => s.isCompleted);
 
-      return { active, expired };
+      // Active: Today or Future AND Not Completed
+      const active = all.filter(s => s.date >= today && !s.isCompleted);
+
+      return { active, expired, completed };
   }, [localPrayerSlots]);
 
   // --- CONNECT TAB DATA ---
@@ -386,13 +431,22 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                               </div>
                               <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
                                   <span className="text-xs font-bold text-slate-400">{sortedVisits.nextUp.assignedMemberIds.length} Kids Assigned</span>
-                                  <button 
-                                    onClick={(e) => handleDeleteSession(sortedVisits.nextUp!.id, e)}
-                                    disabled={loadingId === sortedVisits.nextUp.id}
-                                    className="text-slate-300 hover:text-red-500 p-2 disabled:opacity-50"
-                                  >
-                                      {loadingId === sortedVisits.nextUp.id ? <Loader2 size={16} className="animate-spin text-indigo-500"/> : <Trash2 size={16}/>}
-                                  </button>
+                                  <div className="flex gap-2">
+                                      <button 
+                                        onClick={() => addToCalendar(`Outreach Visit`, sortedVisits.nextUp!.date, `Visit to ${sortedVisits.nextUp?.assignedMemberIds.length} kids`)}
+                                        className="text-slate-300 hover:text-indigo-500 p-2"
+                                        title="Add to Calendar"
+                                      >
+                                          <CalendarPlus size={16}/>
+                                      </button>
+                                      <button 
+                                        onClick={(e) => handleDeleteSession(sortedVisits.nextUp!.id, e)}
+                                        disabled={loadingId === sortedVisits.nextUp.id}
+                                        className="text-slate-300 hover:text-red-500 p-2 disabled:opacity-50"
+                                      >
+                                          {loadingId === sortedVisits.nextUp.id ? <Loader2 size={16} className="animate-spin text-indigo-500"/> : <Trash2 size={16}/>}
+                                      </button>
+                                  </div>
                               </div>
                           </div>
                       </div>
@@ -402,13 +456,21 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                       <div key={session.id} className={`bg-white rounded-2xl border shadow-sm overflow-hidden opacity-90 hover:opacity-100 transition-all ${unsavedChanges.has(session.id) ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-200'}`}>
                           <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                               <h4 className="font-bold text-slate-700">{formatDateDDMMYYYY(session.date)}</h4>
-                              <button 
-                                onClick={(e) => handleDeleteSession(session.id, e)}
-                                disabled={loadingId === session.id}
-                                className="text-slate-300 hover:text-red-500 disabled:opacity-50"
-                              >
-                                {loadingId === session.id ? <Loader2 size={16} className="animate-spin text-indigo-500"/> : <Trash2 size={16}/>}
-                              </button>
+                              <div className="flex gap-2">
+                                  <button 
+                                    onClick={() => addToCalendar(`Outreach Visit`, session.date, `Visit to ${session.assignedMemberIds.length} kids`)}
+                                    className="text-slate-300 hover:text-indigo-500 p-1"
+                                  >
+                                      <CalendarPlus size={16}/>
+                                  </button>
+                                  <button 
+                                    onClick={(e) => handleDeleteSession(session.id, e)}
+                                    disabled={loadingId === session.id}
+                                    className="text-slate-300 hover:text-red-500 disabled:opacity-50"
+                                  >
+                                    {loadingId === session.id ? <Loader2 size={16} className="animate-spin text-indigo-500"/> : <Trash2 size={16}/>}
+                                  </button>
+                              </div>
                           </div>
                           <div className="p-2">
                               <SessionChildList 
@@ -473,51 +535,40 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                   </div>
               )}
 
-              {/* Expired / Missed Section */}
-              {prayerData.expired.length > 0 && (
-                  <div className="space-y-2 mb-4">
-                      <div className="flex items-center gap-2 px-2">
-                          <AlertCircle size={16} className="text-amber-500"/>
-                          <h4 className="text-xs font-bold text-amber-500 uppercase tracking-wider">Missed & Expired</h4>
-                      </div>
-                      <div className="opacity-75">
-                          {prayerData.expired.map(slot => (
-                              <PrayerSlotCard key={slot.id} slot={slot} data={data} unsavedChanges={unsavedChanges} onToggle={togglePrayerComplete} isExpired={true} />
-                          ))}
-                          <div className="text-center text-[10px] text-slate-400 mt-1">
-                              * Regenerate schedule to prioritize these missed children.
-                          </div>
-                      </div>
-                  </div>
-              )}
+              {/* Missed & Expired Section */}
+              <CollapsibleSection 
+                  title="Missed & Expired" 
+                  items={prayerData.expired} 
+                  data={data} 
+                  unsavedChanges={unsavedChanges} 
+                  onToggle={togglePrayerComplete} 
+                  isExpired={true}
+                  color="amber"
+                  icon={AlertCircle}
+              />
 
-              {/* Active Schedule Collapsible */}
-              <div className="border border-slate-100 rounded-2xl bg-white overflow-hidden shadow-sm">
-                  <button 
-                    onClick={() => setIsScheduleOpen(!isScheduleOpen)}
-                    className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors"
-                  >
-                      <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                          <CalendarDays size={18} className="text-indigo-600"/> 
-                          Current Schedule ({prayerData.active.length})
-                      </h3>
-                      {isScheduleOpen ? <ChevronUp size={18} className="text-slate-400"/> : <ChevronDown size={18} className="text-slate-400"/>}
-                  </button>
-                  
-                  {isScheduleOpen && (
-                      <div className="p-3 space-y-3 bg-slate-50/50">
-                          {prayerData.active.length === 0 ? (
-                              <div className="p-8 text-center text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
-                                  No active schedule. Click Generate above.
-                              </div>
-                          ) : (
-                              prayerData.active.map(slot => (
-                                  <PrayerSlotCard key={slot.id} slot={slot} data={data} unsavedChanges={unsavedChanges} onToggle={togglePrayerComplete} />
-                              ))
-                          )}
-                      </div>
-                  )}
-              </div>
+              {/* Current Schedule Section */}
+              <CollapsibleSection 
+                  title="Current Schedule" 
+                  items={prayerData.active} 
+                  data={data} 
+                  unsavedChanges={unsavedChanges} 
+                  onToggle={togglePrayerComplete} 
+                  color="indigo"
+                  icon={CalendarDays}
+                  defaultOpen={true}
+              />
+
+              {/* Completed History Section */}
+              <CollapsibleSection 
+                  title="Completed History" 
+                  items={prayerData.completed} 
+                  data={data} 
+                  unsavedChanges={unsavedChanges} 
+                  onToggle={togglePrayerComplete} 
+                  color="green"
+                  icon={CheckCircle2}
+              />
           </div>
       )}
 
@@ -555,7 +606,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm text-center">
                   <h3 className="font-bold text-lg text-slate-800 mb-1">Progress Tracking</h3>
-                  <p className="text-xs text-slate-500">Monitoring Visitation (Goal: 2/year) and Prayer Coverage.</p>
+                  <p className="text-xs text-slate-500">Monitoring Visitation (Goal: 2/year) and Prayer Minutes.</p>
               </div>
               
               <CollapsibleProgressSection title="Active Members" members={connectList.filter(m => m.type === MemberType.MEMBER)} data={data} icon={User} color="indigo" />
@@ -628,38 +679,88 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
 
 // --- SUB COMPONENTS ---
 
-const PrayerSlotCard = ({ slot, data, unsavedChanges, onToggle, isExpired }: any) => (
-    <div className={`bg-white rounded-2xl border transition-all ${slot.isCompleted ? 'border-green-200 shadow-none' : isExpired ? 'border-amber-200 bg-amber-50/50' : 'border-slate-100 shadow-sm'} ${unsavedChanges.has(slot.id) ? 'ring-2 ring-amber-300' : ''}`}>
-        <div onClick={() => onToggle(slot.id)} className="p-4 cursor-pointer">
-            <div className="flex justify-between items-start mb-3">
-                <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-xs font-bold border ${slot.isCompleted ? 'bg-green-50 text-green-700 border-green-100' : isExpired ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                        <span>{slot.dayOfWeek.substring(0,3).toUpperCase()}</span>
+const CollapsibleSection = ({ title, items, data, unsavedChanges, onToggle, isExpired, color, icon: Icon, defaultOpen = false }: any) => {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+    if (!items || items.length === 0) return null;
+
+    const colorClasses: Record<string, string> = {
+        indigo: 'text-indigo-600 bg-indigo-50/50',
+        amber: 'text-amber-600 bg-amber-50/50',
+        green: 'text-green-600 bg-green-50/50'
+    };
+
+    return (
+        <div className="border border-slate-100 rounded-2xl bg-white overflow-hidden shadow-sm">
+            <button 
+                onClick={() => setIsOpen(!isOpen)}
+                className={`w-full flex items-center justify-between p-4 transition-colors ${isOpen ? colorClasses[color] : 'bg-white hover:bg-slate-50'}`}
+            >
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                    <Icon size={18} className={color === 'amber' ? 'text-amber-500' : color === 'green' ? 'text-green-500' : 'text-indigo-600'}/> 
+                    {title} ({items.length})
+                </h3>
+                {isOpen ? <ChevronUp size={18} className="text-slate-400"/> : <ChevronDown size={18} className="text-slate-400"/>}
+            </button>
+            
+            {isOpen && (
+                <div className="p-3 space-y-3 bg-slate-50/30">
+                    {items.map((slot: PrayerSlot) => (
+                        <PrayerSlotCard key={slot.id} slot={slot} data={data} unsavedChanges={unsavedChanges} onToggle={onToggle} isExpired={isExpired} />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const PrayerSlotCard = ({ slot, data, unsavedChanges, onToggle, isExpired }: any) => {
+    const memberNames = slot.assignedMemberIds.map((id: string) => data.members.find((m: any) => m.id === id)?.name).filter(Boolean).join(', ');
+
+    return (
+        <div className={`bg-white rounded-2xl border transition-all ${slot.isCompleted ? 'border-green-200 shadow-none' : isExpired ? 'border-amber-200 bg-amber-50/50' : 'border-slate-100 shadow-sm'} ${unsavedChanges.has(slot.id) ? 'ring-2 ring-amber-300' : ''}`}>
+            <div className="p-4">
+                <div className="flex justify-between items-start mb-3">
+                    <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-xs font-bold border ${slot.isCompleted ? 'bg-green-50 text-green-700 border-green-100' : isExpired ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                            <span>{slot.dayOfWeek.substring(0,3).toUpperCase()}</span>
+                        </div>
+                        <div>
+                            <h4 className={`font-bold text-sm ${slot.isCompleted ? 'text-green-800' : 'text-slate-800'}`}>{formatDateDDMMYYYY(slot.date)}</h4>
+                            <p className="text-[10px] text-slate-400 font-medium">{slot.assignedMemberIds.length} Children • 30 mins</p>
+                        </div>
                     </div>
-                    <div>
-                        <h4 className={`font-bold text-sm ${slot.isCompleted ? 'text-green-800' : 'text-slate-800'}`}>{formatDateDDMMYYYY(slot.date)}</h4>
-                        <p className="text-[10px] text-slate-400 font-medium">{slot.assignedMemberIds.length} Children • 30 mins</p>
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                addToCalendar(`Prayer for 5 Children`, slot.date, `Praying for: ${memberNames}`);
+                            }}
+                            className="text-slate-300 hover:text-indigo-500 p-1"
+                            title="Add to Calendar"
+                        >
+                            <CalendarPlus size={16}/>
+                        </button>
+                        <div onClick={() => onToggle(slot.id)} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors cursor-pointer ${slot.isCompleted ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300 text-transparent hover:border-green-400'}`}>
+                            <Check size={14} strokeWidth={4}/>
+                        </div>
                     </div>
                 </div>
-                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${slot.isCompleted ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300 text-transparent'}`}>
-                    <Check size={14} strokeWidth={4}/>
+                <div className="flex flex-wrap gap-2">
+                    {slot.assignedMemberIds.map((id: string) => {
+                        const m = data.members.find((mem: any) => mem.id === id);
+                        if(!m) return null;
+                        let colorClass = 'bg-slate-50 text-slate-600 border-slate-100';
+                        if (m.type === MemberType.FNF) colorClass = 'bg-amber-50 text-amber-700 border-amber-100';
+                        else if (m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE) colorClass = 'bg-rose-50 text-rose-700 border-rose-100';
+                        else colorClass = 'bg-indigo-50 text-indigo-700 border-indigo-100';
+                        if (slot.isCompleted) colorClass = 'bg-green-50 text-green-700 border-green-100 opacity-80';
+                        return <div key={id} className={`flex items-center gap-1.5 text-[10px] px-2 py-1.5 rounded-lg font-bold border ${colorClass}`}><span>{m.name}</span></div>;
+                    })}
                 </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-                {slot.assignedMemberIds.map((id: string) => {
-                    const m = data.members.find((mem: any) => mem.id === id);
-                    if(!m) return null;
-                    let colorClass = 'bg-slate-50 text-slate-600 border-slate-100';
-                    if (m.type === MemberType.FNF) colorClass = 'bg-amber-50 text-amber-700 border-amber-100';
-                    else if (m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE) colorClass = 'bg-rose-50 text-rose-700 border-rose-100';
-                    else colorClass = 'bg-indigo-50 text-indigo-700 border-indigo-100';
-                    if (slot.isCompleted) colorClass = 'bg-green-50 text-green-700 border-green-100 opacity-80';
-                    return <div key={id} className={`flex items-center gap-1.5 text-[10px] px-2 py-1.5 rounded-lg font-bold border ${colorClass}`}><span>{m.name}</span></div>;
-                })}
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 const CollapsibleProgressSection = ({ title, members, data, icon: Icon, color }: any) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -690,10 +791,10 @@ const CollapsibleProgressSection = ({ title, members, data, icon: Icon, color }:
                                 <div className="flex justify-between items-center mb-3">
                                     <h4 className="font-bold text-slate-700 text-sm">{m.name}</h4>
                                     <div className="flex gap-1">
-                                        <Badge label="W" value={stats.prayer.week} />
-                                        <Badge label="M" value={stats.prayer.month} />
-                                        <Badge label="Q" value={stats.prayer.quarter} />
-                                        <Badge label="Y" value={stats.prayer.year} highlight />
+                                        <Badge label="W" value={formatDuration(stats.prayer.week)} />
+                                        <Badge label="M" value={formatDuration(stats.prayer.month)} />
+                                        <Badge label="Q" value={formatDuration(stats.prayer.quarter)} />
+                                        <Badge label="Y" value={formatDuration(stats.prayer.year)} highlight />
                                     </div>
                                 </div>
                                 <div>
@@ -790,18 +891,21 @@ const getMemberStats = (memberId: string, data: AppData) => {
         .filter(s => s.status === 'COMPLETED' && new Date(s.date).getFullYear() === year && s.visitedMemberIds?.includes(memberId))
         .length;
 
-    // Prayers
+    // Prayers: Calculate minutes (Count * 30 mins)
     const prayers = (data.prayerSchedule || []).filter(s => s.isCompleted && s.assignedMemberIds.includes(memberId));
     const now = new Date();
     const oneWeek = 7 * 24 * 60 * 60 * 1000;
     
+    // Helper to sum minutes
+    const sumMins = (slots: PrayerSlot[]) => slots.reduce((acc, s) => acc + (s.durationMins || 30), 0);
+
     return {
         visits,
         prayer: {
-            week: prayers.filter(s => Math.abs(now.getTime() - new Date(s.date).getTime()) < oneWeek).length,
-            month: prayers.filter(s => new Date(s.date).getMonth() === now.getMonth() && new Date(s.date).getFullYear() === year).length,
-            quarter: prayers.filter(s => Math.floor(new Date(s.date).getMonth() / 3) === Math.floor(now.getMonth() / 3) && new Date(s.date).getFullYear() === year).length,
-            year: prayers.filter(s => new Date(s.date).getFullYear() === year).length
+            week: sumMins(prayers.filter(s => Math.abs(now.getTime() - new Date(s.date).getTime()) < oneWeek)),
+            month: sumMins(prayers.filter(s => new Date(s.date).getMonth() === now.getMonth() && new Date(s.date).getFullYear() === year)),
+            quarter: sumMins(prayers.filter(s => Math.floor(new Date(s.date).getMonth() / 3) === Math.floor(now.getMonth() / 3) && new Date(s.date).getFullYear() === year)),
+            year: sumMins(prayers.filter(s => new Date(s.date).getFullYear() === year))
         }
     };
 };

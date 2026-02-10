@@ -170,42 +170,6 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
         year: 'numeric'
     });
 
-    let ujOutreachText = '';
-
-    // --- UJ OUTREACH REPORT (Special Section) ---
-    if (activeChurch === 'UJ') {
-        const today = new Date().toISOString().split('T')[0];
-        
-        const recentVisits = (data.outreachSessions || []).filter(s => {
-            const d = new Date(s.date);
-            const rDate = new Date(selectedDate);
-            const diff = Math.abs(rDate.getTime() - d.getTime()) / (1000 * 3600 * 24);
-            return diff <= 7 && s.visitedMemberIds && s.visitedMemberIds.length > 0;
-        });
-
-        // Prayer stats for this week
-        const prayerSlots = (data.prayerSchedule || []).filter(s => s.isCompleted);
-        const prayerCount = prayerSlots.length;
-
-        let outreachSection = `\n\n*ARROWS OUTREACH UPDATE*\n`;
-        outreachSection += `------------------\n`;
-        
-        if (recentVisits.length > 0) {
-            outreachSection += `*Visits Completed (${recentVisits.length} Sessions)*\n`;
-            recentVisits.forEach(s => {
-                const names = s.visitedMemberIds?.map(id => data.members.find(m => m.id === id)?.name).filter(Boolean).join(', ');
-                outreachSection += `• ${formatDateDDMMYYYY(s.date)}: ${names}\n`;
-            });
-        } else {
-            outreachSection += `No recent visits recorded.\n`;
-        }
-
-        outreachSection += `\n*Prayer Tracking*\n`;
-        outreachSection += `• ${prayerCount} Prayer Slots completed recently.\n`;
-        
-        ujOutreachText = outreachSection;
-    }
-
     // --- ADMIN GLOBAL REPORT (Figures Only) ---
     if (activeChurch === 'CM') {
          let report = `*CM ATTENDANCE SUMMARY*\n${formattedDate}\n`;
@@ -273,7 +237,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
 
     // --- SINGLE BRANCH REPORT (Names included with Service Split) ---
     const record = data.attendance.find(r => r.date === selectedDate && r.churchId === activeChurch);
-    if (!record && !ujOutreachText) return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
+    if (!record) return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
 
     const presentMembers = record ? data.members.filter(m => record.presentMemberIds.includes(m.id)) : [];
     
@@ -308,7 +272,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     }
 
     // --- PUNCTUAL STARS SECTION (SPLIT) ---
-    /*if (joyPunctual.length > 0 || enlargePunctual.length > 0) {
+    if (joyPunctual.length > 0 || enlargePunctual.length > 0) {
         report += `*🌟 PUNCTUAL STARS 🌟*\n`;
         if (joyPunctual.length > 0) {
             report += `_Joy Service:_\n`;
@@ -320,7 +284,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
             enlargePunctual.forEach((m) => report += `• ${m!.name}\n`);
         }
         report += `\n`;
-    }*/
+    }
 
     // --- Helper to render list with Joy/Enlargement split ---
     const renderListWithServices = (list: Member[], title: string) => {
@@ -357,10 +321,6 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     if (fnfs.length > 0) report += renderListWithServices(fnfs, 'FNF');
     if (inconsistent.length > 0) report += renderListWithServices(inconsistent, 'INCONSISTENT');
     if (notMembers.length > 0) report += renderListWithServices(notMembers, 'NOT A MEMBER');
-
-    if (ujOutreachText) {
-        report += ujOutreachText;
-    }
 
     return report;
   };
@@ -467,7 +427,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                 <div>
-                    <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight">Reports and Insights</h2>
+                    <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight">Reports & Insights</h2>
                     <p className="text-slate-500 font-medium">Generate updates and manage system data.</p>
                 </div>
                 <div className="flex bg-slate-100 p-1 rounded-xl w-full md:w-auto">

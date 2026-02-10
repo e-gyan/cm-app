@@ -4,7 +4,7 @@ import { updateTargets } from '../services/storageService';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
 } from 'recharts';
-import { Users, TrendingUp, TrendingDown, Calendar, Trophy, Clock, ArrowUpRight, ArrowDownRight, Activity, Target, X, Save, Percent, Heart, MapPin } from 'lucide-react';
+import { Users, TrendingUp, TrendingDown, Calendar, Trophy, Clock, ArrowUpRight, ArrowDownRight, Activity, Target, X, Save, Percent, Heart, MapPin, Hourglass } from 'lucide-react';
 
 interface DashboardProps {
   data: AppData;
@@ -15,6 +15,13 @@ interface DashboardProps {
 const formatDateDDMMYYYY = (dateStr: string) => {
     const d = new Date(dateStr);
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); 
+};
+
+const formatDuration = (mins: number) => {
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m > 0 ? `${hrs}h ${m}m` : `${hrs}h`;
 };
 
 const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode; colorClass: string; trend?: number; subtitle?: string; target?: number; progressValue?: number }> = ({ title, value, icon, colorClass, trend, subtitle, target, progressValue }) => (
@@ -343,18 +350,22 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
         
         const eligibleKids = data.members.filter(m => m.assignedChurch === 'UJ' && ['Member','FNF','Inconsistent'].includes(m.type) && m.status === 'Active').length;
         const visitTarget = eligibleKids * 2; // Annual Target: 2 visits per kid
-        const prayerTarget = 5 * 5 * 52; // 5 kids/day * 5 days * 52 weeks = 1300 slots/year approx
+        
+        // Prayer Time Logic: 5 kids * 5 days * 52 weeks * 30 mins
+        // 5 * 5 * 52 * 30 = 39,000 mins per year target
+        const prayerTargetMins = 39000; 
 
         // Actual Visits Count (Unique visits per member this year) - Simplified to total visits for dashboard
         const totalVisitsDone = (data.outreachSessions || [])
             .filter(s => s.status === 'COMPLETED' && new Date(s.date).getFullYear() === new Date().getFullYear())
             .reduce((acc, s) => acc + (s.visitedMemberIds?.length || 0), 0);
 
-        const totalPrayersDone = (data.prayerSchedule || [])
+        // Actual Prayer Time (Completed Slots * 30 mins)
+        const totalPrayerMins = (data.prayerSchedule || [])
             .filter(s => s.isCompleted && new Date(s.date).getFullYear() === new Date().getFullYear())
-            .reduce((acc, s) => acc + s.assignedMemberIds.length, 0); // Count actual kids prayed for
+            .reduce((acc, s) => acc + (s.durationMins || 30), 0);
 
-        return { visitTarget, totalVisitsDone, prayerTarget, totalPrayersDone };
+        return { visitTarget, totalVisitsDone, prayerTargetMins, totalPrayerMins };
     }, [data, activeChurch]);
 
     return (
@@ -381,10 +392,10 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
                         </div>
                         <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-center justify-between">
                             <div>
-                                <p className="text-xs font-bold text-amber-600 uppercase">Total Prayers Done</p>
-                                <h4 className="text-2xl font-bold text-slate-800">{outreachStats.totalPrayersDone} <span className="text-sm text-slate-400 font-medium">/ {outreachStats.prayerTarget}</span></h4>
+                                <p className="text-xs font-bold text-amber-600 uppercase">Total Prayer Time</p>
+                                <h4 className="text-2xl font-bold text-slate-800">{formatDuration(outreachStats.totalPrayerMins)} <span className="text-sm text-slate-400 font-medium">/ {formatDuration(outreachStats.prayerTargetMins)}</span></h4>
                             </div>
-                            <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-amber-500 shadow-sm"><Heart size={20}/></div>
+                            <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-amber-500 shadow-sm"><Hourglass size={20}/></div>
                         </div>
                     </div>
                 </div>
