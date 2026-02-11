@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { AppData, Transaction, Church, Member } from '../types';
 import { addTransaction, deleteTransaction } from '../services/storageService';
-import { Plus, Trash2, TrendingUp, TrendingDown, DollarSign, Filter, Wallet, Calendar, X } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { Plus, Trash2, TrendingUp, TrendingDown, Filter, Wallet, Calendar, X } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface FinancesProps {
   data: AppData;
@@ -18,6 +18,7 @@ const formatDateDDMMYYYY = (dateStr: string) => {
 
 const Finances: React.FC<FinancesProps> = ({ data, onUpdate, activeChurch, currentUser }) => {
   const isAdmin = currentUser.role === 'ADMIN';
+  const availableChurches = data.settings.churches;
 
   // State
   const [filterChurch, setFilterChurch] = useState<Church | 'All'>(isAdmin && activeChurch === 'CM' ? 'All' : (activeChurch === 'CM' ? 'UJ' : activeChurch));
@@ -141,7 +142,7 @@ const Finances: React.FC<FinancesProps> = ({ data, onUpdate, activeChurch, curre
                      <>
                         <span className="text-xs font-bold text-slate-400 uppercase mr-2">Branch:</span>
                         <button onClick={() => setFilterChurch('All')} className={`px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap ${filterChurch === 'All' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>All</button>
-                        {(['I', 'K', 'LJ', 'UJ'] as Church[]).map(c => (
+                        {availableChurches.map(c => (
                             <button key={c} onClick={() => setFilterChurch(c)} className={`px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap ${filterChurch === c ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{c}</button>
                         ))}
                         <div className="w-px h-6 bg-slate-200 mx-2"></div>
@@ -172,122 +173,118 @@ const Finances: React.FC<FinancesProps> = ({ data, onUpdate, activeChurch, curre
                             cursor={{fill: '#f8fafc'}}
                             contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                         />
-                        <Bar dataKey="income" fill="#22c55e" radius={[4, 4, 0, 0]} name="Income" />
-                        <Bar dataKey="expense" fill="#ef4444" radius={[4, 4, 0, 0]} name="Expense" />
+                        <Bar dataKey="income" name="Income" fill="#22c55e" radius={[4, 4, 0, 0]} barSize={20} />
+                        <Bar dataKey="expense" name="Expense" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={20} />
                     </BarChart>
                  </ResponsiveContainer>
             </div>
         )}
 
-        {/* Transactions List */}
-        <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-            <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-xs">
-                        <tr>
-                            <th className="p-4">Date</th>
-                            <th className="p-4">Type</th>
-                            <th className="p-4">Category</th>
-                            <th className="p-4">Description</th>
-                            <th className="p-4">Branch</th>
-                            <th className="p-4 text-right">Amount</th>
-                            <th className="p-4 w-10"></th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {filteredTransactions.length === 0 ? (
-                            <tr><td colSpan={7} className="p-8 text-center text-slate-400">No transactions found.</td></tr>
-                        ) : (
-                            filteredTransactions.map(t => (
-                                <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
-                                    <td className="p-4 text-slate-600 font-medium">{formatDateDDMMYYYY(t.date)}</td>
-                                    <td className="p-4">
-                                        <span className={`px-2 py-1 rounded-md text-xs font-bold ${t.type === 'INCOME' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                                            {t.type}
-                                        </span>
-                                    </td>
-                                    <td className="p-4 text-slate-800">{t.category}</td>
-                                    <td className="p-4 text-slate-500">{t.description || '-'}</td>
-                                    <td className="p-4 text-slate-500"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">{t.churchId}</span></td>
-                                    <td className={`p-4 text-right font-bold ${t.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
-                                        {t.type === 'EXPENSE' ? '-' : '+'}GH₵ {t.amount}
-                                    </td>
-                                    <td className="p-4">
-                                        <button onClick={() => handleDelete(t.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
-                                    </td>
-                                </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        {/* ADD MODAL */}
+        {/* Modal */}
         {isModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                 <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in zoom-in-95">
                     <div className="flex justify-between items-center mb-6">
                         <h3 className="text-xl font-bold text-slate-800">New Transaction</h3>
-                        <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X size={20}/></button>
+                        <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button>
                     </div>
-
+                    
                     <div className="space-y-4">
-                         {/* Type Toggle */}
-                         <div className="flex p-1 bg-slate-100 rounded-xl">
-                             <button onClick={() => setFormData({...formData, type: 'INCOME'})} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${formData.type === 'INCOME' ? 'bg-white shadow-sm text-green-600' : 'text-slate-500'}`}>Income</button>
-                             <button onClick={() => setFormData({...formData, type: 'EXPENSE'})} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${formData.type === 'EXPENSE' ? 'bg-white shadow-sm text-red-600' : 'text-slate-500'}`}>Expense</button>
-                         </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Type</label>
+                            <div className="flex bg-slate-100 p-1 rounded-xl">
+                                <button onClick={() => setFormData({...formData, type: 'INCOME'})} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${formData.type === 'INCOME' ? 'bg-white text-green-600 shadow-sm' : 'text-slate-500'}`}>Income</button>
+                                <button onClick={() => setFormData({...formData, type: 'EXPENSE'})} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${formData.type === 'EXPENSE' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-500'}`}>Expense</button>
+                            </div>
+                        </div>
 
-                         <div>
-                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
-                             <input type="date" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})}/>
-                         </div>
+                        <div>
+                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Category</label>
+                             <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
+                                 {formData.type === 'INCOME' ? (
+                                     ['Offering', 'Tithe', 'Donation', 'Fundraising', 'Other'].map(c => <option key={c} value={c}>{c}</option>)
+                                 ) : (
+                                     ['Supplies', 'Food', 'Transport', 'Equipment', 'Event', 'Benevolence', 'Other'].map(c => <option key={c} value={c}>{c}</option>)
+                                 )}
+                             </select>
+                        </div>
 
-                         <div>
-                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Amount (GH₵)</label>
-                             <input type="number" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0.00" value={formData.amount || ''} onChange={e => setFormData({...formData, amount: parseFloat(e.target.value)})}/>
-                         </div>
-
-                         <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Category</label>
-                                <select className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium outline-none focus:ring-2 focus:ring-indigo-500" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
-                                    <option>Offering</option>
-                                    <option>Tithe</option>
-                                    <option>Donation</option>
-                                    <option>Snacks</option>
-                                    <option>Materials</option>
-                                    <option>Transport</option>
-                                    <option>Other</option>
-                                </select>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Amount</label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₵</span>
+                                    <input type="number" className="w-full pl-8 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" value={formData.amount || ''} onChange={e => setFormData({...formData, amount: parseFloat(e.target.value)})} placeholder="0.00" />
+                                </div>
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Branch</label>
-                                <select 
-                                    className="w-full p-3 bg-white border border-slate-200 rounded-xl font-medium outline-none focus:ring-2 focus:ring-indigo-500" 
-                                    value={formData.churchId} 
-                                    onChange={e => setFormData({...formData, churchId: e.target.value as Church})}
-                                    disabled={!isAdmin && activeChurch !== 'CM'} // If not admin, locked to current church (though teacher role check handles this)
-                                >
-                                    {(['I', 'K', 'LJ', 'UJ'] as Church[]).map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
+                                <input type="date" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
                             </div>
-                         </div>
+                        </div>
 
-                         <div>
-                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description (Optional)</label>
-                             <input type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Details..." value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})}/>
-                         </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
+                            <input type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Optional details..." />
+                        </div>
+                        
+                        {isAdmin && activeChurch === 'CM' && (
+                             <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Church Branch</label>
+                                <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" value={formData.churchId} onChange={e => setFormData({...formData, churchId: e.target.value as Church})}>
+                                    {availableChurches.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                             </div>
+                        )}
+
+                        <button onClick={handleSave} className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 mt-2">
+                            Save Transaction
+                        </button>
                     </div>
-
-                    <button onClick={handleSave} className="w-full mt-6 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 hover:shadow-xl hover:bg-indigo-700 transition-all active:scale-95">
-                        Save Transaction
-                    </button>
                 </div>
             </div>
         )}
 
+        {/* Transaction List */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+             <div className="p-4 bg-slate-50 border-b border-slate-100 font-bold text-slate-700 text-sm">
+                 Recent Transactions ({filteredTransactions.length})
+             </div>
+             <div className="divide-y divide-slate-50 max-h-96 overflow-y-auto">
+                 {filteredTransactions.length === 0 ? (
+                     <div className="p-8 text-center text-slate-400 text-sm">No transactions found for this period.</div>
+                 ) : (
+                     filteredTransactions.map(t => (
+                         <div key={t.id} className="p-4 hover:bg-slate-50 transition-colors flex justify-between items-center group">
+                             <div className="flex items-center gap-4">
+                                 <div className={`p-3 rounded-xl font-bold ${t.type === 'INCOME' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+                                     {t.type === 'INCOME' ? <TrendingUp size={18}/> : <TrendingDown size={18}/>}
+                                 </div>
+                                 <div>
+                                     <div className="font-bold text-slate-800">{t.category}</div>
+                                     <div className="text-xs text-slate-400 flex items-center gap-2">
+                                         <span className="flex items-center gap-1"><Calendar size={10}/> {formatDateDDMMYYYY(t.date)}</span>
+                                         <span>•</span>
+                                         <span>{t.churchId}</span>
+                                         {t.description && <span>• {t.description}</span>}
+                                     </div>
+                                 </div>
+                             </div>
+                             <div className="flex items-center gap-4">
+                                 <span className={`font-bold ${t.type === 'INCOME' ? 'text-green-600' : 'text-slate-800'}`}>
+                                     {t.type === 'INCOME' ? '+' : '-'}GH₵ {t.amount.toLocaleString()}
+                                 </span>
+                                 {isAdmin && (
+                                     <button onClick={() => handleDelete(t.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                                         <Trash2 size={16}/>
+                                     </button>
+                                 )}
+                             </div>
+                         </div>
+                     ))
+                 )}
+             </div>
+        </div>
     </div>
   );
 };

@@ -1,3 +1,4 @@
+
 export enum MemberType {
   TEACHER = 'Teacher',
   HELPER = 'Helper',
@@ -15,7 +16,7 @@ export enum MemberStatus {
   TRANSFERRED = 'Transferred'
 }
 
-export type Church = 'UJ' | 'I' | 'K' | 'LJ' | 'CM' | 'All';
+export type Church = string; // Changed from union type to string to allow dynamic configuration
 
 export type Role = 'ADMIN' | 'TEACHER' | 'NONE';
 
@@ -96,20 +97,34 @@ export interface PrayerSlot {
   durationMins: number; // Default 30
 }
 
+export interface AppSettings {
+  churches: string[]; // Dynamic list of active branches
+  cloudConfig: {
+    enabled: boolean;
+    apiKey: string;
+    binId: string;
+  };
+  features: {
+    punctuality: boolean;
+    outreach: boolean;
+  };
+}
+
 export interface AppData {
   members: Member[];
   attendance: AttendanceRecord[];
   transactions: Transaction[];
   notifications: Notification[];
-  outreachSessions?: OutreachSession[]; // New
-  prayerSchedule?: PrayerSlot[]; // New
-  targets?: Record<string, number>; // Stores attendance goals e.g. { "UJ": 50, "I": 20 }
-  lastUpdated?: number; // Timestamp for sync conflict resolution
+  outreachSessions?: OutreachSession[];
+  prayerSchedule?: PrayerSlot[];
+  targets?: Record<string, number>; 
+  settings: AppSettings; // Centralized Configuration
+  lastUpdated?: number; 
 }
 
 export interface CloudConfig {
   enabled: boolean;
   apiKey: string;
   binId: string;
-  url: string; // e.g., https://api.jsonbin.io/v3/b
+  url: string; 
 }

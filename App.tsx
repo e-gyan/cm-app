@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { getAppData, restoreSession, logoutUser, syncFromCloud, initializeRepository, markNotificationAsRead, clearAllNotifications } from './services/storageService';
 import { AppData, Church, Member, Role, Notification } from './types';
@@ -7,21 +8,24 @@ import ReportExport from './components/ReportExport';
 import MembersList from './components/MembersList';
 import Finances from './components/Finances';
 import OutreachHub from './components/OutreachHub';
-import AnalyticsHub from './components/AnalyticsHub'; // New Component
+import AnalyticsHub from './components/AnalyticsHub'; 
+import Settings from './components/Settings'; // New Import
 import Login from './components/Login';
-import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw, Zap, ChevronDown, Bell, Check, HeartHandshake, PieChart } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, Users, Share2, Menu, X, ChevronLeft, ChevronRight, Building2, UserCog, LogOut, Loader2, RefreshCw, Zap, ChevronDown, Bell, Check, HeartHandshake, PieChart, Settings as SettingsIcon } from 'lucide-react';
+import { DEFAULT_SETTINGS } from './constants';
 
 enum View {
   DASHBOARD = 'Dashboard',
   ATTENDANCE = 'Attendance',
   MEMBERS = 'People Hub',
   OUTREACH = 'Outreach',
-  ANALYTICS = 'Analytics', // New View
-  EXPORT = 'Reports'
+  ANALYTICS = 'Analytics', 
+  EXPORT = 'Reports',
+  SETTINGS = 'Settings' // New View Enum
 }
 
 const App: React.FC = () => {
-  const [data, setData] = useState<AppData>({ members: [], attendance: [], transactions: [], notifications: [] });
+  const [data, setData] = useState<AppData>({ members: [], attendance: [], transactions: [], notifications: [], settings: DEFAULT_SETTINGS });
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
   
   // GLOBAL CONTEXT STATE
@@ -34,7 +38,7 @@ const App: React.FC = () => {
   
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const savedState = localStorage.getItem('sidebarState');
-    return savedState !== null ? JSON.parse(savedState) : true; // Default to collapsed (true)
+    return savedState !== null ? JSON.parse(savedState) : true; 
   });
 
   // Initial load & Session Restore
@@ -56,9 +60,6 @@ const App: React.FC = () => {
         const savedUser = restoreSession();
         if (savedUser) {
             setCurrentUser(savedUser);
-            // Ensure activeChurch reflects user assignment. 
-            // Teachers get their assigned church. Admins usually get CM (default) or their assigned if strictly set.
-            // For this app, Admins see CM view.
             if (savedUser.role === 'TEACHER') {
                 setActiveChurch(savedUser.assignedChurch);
             } else if (savedUser.role === 'ADMIN') {
@@ -143,7 +144,6 @@ const App: React.FC = () => {
   }
 
   const isAdmin = currentUser.role === 'ADMIN';
-  // Logic: Show Outreach strictly for UJ Teachers (Remove for Admin as requested)
   const showOutreach = currentUser.role === 'TEACHER' && currentUser.assignedChurch === 'UJ';
 
   const NavItem = ({ view, icon: Icon }: { view: View; icon: React.ElementType }) => (
@@ -257,6 +257,7 @@ const App: React.FC = () => {
             <NavItem view={View.ANALYTICS} icon={PieChart} />
             {showOutreach && <NavItem view={View.OUTREACH} icon={HeartHandshake} />}
             <NavItem view={View.EXPORT} icon={Share2} />
+            {isAdmin && <div className="pt-4 mt-4 border-t border-slate-100"><NavItem view={View.SETTINGS} icon={SettingsIcon} /></div>}
           </nav>
 
           {/* Sync Status */}
@@ -409,6 +410,11 @@ const App: React.FC = () => {
                 <div style={{ display: currentView === View.EXPORT ? 'block' : 'none' }}>
                     <ReportExport data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />
                 </div>
+                {isAdmin && (
+                    <div style={{ display: currentView === View.SETTINGS ? 'block' : 'none' }}>
+                        <Settings data={data} onUpdate={refreshData} currentUser={currentUser} />
+                    </div>
+                )}
             </div>
           </div>
         </div>
@@ -420,7 +426,7 @@ const App: React.FC = () => {
             <MobileNavItem view={View.MEMBERS} icon={Users} label="People" />
             <MobileNavItem view={View.ANALYTICS} icon={PieChart} label="Stats" />
             {showOutreach && <MobileNavItem view={View.OUTREACH} icon={HeartHandshake} label="Outreach" />}
-            <MobileNavItem view={View.EXPORT} icon={Share2} label="Reports" />
+            {isAdmin ? <MobileNavItem view={View.SETTINGS} icon={SettingsIcon} label="Config" /> : <MobileNavItem view={View.EXPORT} icon={Share2} label="Reports" />}
         </nav>
       </main>
     </div>

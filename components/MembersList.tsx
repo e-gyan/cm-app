@@ -17,6 +17,9 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
   
   // Teachers can edit if they are viewing their own church
   const canManage = isAdmin || (isTeacher && activeChurch === currentUser.assignedChurch);
+  
+  // Dynamic list of churches
+  const availableChurches = data.settings.churches;
 
   // Tabs for the Central Hub
   const [hubTab, setHubTab] = useState<'MEMBERS' | 'TEACHERS'>('MEMBERS');
@@ -511,7 +514,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                 <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1">Assigned Church</label>
                     <select className="w-full p-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none" value={formData.assignedChurch} onChange={e => setFormData({...formData, assignedChurch: e.target.value as Church})}>
-                        {['UJ', 'I', 'K', 'LJ'].map(c => <option key={c} value={c}>{c}</option>)}
+                        {availableChurches.map(c => <option key={c} value={c}>{c}</option>)}
                         {isAdmin && <option value="CM">CM (Admin)</option>}
                         {/* Added All option for staff assignment */}
                         {hubTab === 'TEACHERS' && isAdmin && <option value="All">All Churches</option>}
@@ -621,7 +624,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                 
                 {/* Desktop: Horizontal Scroll - Updated Order I, K, LJ, UJ */}
                 <div className="hidden md:flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto no-scrollbar">
-                    {(['All', 'I', 'K', 'LJ', 'UJ', 'CM'] as const).map((c) => (
+                    {['All', ...availableChurches, 'CM'].map((c) => (
                         <button 
                             key={c} 
                             onClick={() => { setChurchFilter(c); setSelectedIds(new Set()); }} 
@@ -641,7 +644,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                         className="w-full appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-bold rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     >
                          <option value="All">All Branches</option>
-                         {(['I', 'K', 'LJ', 'UJ', 'CM'] as const).map((c) => (
+                         {[...availableChurches, 'CM'].map((c) => (
                              <option key={c} value={c}>{c} Church</option>
                          ))}
                     </select>

@@ -80,12 +80,12 @@ const CustomChartTooltip = ({ active, payload, label }: any) => {
 
 // --- ADMIN DASHBOARD ---
 const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> = ({ data, onUpdateTargets }) => {
-    // Updated order
-    const churches: Church[] = ['I', 'K', 'LJ', 'UJ'];
+    // Dynamic church list from settings
+    const churches: Church[] = data.settings.churches;
     const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
     
     // Local state for target editing
-    const [editTargets, setEditTargets] = useState<Record<string, number>>(data.targets || { UJ: 0, I: 0, K: 0, LJ: 0 });
+    const [editTargets, setEditTargets] = useState<Record<string, number>>(data.targets || {});
 
     const handleSaveTargets = () => {
         updateTargets(editTargets);
@@ -140,7 +140,7 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
 
             return { church, population, avg, retention, lastAttendance, growth, target, targetAchievement };
         });
-    }, [data]);
+    }, [data, churches]);
 
     const totalPop = churchStats.reduce((acc, curr) => acc + curr.population, 0);
     const totalAvg = churchStats.reduce((acc, curr) => acc + curr.avg, 0);
@@ -163,7 +163,7 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                 
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 lg:col-span-3 flex flex-col justify-center relative">
                     <button 
-                        onClick={() => { setEditTargets(data.targets || { UJ: 0, I: 0, K: 0, LJ: 0 }); setIsTargetModalOpen(true); }}
+                        onClick={() => { setEditTargets(data.targets || {}); setIsTargetModalOpen(true); }}
                         className="absolute top-6 right-6 p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors"
                         title="Set Annual Targets"
                     >
@@ -206,7 +206,7 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                              <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Churches</p>
                              <div className="flex items-center gap-2">
                                 {churches.map(c => (
-                                    <div key={c} className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${c==='UJ'?'bg-indigo-500':c==='I'?'bg-emerald-500':c==='K'?'bg-rose-500':'bg-amber-500'}`}>{c}</div>
+                                    <div key={c} className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${c==='UJ'?'bg-indigo-500':c==='I'?'bg-emerald-500':c==='K'?'bg-rose-500':'bg-amber-500'}`}>{c.substring(0,2)}</div>
                                 ))}
                              </div>
                          </div>
@@ -224,7 +224,7 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                                       stat.church === 'I' ? 'bg-emerald-500 shadow-emerald-200' :
                                       stat.church === 'K' ? 'bg-rose-500 shadow-rose-200' : 'bg-amber-500 shadow-amber-200'}
                                 `}>
-                                    {stat.church}
+                                    {stat.church.substring(0,2)}
                                 </div>
                                 <div>
                                     <h3 className="text-xl font-bold text-slate-800">{stat.church} Church</h3>
@@ -275,14 +275,14 @@ const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> 
                                         c === 'I' ? 'bg-emerald-500' :
                                         c === 'K' ? 'bg-rose-500' : 'bg-amber-500'}
                                     `}>
-                                        {c}
+                                        {c.substring(0,2)}
                                     </div>
                                     <div className="flex-1">
                                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{c} Target</label>
                                         <input 
                                             type="number" 
                                             className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500" 
-                                            value={editTargets[c]} 
+                                            value={editTargets[c] || 0} 
                                             onChange={(e) => setEditTargets({...editTargets, [c]: parseInt(e.target.value) || 0})}
                                         />
                                     </div>
@@ -346,7 +346,7 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
 
     // UJ Specific Outreach Stats
     const outreachStats = useMemo(() => {
-        if (activeChurch !== 'UJ') return null;
+        if (activeChurch !== 'UJ' || !data.settings.features.outreach) return null;
         
         const eligibleKids = data.members.filter(m => m.assignedChurch === 'UJ' && ['Member','FNF','Inconsistent'].includes(m.type) && m.status === 'Active').length;
         const visitTarget = eligibleKids * 2; // Annual Target: 2 visits per kid

@@ -19,6 +19,7 @@ const formatDateDDMMYYYY = (dateStr: string) => {
 
 const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activeChurch, currentUser }) => {
   const isAdmin = currentUser.role === 'ADMIN';
+  const availableChurches = data.settings.churches;
 
   // State
   const [selectedDate, setSelectedDate] = useState<string>('');
@@ -54,8 +55,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const getRelevantBranches = (churchFilter: Church | 'COMBINED', mode: 'MEMBERS' | 'STAFF'): Church[] => {
       if (churchFilter !== 'COMBINED') return [churchFilter];
       return mode === 'STAFF' 
-        ? ['I', 'K', 'LJ', 'UJ', 'CM', 'All'] 
-        : ['I', 'K', 'LJ', 'UJ'];
+        ? [...availableChurches, 'CM', 'All'] 
+        : [...availableChurches];
   };
 
   useEffect(() => {
@@ -263,10 +264,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
         
         // Clean up map entries for people who are NOT in the final present list at all
         const cleanServiceMap: Record<string, ServiceType> = {};
-        // Use Object.entries to safely iterate key-values without index type issues
-        Object.entries(finalServiceMap).forEach(([key, value]) => {
+        const keys = Object.keys(finalServiceMap);
+        keys.forEach(key => {
             if (finalPresent.includes(key)) {
-                cleanServiceMap[key] = value;
+                cleanServiceMap[key] = finalServiceMap[key];
             }
         });
         finalServiceMap = cleanServiceMap;
@@ -394,10 +395,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   }, [data.attendance, effectiveChurch, attendanceMode, leaderboardTimeframe, data.members, isCombinedView]);
 
   const churchOptions = useMemo(() => {
-      const base: Church[] = ['I', 'K', 'LJ', 'UJ'];
+      const base = [...availableChurches];
       if (attendanceMode === 'STAFF') return ['All', 'CM', ...base];
       return base; 
-  }, [attendanceMode]);
+  }, [attendanceMode, availableChurches]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-130px)] md:h-[calc(100vh-140px)] relative overflow-hidden">

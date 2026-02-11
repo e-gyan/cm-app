@@ -1,15 +1,28 @@
-import { Member, AttendanceRecord, MemberType, MemberStatus } from './types';
 
-export const APP_VERSION = '1.6';
+import { Member, AttendanceRecord, MemberType, MemberStatus, AppSettings } from './types';
+
+export const APP_VERSION = '1.7';
 
 // SECURITY UPDATE: Using Environment Variables is recommended over hardcoding.
-// If not using a build tool, you can still manually set these, but be careful not to share this file publicly.
 const ENV_API_KEY = (import.meta as any).env?.VITE_API_KEY || '';
 const ENV_BIN_ID = (import.meta as any).env?.VITE_BIN_ID || '';
 
 export const DEFAULT_CLOUD_CONFIG = {
     apiKey: ENV_API_KEY || '$2a$10$ND0zIcPdo58JCZimZAcwRO.hL596gLZ3bxo/F0Po4bcSu.b0nvjEa', 
     binId: ENV_BIN_ID || '6968447b43b1c97be9314e21'   
+};
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  churches: ['I', 'K', 'LJ', 'UJ'],
+  cloudConfig: {
+    enabled: !!(DEFAULT_CLOUD_CONFIG.apiKey && DEFAULT_CLOUD_CONFIG.binId),
+    apiKey: DEFAULT_CLOUD_CONFIG.apiKey,
+    binId: DEFAULT_CLOUD_CONFIG.binId
+  },
+  features: {
+    punctuality: true,
+    outreach: true
+  }
 };
 
 export const getSundaysInYear = (year: number) => {
@@ -28,10 +41,6 @@ export const getSundaysInYear = (year: number) => {
   return sundays;
 };
 
-// DATA SOURCE CHANGE: 
-// We no longer fallback to hardcoded sample members. 
-// The app will initialize with an empty list (plus a default admin generated in storageService)
-// and attempt to pull live data from the Cloud immediately.
 export const INITIAL_MEMBERS: Member[] = []; 
 
 export const INITIAL_ATTENDANCE: AttendanceRecord[] = [];

@@ -1,12 +1,12 @@
-import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig, Transaction, Notification, NotificationType, OutreachSession, PrayerSlot, Role, ServiceType } from '../types';
-import { INITIAL_MEMBERS, INITIAL_ATTENDANCE, DEFAULT_CLOUD_CONFIG } from '../constants';
+
+import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig, Transaction, Notification, NotificationType, OutreachSession, PrayerSlot, Role, ServiceType, AppSettings } from '../types';
+import { INITIAL_MEMBERS, INITIAL_ATTENDANCE, DEFAULT_CLOUD_CONFIG, DEFAULT_SETTINGS } from '../constants';
 import { sanitizeInput, hashString, isValidSchema, hashPasscode, verifyPasscode } from './securityService';
 
 // STORAGE KEYS
 const STORAGE_KEY = 'UJ_CHURCH_DATA_2026_V5'; 
 const SESSION_KEY = 'UJ_CHURCH_SESSION_V1';
 const LOGIN_ATTEMPTS_KEY = 'UJ_LOGIN_ATTEMPTS';
-const CLOUD_CONFIG_KEY = 'UJ_CLOUD_CONFIG_V1';
 
 // --- DATA LOADING & MIGRATION ---
 const loadData = (): AppData => {
@@ -22,6 +22,11 @@ const loadData = (): AppData => {
       if (!parsed.outreachSessions) parsed.outreachSessions = [];
       if (!parsed.prayerSchedule) parsed.prayerSchedule = [];
       if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
+      
+      // Initialize Settings if missing (Migration)
+      if (!parsed.settings) {
+          parsed.settings = { ...DEFAULT_SETTINGS };
+      }
     } else {
       parsed = {
         members: [...INITIAL_MEMBERS],
@@ -31,6 +36,7 @@ const loadData = (): AppData => {
         outreachSessions: [],
         prayerSchedule: [],
         targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
+        settings: { ...DEFAULT_SETTINGS },
         lastUpdated: 0 
       };
     }
@@ -90,6 +96,7 @@ const loadData = (): AppData => {
         outreachSessions: [],
         prayerSchedule: [],
         targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
+        settings: { ...DEFAULT_SETTINGS },
         lastUpdated: 0
     };
   }
@@ -106,31 +113,18 @@ export const initializeRepository = async () => {
 };
 
 // --- CLOUD SYNC SERVICE ---
+// Now reads primarily from AppData Settings for encapsulation
 const getCloudConfig = (): CloudConfig | null => {
-    // 1. Check for Env Var / Constants
-    if (DEFAULT_CLOUD_CONFIG.apiKey && DEFAULT_CLOUD_CONFIG.binId) {
+    const settings = inMemoryData.settings?.cloudConfig;
+    if (settings && settings.apiKey && settings.binId) {
         return {
-            enabled: true, 
-            apiKey: DEFAULT_CLOUD_CONFIG.apiKey,
-            binId: DEFAULT_CLOUD_CONFIG.binId,
+            enabled: settings.enabled,
+            apiKey: settings.apiKey,
+            binId: settings.binId,
             url: 'https://api.jsonbin.io/v3/b'
         };
     }
-
-    // 2. Fallback to Local Storage Config
-    const stored = localStorage.getItem(CLOUD_CONFIG_KEY);
-    if (stored) {
-        return JSON.parse(stored);
-    }
-
     return null;
-};
-
-export const saveCloudConfig = (config: CloudConfig) => {
-    localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(config));
-    if (config.enabled) {
-        syncFromCloud(true); 
-    }
 };
 
 // Helper to try Master Key first, then Access Key
@@ -227,6 +221,7 @@ export const syncFromCloud = async (force: boolean = false): Promise<{success: b
             if (!cloudData.notifications) cloudData.notifications = [];
             if (!cloudData.outreachSessions) cloudData.outreachSessions = [];
             if (!cloudData.prayerSchedule) cloudData.prayerSchedule = [];
+            if (!cloudData.settings) cloudData.settings = { ...DEFAULT_SETTINGS }; // Ensure settings
             
             inMemoryData = cloudData;
             persistData('NONE'); 
@@ -260,6 +255,12 @@ export const getAppData = (): AppData => {
   return inMemoryData;
 };
 
+export const updateSettings = (newSettings: AppSettings) => {
+    inMemoryData.settings = newSettings;
+    isDirty = true;
+    persistData('IMMEDIATE');
+};
+
 // ... (Authentication, Import, Member Management) ...
 interface LoginAttempt { count: number; lastAttempt: number; lockedUntil: number | null; }
 const getLoginAttempts = (): LoginAttempt => { const stored = localStorage.getItem(LOGIN_ATTEMPTS_KEY); return stored ? JSON.parse(stored) : { count: 0, lastAttempt: 0, lockedUntil: null }; };
@@ -268,7 +269,7 @@ export const restoreSession = (): Member | null => { try { const sessionStr = lo
 export const logoutUser = () => { localStorage.removeItem(SESSION_KEY); };
 export const authenticateUser = async (name: string, passcode: string): Promise<{ success: boolean, member?: Member, message?: string }> => { const attempts = getLoginAttempts(); const now = Date.now(); if (attempts.lockedUntil && now < attempts.lockedUntil) { const remainingMinutes = Math.ceil((attempts.lockedUntil - now) / 60000); return { success: false, message: `Account locked. Try again in ${remainingMinutes}m.` }; } if (now - attempts.lastAttempt > 10 * 60 * 1000) { attempts.count = 0; attempts.lockedUntil = null; } const cleanName = sanitizeInput(name); const user = inMemoryData.members.find(m => (m.role === 'ADMIN' || m.role === 'TEACHER') && m.name.toLowerCase().trim() === cleanName.toLowerCase().trim()); if (!user) { return recordFailedAttempt(attempts); } if (!user.isAccessActive) { return { success: false, message: "Access deactivated. Contact Admin." }; } let isValid = false; if (user.passcode && user.passcode.includes(':')) { isValid = await verifyPasscode(passcode, user.passcode); } else if (user.passcode && user.passcode.length === 64) { const inputHash = await hashString(passcode); if (user.passcode === inputHash) { isValid = true; user.passcode = await hashPasscode(passcode); persistData('IMMEDIATE'); } } else if (user.passcode === passcode) { isValid = true; user.passcode = await hashPasscode(passcode); persistData('IMMEDIATE'); } if (isValid) { localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify({ count: 0, lastAttempt: now, lockedUntil: null })); localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: user.id, timestamp: now })); syncFromCloud(true); return { success: true, member: user }; } return recordFailedAttempt(attempts); };
 const recordFailedAttempt = (attempts: LoginAttempt) => { const now = Date.now(); attempts.count++; attempts.lastAttempt = now; if (attempts.count >= 5) { attempts.lockedUntil = now + 5 * 60 * 1000; saveLoginAttempts(attempts); return { success: false, message: "Too many failed attempts. Locked for 5m." }; } saveLoginAttempts(attempts); return { success: false, message: "Invalid credentials." }; };
-export const importData = (jsonString: string): { success: boolean; message: string } => { try { const parsed = JSON.parse(jsonString); if (!isValidSchema(parsed)) { return { success: false, message: "Invalid data file." }; } parsed.members.forEach((m: any) => { if (m.name) m.name = sanitizeInput(m.name); if (!m.assignedChurch) m.assignedChurch = 'UJ'; if (!m.role) m.role = 'NONE'; }); parsed.attendance.forEach((r: any) => { if (!r.churchId) r.churchId = 'UJ'; }); parsed.lastUpdated = Date.now(); if (!parsed.notifications) parsed.notifications = []; if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 }; if (!parsed.outreachSessions) parsed.outreachSessions = []; if (!parsed.prayerSchedule) parsed.prayerSchedule = []; inMemoryData = parsed; persistData('IMMEDIATE'); isDirty = false; return { success: true, message: "Data imported successfully!" }; } catch (e) { return { success: false, message: "Failed to parse JSON file." }; } };
+export const importData = (jsonString: string): { success: boolean; message: string } => { try { const parsed = JSON.parse(jsonString); if (!isValidSchema(parsed)) { return { success: false, message: "Invalid data file." }; } parsed.members.forEach((m: any) => { if (m.name) m.name = sanitizeInput(m.name); if (!m.assignedChurch) m.assignedChurch = 'UJ'; if (!m.role) m.role = 'NONE'; }); parsed.attendance.forEach((r: any) => { if (!r.churchId) r.churchId = 'UJ'; }); parsed.lastUpdated = Date.now(); if (!parsed.notifications) parsed.notifications = []; if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 }; if (!parsed.outreachSessions) parsed.outreachSessions = []; if (!parsed.prayerSchedule) parsed.prayerSchedule = []; if(!parsed.settings) parsed.settings = {...DEFAULT_SETTINGS}; inMemoryData = parsed; persistData('IMMEDIATE'); isDirty = false; return { success: true, message: "Data imported successfully!" }; } catch (e) { return { success: false, message: "Failed to parse JSON file." }; } };
 export const addMember = (name: string, type: MemberType, assignedChurch: Church, birthDate: string = '', status: MemberStatus = MemberStatus.ACTIVE): Member => { const cleanName = sanitizeInput(name); const newMember: Member = { id: crypto.randomUUID(), name: cleanName, type, joinedDate: new Date().toISOString(), status, birthDate, assignedChurch, role: 'NONE', isAccessActive: false }; inMemoryData.members.push(newMember); isDirty = true; persistData('DEBOUNCE'); autoTransferMembersBasedOnAge(); return newMember; };
 export const updateMember = async (updatedMember: Member) => { const index = inMemoryData.members.findIndex(m => m.id === updatedMember.id); if (index !== -1) { updatedMember.name = sanitizeInput(updatedMember.name); if (updatedMember.passcode && (!updatedMember.passcode.includes(':') && updatedMember.passcode.length < 64) && updatedMember.role !== 'NONE') { updatedMember.passcode = await hashPasscode(updatedMember.passcode); } inMemoryData.members[index] = updatedMember; isDirty = true; persistData('DEBOUNCE'); autoTransferMembersBasedOnAge(); } };
 export const deleteMember = (id: string) => { inMemoryData.members = inMemoryData.members.filter(m => m.id !== id); isDirty = true; persistData('IMMEDIATE'); };

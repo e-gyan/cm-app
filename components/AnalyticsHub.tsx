@@ -13,12 +13,12 @@ interface AnalyticsHubProps {
 
 type TimeRange = '2W' | '1M' | '3M' | 'YTD' | '1Y';
 
-// Define strict church order
-const CHURCH_ORDER: Church[] = ['I', 'K', 'LJ', 'UJ'];
-
 const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, currentUser }) => {
   const isAdmin = currentUser.role === 'ADMIN';
   const isUJTeacher = currentUser.role === 'TEACHER' && activeChurch === 'UJ';
+  
+  // Use dynamic list from settings
+  const availableChurches = data.settings.churches;
 
   // --- STATE ---
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -237,7 +237,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
                             onChange={(e) => setAdminFilterChurch(e.target.value as Church | 'All')}
                         >
                             <option value="All">All Churches</option>
-                            {CHURCH_ORDER.map(c => <option key={c} value={c}>{c}</option>)}
+                            {availableChurches.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                         <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
                     </div>
@@ -436,7 +436,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
 
             {isAdmin ? (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {CHURCH_ORDER.map(church => (
+                    {availableChurches.map(church => (
                         <button 
                             key={church}
                             onClick={() => handleExport(church)}
@@ -445,7 +445,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm mb-2 group-hover:scale-110 transition-transform
                                 ${church === 'UJ' ? 'bg-indigo-500' : church === 'I' ? 'bg-emerald-500' : church === 'K' ? 'bg-rose-500' : 'bg-amber-500'}
                             `}>
-                                {church}
+                                {church.substring(0,2)}
                             </div>
                             <span className="text-sm font-bold text-slate-700 group-hover:text-green-700">Export {church}</span>
                             <span className="text-[10px] text-slate-400 group-hover:text-green-600 flex items-center gap-1 mt-1">

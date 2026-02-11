@@ -1,5 +1,5 @@
 import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig, Transaction, Notification } from '../types';
-import { INITIAL_MEMBERS, INITIAL_ATTENDANCE, DEFAULT_CLOUD_CONFIG } from '../constants';
+import { INITIAL_MEMBERS, INITIAL_ATTENDANCE, DEFAULT_CLOUD_CONFIG, DEFAULT_SETTINGS } from '../constants';
 import { sanitizeInput, hashString, isValidSchema } from './services/securityService';
 
 // STORAGE KEYS
@@ -20,13 +20,19 @@ const loadData = (): AppData => {
       if (!parsed.transactions) parsed.transactions = [];
       if (!parsed.notifications) parsed.notifications = [];
       if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
+      if (!parsed.outreachSessions) parsed.outreachSessions = [];
+      if (!parsed.prayerSchedule) parsed.prayerSchedule = [];
+      if (!parsed.settings) parsed.settings = { ...DEFAULT_SETTINGS };
     } else {
       parsed = {
         members: [...INITIAL_MEMBERS],
         attendance: [...INITIAL_ATTENDANCE],
         transactions: [],
         notifications: [],
+        outreachSessions: [],
+        prayerSchedule: [],
         targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
+        settings: { ...DEFAULT_SETTINGS },
         lastUpdated: Date.now()
       };
     }
@@ -93,7 +99,10 @@ const loadData = (): AppData => {
         attendance: [...INITIAL_ATTENDANCE],
         transactions: [],
         notifications: [],
+        outreachSessions: [],
+        prayerSchedule: [],
         targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
+        settings: { ...DEFAULT_SETTINGS },
         lastUpdated: Date.now()
     };
   }
@@ -360,6 +369,9 @@ export const importData = (jsonString: string): { success: boolean; message: str
     // Ensure new fields exist on import
     if (!parsed.notifications) parsed.notifications = [];
     if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
+    if (!parsed.outreachSessions) parsed.outreachSessions = [];
+    if (!parsed.prayerSchedule) parsed.prayerSchedule = [];
+    if (!parsed.settings) parsed.settings = { ...DEFAULT_SETTINGS };
 
     inMemoryData = parsed;
     persistData(true); 

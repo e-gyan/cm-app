@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { AppData, MemberType, Church, Member, MemberStatus, ServiceType } from '../types';
 import { Copy, FileText, CheckCircle, Database, Download, Upload, AlertCircle, RefreshCw, Cloud, Lock, Code, MessageCircle, BookOpen, Compass, GitBranch, ArrowRight, ChevronDown, Calendar, Target, TrendingUp, Save } from 'lucide-react';
-import { getSundaysInYear, DEFAULT_CLOUD_CONFIG } from '../constants';
-import { importData, saveCloudConfig, syncFromCloud, updateTargets } from '../services/storageService';
+import { getSundaysInYear } from '../constants';
+import { importData, syncFromCloud, updateTargets } from '../services/storageService';
 
 interface ReportExportProps {
   data: AppData;
@@ -19,50 +19,18 @@ const formatDateDDMMYYYY = (dateStr: string) => {
 const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurch, currentUser }) => {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [copiedReport, setCopiedReport] = useState(false);
-  const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'KPI' | 'DATA' | 'CLOUD' | 'HELP'>('WHATSAPP');
+  const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'KPI' | 'DATA'>('WHATSAPP');
   const [importMsg, setImportMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   
   // KPI/Target Edit State
-  const [editTargets, setEditTargets] = useState<Record<string, number>>(data.targets || { UJ: 0, I: 0, K: 0, LJ: 0 });
+  const [editTargets, setEditTargets] = useState<Record<string, number>>(data.targets || {});
   
-  // Cloud Sync State
-  const [apiKey, setApiKey] = useState(DEFAULT_CLOUD_CONFIG.apiKey || '');
-  const [binId, setBinId] = useState(DEFAULT_CLOUD_CONFIG.binId || '');
-  const [isCloudEnabled, setIsCloudEnabled] = useState(false);
-  const [cloudMsg, setCloudMsg] = useState('');
-  
-  const isHardcoded = !!(DEFAULT_CLOUD_CONFIG.apiKey && DEFAULT_CLOUD_CONFIG.binId);
+  // Get active churches from settings
+  const availableChurches = data.settings.churches;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sundays2026 = getSundaysInYear(2026);
   const isAdmin = currentUser.role === 'ADMIN';
-
-  // Auto-sync on mount to ensure report data is fresh from cloud
-  useEffect(() => {
-    const initSync = async () => {
-        const savedConfig = localStorage.getItem('UJ_CLOUD_CONFIG_V1');
-        const config = savedConfig ? JSON.parse(savedConfig) : null;
-        const shouldSync = (config && config.enabled) || isHardcoded;
-
-        if (shouldSync) {
-            setIsRefreshing(true);
-            try {
-                const result = await syncFromCloud();
-                if (result.success && result.message?.includes('New data')) {
-                    onUpdate();
-                    setImportMsg({ type: 'success', text: 'Report updated with latest cloud data' });
-                    setTimeout(() => setImportMsg(null), 3000);
-                }
-            } catch (e) {
-                console.error("Auto-sync failed", e);
-            } finally {
-                setIsRefreshing(false);
-            }
-        }
-    };
-    initSync();
-  }, []);
 
   useEffect(() => {
     if (!selectedDate && sundays2026.length > 0) {
@@ -80,20 +48,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
             setSelectedDate(sundays2026[0].toISOString().split('T')[0]);
         }
     }
-    
-    // Load existing config
-    const savedConfig = localStorage.getItem('UJ_CLOUD_CONFIG_V1');
-    if (savedConfig) {
-        const config = JSON.parse(savedConfig);
-        if (!isHardcoded) {
-            setApiKey(config.apiKey);
-            setBinId(config.binId);
-        }
-        setIsCloudEnabled(config.enabled);
-    } else if (isHardcoded) {
-        setIsCloudEnabled(true);
-    }
-  }, [sundays2026, selectedDate, isHardcoded]);
+  }, [sundays2026, selectedDate]);
 
   // Update edit targets when data changes
   useEffect(() => {
@@ -106,8 +61,8 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
   const kpiStats = useMemo(() => {
     if (!isAdmin) return [];
     
-    // Updated order
-    return (['I', 'K', 'LJ', 'UJ'] as Church[]).map(church => {
+    // Dynamic order based on settings
+    return availableChurches.map(church => {
         // Calculate Avg Attendance (Last 5 weeks)
         const attendance = data.attendance.filter(r => r.churchId === church);
         const sortedAttendance = [...attendance].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -138,26 +93,13 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
             target: editTargets[church] || 0
         };
     });
-  }, [data, editTargets, isAdmin]);
+  }, [data, editTargets, isAdmin, availableChurches]);
 
   const handleSaveTargets = () => {
     updateTargets(editTargets);
     setImportMsg({ type: 'success', text: 'Targets updated successfully!' });
     setTimeout(() => setImportMsg(null), 3000);
     onUpdate();
-  };
-
-  const handleManualRefresh = async () => {
-      setIsRefreshing(true);
-      const result = await syncFromCloud();
-      if (result.success) {
-          onUpdate();
-          setImportMsg({ type: 'success', text: 'Data refreshed' });
-      } else {
-          setImportMsg({ type: 'error', text: 'Sync failed' });
-      }
-      setTimeout(() => setImportMsg(null), 2000);
-      setIsRefreshing(false);
   };
 
   // --- WhatsApp Report Logic ---
@@ -176,8 +118,8 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
          let report = `*CM ATTENDANCE SUMMARY*\n${formattedDate}\n`;
          report += `----------------------------\n`;
 
-         // Updated Order including All and CM at specific spots if needed, but for listing: I, K, LJ, UJ, then CM summary
-         const branches: Church[] = ['I', 'K', 'LJ', 'UJ', 'CM'];
+         // Use dynamic church list + CM for summary
+         const branches = [...availableChurches, 'CM'];
          let ministryTotal = 0;
          let totalTeachers = 0;
 
@@ -387,13 +329,13 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                   <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><TrendingUp size={18}/> Edit Targets</h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {(['I', 'K', 'LJ', 'UJ'] as Church[]).map(c => (
+                      {availableChurches.map(c => (
                           <div key={c}>
                               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{c} Target</label>
                               <input 
                                 type="number" 
                                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800"
-                                value={editTargets[c]}
+                                value={editTargets[c] || 0}
                                 onChange={(e) => setEditTargets({...editTargets, [c]: parseInt(e.target.value) || 0})}
                               />
                           </div>
@@ -421,8 +363,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
                     {[
                         { id: 'WHATSAPP', icon: MessageCircle, label: 'Report' },
                         { id: 'KPI', icon: Target, label: 'KPIs' },
-                        { id: 'DATA', icon: Database, label: 'Data' },
-                        { id: 'CLOUD', icon: Cloud, label: 'Sync' }
+                        { id: 'DATA', icon: Database, label: 'Data' }
                     ].map(tab => (
                         <button 
                             key={tab.id}
@@ -533,99 +474,9 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
                     </div>
                 </div>
             )}
-
-            {/* 4. CLOUD CONFIG */}
-            {activeTab === 'CLOUD' && (
-                <div className="animate-in fade-in slide-in-from-bottom-2">
-                    {isHardcoded ? (
-                        <div className="p-6 bg-green-50 border border-green-100 rounded-2xl text-center">
-                            <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-3">
-                                <Lock size={24}/>
-                            </div>
-                            <h3 className="font-bold text-green-800 mb-1">Managed Cloud Config</h3>
-                            <p className="text-xs text-green-700 opacity-80 mb-4">Your cloud settings are securely managed by the application code.</p>
-                            <button 
-                                onClick={handleManualRefresh}
-                                disabled={isRefreshing}
-                                className="px-6 py-2 bg-white text-green-700 font-bold rounded-lg shadow-sm border border-green-200 text-sm flex items-center justify-center gap-2 mx-auto hover:bg-green-50"
-                            >
-                                <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''}/>
-                                {isRefreshing ? 'Syncing...' : 'Test Connection'}
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Master Key</label>
-                                <input 
-                                    type="password" 
-                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm"
-                                    value={apiKey}
-                                    onChange={e => setApiKey(e.target.value)}
-                                    placeholder="$2b$10$..."
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Bin ID</label>
-                                <input 
-                                    type="text" 
-                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm"
-                                    value={binId}
-                                    onChange={e => setBinId(e.target.value)}
-                                    placeholder="65a..."
-                                />
-                            </div>
-                            {cloudMsg && <p className="text-xs text-red-500 font-bold">{cloudMsg}</p>}
-                            <div className="flex gap-2 mt-4">
-                                <button 
-                                    onClick={() => handleSaveCloudConfig()}
-                                    className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700"
-                                >
-                                    Save Config
-                                </button>
-                                {isCloudEnabled && (
-                                    <button 
-                                        onClick={handleManualRefresh}
-                                        className="px-4 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200"
-                                        disabled={isRefreshing}
-                                    >
-                                        <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''}/>
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
         </div>
     </div>
   );
-  
-  // Helper for saving cloud config (defined inside render but better if extracted or properly typed above)
-  async function handleSaveCloudConfig() {
-      if (!apiKey || !binId) {
-          setCloudMsg('Please enter both API Key and Bin ID');
-          return;
-      }
-      
-      saveCloudConfig({
-          enabled: true,
-          apiKey,
-          binId,
-          url: 'https://api.jsonbin.io/v3/b'
-      });
-      
-      setIsCloudEnabled(true);
-      setCloudMsg('');
-      setImportMsg({ type: 'success', text: 'Cloud configured successfully!' });
-      
-      setIsRefreshing(true);
-      await syncFromCloud();
-      setIsRefreshing(false);
-      onUpdate();
-      
-      setTimeout(() => setImportMsg(null), 3000);
-  }
 };
 
 export default ReportExport;
