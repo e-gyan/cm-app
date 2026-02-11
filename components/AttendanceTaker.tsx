@@ -221,6 +221,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
 
         let finalPresent: string[] = [];
         let finalPunctual: string[] = [];
+        // Ensure initial map is strictly typed
         let finalServiceMap: Record<string, ServiceType> = existingRecord?.serviceMap ? { ...existingRecord.serviceMap } : {};
 
         if (existingRecord) {
@@ -254,7 +255,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
 
         // Update Service Map Logic:
         // We only update the map for people currently being saved in this context.
-        // We do NOT delete map entries for people hidden (e.g., Joy members hidden in Enlargement view).
         finalPresent.forEach((id: string) => {
             if (serviceMap[id]) {
                 finalServiceMap[id] = serviceMap[id];
@@ -263,9 +263,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
         
         // Clean up map entries for people who are NOT in the final present list at all
         const cleanServiceMap: Record<string, ServiceType> = {};
-        Object.entries(finalServiceMap).forEach(([key, value]: [string, ServiceType]) => {
+        // Using Object.keys to avoid tuple inference issues
+        Object.keys(finalServiceMap).forEach((key) => {
             if (finalPresent.includes(key)) {
-                cleanServiceMap[key] = value;
+                cleanServiceMap[key] = finalServiceMap[key];
             }
         });
         finalServiceMap = cleanServiceMap;

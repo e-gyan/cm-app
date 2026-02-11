@@ -1,0 +1,437 @@
+import React, { useState, useMemo } from 'react';
+import { AppData, Church, Member, MemberType, MemberStatus } from '../types';
+import { 
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell
+} from 'recharts';
+import { Calendar, ChevronDown, TrendingUp, TrendingDown, Users, Target, Activity, MessageCircle, Share2, MapPin, Heart, HeartHandshake } from 'lucide-react';
+
+interface AnalyticsHubProps {
+  data: AppData;
+  activeChurch: Church;
+  currentUser: Member;
+}
+
+type TimeRange = '2W' | '1M' | '3M' | 'YTD' | '1Y';
+
+const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, currentUser }) => {
+  const isAdmin = currentUser.role === 'ADMIN';
+  const isUJTeacher = currentUser.role === 'TEACHER' && activeChurch === 'UJ';
+
+  // --- STATE ---
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [timeRange, setTimeRange] = useState<TimeRange>('1M');
+  const [adminFilterChurch, setAdminFilterChurch] = useState<Church | 'All'>('All');
+
+  // --- HELPERS ---
+  const effectiveChurch = isAdmin ? adminFilterChurch : activeChurch;
+
+  const getAvailableYears = () => {
+      const years = new Set<number>();
+      years.add(new Date().getFullYear());
+      data.attendance.forEach(r => years.add(new Date(r.date).getFullYear()));
+      return Array.from(years).sort((a,b) => b-a);
+  };
+
+  const getDateRange = () => {
+      const end = new Date(); // Today
+      // If selected year is previous, end date is Dec 31 of that year
+      if (selectedYear !== new Date().getFullYear()) {
+          end.setFullYear(selectedYear, 11, 31);
+      }
+      
+      const start = new Date(end);
+      
+      switch(timeRange) {
+          case '2W': start.setDate(end.getDate() - 14); break;
+          case '1M': start.setMonth(end.getMonth() - 1); break;
+          case '3M': start.setMonth(end.getMonth() - 3); break;
+          case 'YTD': start.setFullYear(selectedYear, 0, 1); break; // Jan 1 of selected year
+          case '1Y': start.setFullYear(end.getFullYear() - 1); break;
+      }
+      return { start, end };
+  };
+
+  // --- DATA PROCESSING ---
+
+  // 1. Attendance Data for Charts
+  const chartData = useMemo(() => {
+      const { start, end } = getDateRange();
+      
+      // Filter records
+      let records = data.attendance.filter(r => {
+          const d = new Date(r.date);
+          const churchMatch = effectiveChurch === 'All' ? true : r.churchId === effectiveChurch;
+          return d >= start && d <= end && churchMatch;
+      });
+
+      // Sort chronological
+      records.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      // Group by Date (handles combined view having multiple records per date)
+      const groupedByDate = new Map<string, { date: string, dateObj: Date, Member: number, FNF: number, Inconsistent: number, Total: number }>();
+
+      records.forEach(r => {
+          if (!groupedByDate.has(r.date)) {
+              groupedByDate.set(r.date, { 
+                  date: new Date(r.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), 
+                  dateObj: new Date(r.date),
+                  Member: 0, FNF: 0, Inconsistent: 0, Total: 0 
+                });
+          }
+          
+          const entry = groupedByDate.get(r.date)!;
+          
+          // Count attendees excluding staff
+          r.presentMemberIds.forEach(id => {
+              const m = data.members.find(mem => mem.id === id);
+              if (m && !['Teacher','Helper','Volunteer'].includes(m.type)) {
+                  entry.Total++;
+                  if (m.type === MemberType.MEMBER) entry.Member++;
+                  else if (m.type === MemberType.FNF) entry.FNF++;
+                  else entry.Inconsistent++;
+              }
+          });
+      });
+
+      return Array.from(groupedByDate.values());
+  }, [data.attendance, effectiveChurch, timeRange, selectedYear]);
+
+  // 2. High Level KPI
+  const stats = useMemo(() => {
+      if (chartData.length === 0) return { avg: 0, growth: 0, retention: 0, newFaces: 0 };
+
+      const totalAtt = chartData.reduce((acc, d) => acc + d.Total, 0);
+      const avg = Math.round(totalAtt / chartData.length);
+
+      // Growth (Compare first half vs second half of period roughly)
+      const mid = Math.floor(chartData.length / 2);
+      const firstHalf = chartData.slice(0, mid);
+      const secondHalf = chartData.slice(mid);
+      const avg1 = firstHalf.length ? firstHalf.reduce((a,b)=>a+b.Total,0)/firstHalf.length : 0;
+      const avg2 = secondHalf.length ? secondHalf.reduce((a,b)=>a+b.Total,0)/secondHalf.length : 0;
+      const growth = avg1 === 0 ? 0 : Math.round(((avg2 - avg1) / avg1) * 100);
+
+      // Simple Retention Proxy: Active Members vs FNF Ratio in attendance
+      const totalMembersAttended = chartData.reduce((acc, d) => acc + d.Member, 0);
+      const retention = totalAtt > 0 ? Math.round((totalMembersAttended / totalAtt) * 100) : 0;
+
+      // New Faces Proxy (Average FNF count)
+      const newFaces = Math.round(chartData.reduce((acc, d) => acc + d.FNF, 0) / chartData.length);
+
+      return { avg, growth, retention, newFaces };
+  }, [chartData]);
+
+  // 3. UJ Outreach Intelligence
+  const outreachIntel = useMemo(() => {
+      if (!isUJTeacher && effectiveChurch !== 'UJ') return null;
+      
+      const { start, end } = getDateRange();
+      const ujMembers = data.members.filter(m => m.assignedChurch === 'UJ' && ['Member','FNF','Inconsistent'].includes(m.type) && m.status === MemberStatus.ACTIVE);
+      const totalEligible = ujMembers.length;
+
+      // Visits in period
+      const visits = (data.outreachSessions || []).filter(s => {
+          const d = new Date(s.date);
+          return d >= start && d <= end && s.status === 'COMPLETED';
+      });
+      
+      const visitedIds = new Set<string>();
+      visits.forEach(s => s.visitedMemberIds?.forEach(id => visitedIds.add(id)));
+      
+      const visitCoverage = totalEligible > 0 ? Math.round((visitedIds.size / totalEligible) * 100) : 0;
+
+      // Prayers in period
+      const prayers = (data.prayerSchedule || []).filter(s => {
+          const d = new Date(s.date);
+          return d >= start && d <= end && s.isCompleted;
+      });
+
+      const prayedIds = new Set<string>();
+      prayers.forEach(s => s.assignedMemberIds.forEach(id => prayedIds.add(id)));
+      
+      const prayerCoverage = totalEligible > 0 ? Math.round((prayedIds.size / totalEligible) * 100) : 0;
+
+      // Insights
+      const notVisited = ujMembers.filter(m => !visitedIds.has(m.id)).length;
+      const notPrayed = ujMembers.filter(m => !prayedIds.has(m.id)).length;
+
+      return { visitCoverage, prayerCoverage, notVisited, notPrayed, totalEligible };
+  }, [data, isUJTeacher, effectiveChurch, timeRange, selectedYear]);
+
+
+  // --- EXPORT LOGIC ---
+  const handleExport = (church: Church) => {
+      const list = data.members
+        .filter(m => m.assignedChurch === church && (m.type === MemberType.MEMBER || m.type === MemberType.FNF) && m.status === MemberStatus.ACTIVE)
+        .sort((a,b) => a.name.localeCompare(b.name));
+
+      if (list.length === 0) {
+          alert(`No active members found for ${church}.`);
+          return;
+      }
+
+      let text = `*${church} CHURCH MEMBERS LIST*\n_Active Members & FNF_\n\n`;
+      list.forEach((m, i) => {
+          text += `${i + 1}. ${m.name} (${m.type})\n`;
+      });
+
+      const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+  };
+
+  return (
+    <div className="space-y-6 pb-20 animate-in fade-in slide-in-from-bottom-4">
+        
+        {/* TOP BAR: Controls */}
+        <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h2 className="text-xl font-extrabold text-slate-800">Analytics Hub</h2>
+                <p className="text-xs text-slate-500 font-medium">Deep dive into data & trends.</p>
+            </div>
+
+            <div className="flex flex-wrap gap-2 justify-center md:justify-end w-full md:w-auto">
+                {/* Church Filter (Admin Only) */}
+                {isAdmin && (
+                    <div className="relative">
+                        <select 
+                            className="appearance-none bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs py-2 pl-3 pr-8 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                            value={adminFilterChurch}
+                            onChange={(e) => setAdminFilterChurch(e.target.value as Church | 'All')}
+                        >
+                            <option value="All">All Churches</option>
+                            <option value="UJ">UJ</option>
+                            <option value="I">I</option>
+                            <option value="K">K</option>
+                            <option value="LJ">LJ</option>
+                        </select>
+                        <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                    </div>
+                )}
+
+                {/* Year Selector */}
+                <div className="relative">
+                    <select 
+                        className="appearance-none bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs py-2 pl-3 pr-8 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                        value={selectedYear}
+                        onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                    >
+                        {getAvailableYears().map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                    <Calendar size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                </div>
+
+                {/* Period Selector */}
+                <div className="bg-slate-100 p-1 rounded-xl flex">
+                    {(['2W', '1M', '3M', 'YTD'] as TimeRange[]).map(range => (
+                        <button 
+                            key={range}
+                            onClick={() => setTimeRange(range)}
+                            className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${timeRange === range ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            {range}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+
+        {/* SECTION A: ATTENDANCE INTELLIGENCE */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* KPI Cards */}
+            <div className="space-y-4 lg:col-span-1">
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl"><Users size={20}/></div>
+                        <span className="text-xs font-bold text-slate-400 uppercase">Avg Attendance</span>
+                    </div>
+                    <div className="flex items-end gap-3">
+                        <span className="text-4xl font-extrabold text-slate-800">{stats.avg}</span>
+                        {stats.growth !== 0 && (
+                            <div className={`flex items-center text-xs font-bold mb-1.5 px-2 py-0.5 rounded-full ${stats.growth > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                {stats.growth > 0 ? <TrendingUp size={12} className="mr-1"/> : <TrendingDown size={12} className="mr-1"/>}
+                                {Math.abs(stats.growth)}%
+                            </div>
+                        )}
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-2 font-medium">vs previous period</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+                        <div className="text-xs font-bold text-slate-400 uppercase mb-2">Retention</div>
+                        <div className="text-2xl font-bold text-slate-800">{stats.retention}%</div>
+                        <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
+                            <div className="bg-purple-500 h-full rounded-full" style={{width: `${stats.retention}%`}}></div>
+                        </div>
+                    </div>
+                    <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+                        <div className="text-xs font-bold text-slate-400 uppercase mb-2">New Faces</div>
+                        <div className="text-2xl font-bold text-slate-800 flex items-center gap-1">
+                            +{stats.newFaces} <span className="text-xs text-slate-400 font-normal">/wk</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1">Avg FNF attendees</p>
+                    </div>
+                </div>
+                
+                {/* Insight Text */}
+                <div className="bg-indigo-900 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-white opacity-5 rounded-full blur-2xl -translate-y-4 translate-x-4"></div>
+                    <h4 className="font-bold text-sm mb-1 flex items-center gap-2"><Activity size={16}/> Insight</h4>
+                    <p className="text-xs text-indigo-200 leading-relaxed">
+                        {stats.growth > 0 
+                            ? "Great momentum! Attendance is trending upwards compared to previous weeks." 
+                            : "Attendance has softened slightly. Consider reviewing the 'Inconsistent' list."}
+                    </p>
+                </div>
+            </div>
+
+            {/* Attendance Chart */}
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-2 flex flex-col">
+                <div className="mb-6 flex justify-between items-center">
+                    <h3 className="font-bold text-slate-800">Attendance Breakdown</h3>
+                    <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wide">
+                        <div className="flex items-center gap-1 text-indigo-600"><div className="w-2 h-2 rounded-full bg-indigo-500"></div> Member</div>
+                        <div className="flex items-center gap-1 text-amber-600"><div className="w-2 h-2 rounded-full bg-amber-500"></div> FNF</div>
+                        <div className="flex items-center gap-1 text-rose-600"><div className="w-2 h-2 rounded-full bg-rose-500"></div> Other</div>
+                    </div>
+                </div>
+                
+                <div className="flex-1 min-h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                            <defs>
+                                <linearGradient id="colorMem" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
+                                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                                </linearGradient>
+                                <linearGradient id="colorFnf" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8}/>
+                                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                                </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                            <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} dy={10}/>
+                            <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}}/>
+                            <Tooltip 
+                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }}
+                            />
+                            <Area type="monotone" dataKey="Member" stackId="1" stroke="#6366f1" fill="url(#colorMem)" />
+                            <Area type="monotone" dataKey="FNF" stackId="1" stroke="#f59e0b" fill="url(#colorFnf)" />
+                            <Area type="monotone" dataKey="Inconsistent" stackId="1" stroke="#f43f5e" fill="#f43f5e" fillOpacity={0.6} />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+        </div>
+
+        {/* SECTION B: OUTREACH INTELLIGENCE (UJ Only) */}
+        {outreachIntel && (
+            <div className="space-y-4">
+                <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2 px-1">
+                    <HeartHandshake size={20} className="text-indigo-600"/> Outreach Intelligence
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Visits Card */}
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden">
+                        <div className="flex justify-between items-start mb-4 relative z-10">
+                            <div>
+                                <h4 className="font-bold text-slate-700">Visitation Coverage</h4>
+                                <p className="text-xs text-slate-400">Unique kids visited in period</p>
+                            </div>
+                            <div className="p-2 bg-blue-50 text-blue-600 rounded-xl"><MapPin size={20}/></div>
+                        </div>
+                        
+                        <div className="flex items-end gap-2 relative z-10">
+                            <span className="text-4xl font-extrabold text-slate-800">{outreachIntel.visitCoverage}%</span>
+                            <span className="text-sm text-slate-400 mb-1.5 font-medium">of {outreachIntel.totalEligible} kids</span>
+                        </div>
+
+                        <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3 relative z-10">
+                            <div className="bg-rose-100 text-rose-600 p-1.5 rounded-lg"><Target size={14}/></div>
+                            <p className="text-xs text-slate-600">
+                                <b>{outreachIntel.notVisited} children</b> have not been visited in this period.
+                            </p>
+                        </div>
+                        
+                        {/* Background Decor */}
+                        <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-blue-50 rounded-full opacity-50 pointer-events-none"></div>
+                    </div>
+
+                    {/* Prayer Card */}
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden">
+                        <div className="flex justify-between items-start mb-4 relative z-10">
+                            <div>
+                                <h4 className="font-bold text-slate-700">Prayer Coverage</h4>
+                                <p className="text-xs text-slate-400">Unique kids prayed for in period</p>
+                            </div>
+                            <div className="p-2 bg-purple-50 text-purple-600 rounded-xl"><Heart size={20}/></div>
+                        </div>
+                        
+                        <div className="flex items-end gap-2 relative z-10">
+                            <span className="text-4xl font-extrabold text-slate-800">{outreachIntel.prayerCoverage}%</span>
+                            <span className="text-sm text-slate-400 mb-1.5 font-medium">of {outreachIntel.totalEligible} kids</span>
+                        </div>
+
+                        <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3 relative z-10">
+                            <div className="bg-amber-100 text-amber-600 p-1.5 rounded-lg"><Target size={14}/></div>
+                            <p className="text-xs text-slate-600">
+                                <b>{outreachIntel.notPrayed} children</b> pending prayer coverage.
+                            </p>
+                        </div>
+
+                        <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-purple-50 rounded-full opacity-50 pointer-events-none"></div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* SECTION C: MEMBER EXPORT */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                        <MessageCircle size={20} className="text-green-600"/> WhatsApp Export
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">Export active member lists directly to WhatsApp.</p>
+                </div>
+            </div>
+
+            {isAdmin ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(church => (
+                        <button 
+                            key={church}
+                            onClick={() => handleExport(church)}
+                            className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-green-50 border border-slate-200 hover:border-green-200 rounded-2xl transition-all group"
+                        >
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm mb-2 group-hover:scale-110 transition-transform
+                                ${church === 'UJ' ? 'bg-indigo-500' : church === 'I' ? 'bg-emerald-500' : church === 'K' ? 'bg-rose-500' : 'bg-amber-500'}
+                            `}>
+                                {church}
+                            </div>
+                            <span className="text-sm font-bold text-slate-700 group-hover:text-green-700">Export {church}</span>
+                            <span className="text-[10px] text-slate-400 group-hover:text-green-600 flex items-center gap-1 mt-1">
+                                <Share2 size={10}/> Share List
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            ) : (
+                <button 
+                    onClick={() => handleExport(activeChurch)}
+                    className="w-full py-4 bg-green-50 text-green-700 border border-green-200 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-green-100 transition-all shadow-sm active:scale-[0.99]"
+                >
+                    <Share2 size={20}/>
+                    <span>Export {activeChurch} Members List</span>
+                </button>
+            )}
+        </div>
+
+    </div>
+  );
+};
+
+export default AnalyticsHub;
