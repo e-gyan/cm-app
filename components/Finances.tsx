@@ -141,7 +141,7 @@ const Finances: React.FC<FinancesProps> = ({ data, onUpdate, activeChurch, curre
                      <>
                         <span className="text-xs font-bold text-slate-400 uppercase mr-2">Branch:</span>
                         <button onClick={() => setFilterChurch('All')} className={`px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap ${filterChurch === 'All' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>All</button>
-                        {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(c => (
+                        {(['I', 'K', 'LJ', 'UJ'] as Church[]).map(c => (
                             <button key={c} onClick={() => setFilterChurch(c)} className={`px-3 py-1.5 text-xs font-bold rounded-lg whitespace-nowrap ${filterChurch === c ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{c}</button>
                         ))}
                         <div className="w-px h-6 bg-slate-200 mx-2"></div>
@@ -270,7 +270,7 @@ const Finances: React.FC<FinancesProps> = ({ data, onUpdate, activeChurch, curre
                                     onChange={e => setFormData({...formData, churchId: e.target.value as Church})}
                                     disabled={!isAdmin && activeChurch !== 'CM'} // If not admin, locked to current church (though teacher role check handles this)
                                 >
-                                    {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(c => <option key={c} value={c}>{c}</option>)}
+                                    {(['I', 'K', 'LJ', 'UJ'] as Church[]).map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
                             </div>
                          </div>

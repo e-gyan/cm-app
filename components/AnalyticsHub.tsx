@@ -13,6 +13,9 @@ interface AnalyticsHubProps {
 
 type TimeRange = '2W' | '1M' | '3M' | 'YTD' | '1Y';
 
+// Define strict church order
+const CHURCH_ORDER: Church[] = ['I', 'K', 'LJ', 'UJ'];
+
 const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, currentUser }) => {
   const isAdmin = currentUser.role === 'ADMIN';
   const isUJTeacher = currentUser.role === 'TEACHER' && activeChurch === 'UJ';
@@ -33,21 +36,34 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
   };
 
   const getDateRange = () => {
-      const end = new Date(); // Today
+      const end = new Date(); // Today default
       // If selected year is previous, end date is Dec 31 of that year
       if (selectedYear !== new Date().getFullYear()) {
           end.setFullYear(selectedYear, 11, 31);
       }
+      end.setHours(23, 59, 59, 999); // End of day inclusive
       
       const start = new Date(end);
       
       switch(timeRange) {
-          case '2W': start.setDate(end.getDate() - 14); break;
-          case '1M': start.setMonth(end.getMonth() - 1); break;
-          case '3M': start.setMonth(end.getMonth() - 3); break;
-          case 'YTD': start.setFullYear(selectedYear, 0, 1); break; // Jan 1 of selected year
-          case '1Y': start.setFullYear(end.getFullYear() - 1); break;
+          case '2W': 
+              start.setDate(end.getDate() - 14); 
+              break;
+          case '1M': 
+              start.setMonth(end.getMonth() - 1); 
+              break;
+          case '3M': 
+              start.setMonth(end.getMonth() - 3); 
+              break;
+          case 'YTD': 
+              start.setFullYear(selectedYear, 0, 1); 
+              break; 
+          case '1Y': 
+              start.setFullYear(end.getFullYear() - 1); 
+              break;
       }
+      start.setHours(0, 0, 0, 0); // Start of day inclusive
+
       return { start, end };
   };
 
@@ -57,7 +73,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
   const chartData = useMemo(() => {
       const { start, end } = getDateRange();
       
-      // Filter records
+      // Filter records strictly within range
       let records = data.attendance.filter(r => {
           const d = new Date(r.date);
           const churchMatch = effectiveChurch === 'All' ? true : r.churchId === effectiveChurch;
@@ -71,15 +87,18 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
       const groupedByDate = new Map<string, { date: string, dateObj: Date, Member: number, FNF: number, Inconsistent: number, Total: number }>();
 
       records.forEach(r => {
-          if (!groupedByDate.has(r.date)) {
-              groupedByDate.set(r.date, { 
+          // Normalize date string to ensure grouping by day
+          const dateKey = r.date; 
+          
+          if (!groupedByDate.has(dateKey)) {
+              groupedByDate.set(dateKey, { 
                   date: new Date(r.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), 
                   dateObj: new Date(r.date),
                   Member: 0, FNF: 0, Inconsistent: 0, Total: 0 
                 });
           }
           
-          const entry = groupedByDate.get(r.date)!;
+          const entry = groupedByDate.get(dateKey)!;
           
           // Count attendees excluding staff
           r.presentMemberIds.forEach(id => {
@@ -94,7 +113,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
       });
 
       return Array.from(groupedByDate.values());
-  }, [data.attendance, effectiveChurch, timeRange, selectedYear]);
+  }, [data.attendance, effectiveChurch, timeRange, selectedYear, data.members]);
 
   // 2. High Level KPI
   const stats = useMemo(() => {
@@ -107,11 +126,13 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
       const mid = Math.floor(chartData.length / 2);
       const firstHalf = chartData.slice(0, mid);
       const secondHalf = chartData.slice(mid);
+      
       const avg1 = firstHalf.length ? firstHalf.reduce((a,b)=>a+b.Total,0)/firstHalf.length : 0;
       const avg2 = secondHalf.length ? secondHalf.reduce((a,b)=>a+b.Total,0)/secondHalf.length : 0;
-      const growth = avg1 === 0 ? 0 : Math.round(((avg2 - avg1) / avg1) * 100);
+      
+      const growth = avg1 === 0 ? (avg2 > 0 ? 100 : 0) : Math.round(((avg2 - avg1) / avg1) * 100);
 
-      // Simple Retention Proxy: Active Members vs FNF Ratio in attendance
+      // Simple Retention Proxy: Active Members vs Total
       const totalMembersAttended = chartData.reduce((acc, d) => acc + d.Member, 0);
       const retention = totalAtt > 0 ? Math.round((totalMembersAttended / totalAtt) * 100) : 0;
 
@@ -159,21 +180,38 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
   }, [data, isUJTeacher, effectiveChurch, timeRange, selectedYear]);
 
 
-  // --- EXPORT LOGIC ---
+  // --- EXPORT LOGIC (Grouped) ---
   const handleExport = (church: Church) => {
-      const list = data.members
-        .filter(m => m.assignedChurch === church && (m.type === MemberType.MEMBER || m.type === MemberType.FNF) && m.status === MemberStatus.ACTIVE)
+      // Get all active people for this church, sorted by name
+      const allActive = data.members
+        .filter(m => m.assignedChurch === church && m.status === MemberStatus.ACTIVE)
         .sort((a,b) => a.name.localeCompare(b.name));
 
-      if (list.length === 0) {
-          alert(`No active members found for ${church}.`);
+      // Separate into Groups
+      const members = allActive.filter(m => m.type === MemberType.MEMBER);
+      const fnf = allActive.filter(m => m.type === MemberType.FNF);
+
+      if (members.length === 0 && fnf.length === 0) {
+          alert(`No active members or FNF found for ${church}.`);
           return;
       }
 
-      let text = `*${church} CHURCH MEMBERS LIST*\n_Active Members & FNF_\n\n`;
-      list.forEach((m, i) => {
-          text += `${i + 1}. ${m.name} (${m.type})\n`;
-      });
+      let text = `*${church} CHURCH MEMBERS LIST*\n\n`;
+      
+      if (members.length > 0) {
+          text += `*MEMBERS (${members.length})*\n`;
+          members.forEach((m, i) => {
+              text += `${i + 1}. ${m.name}\n`;
+          });
+          text += `\n`;
+      }
+
+      if (fnf.length > 0) {
+          text += `*FNF (${fnf.length})*\n`;
+          fnf.forEach((m, i) => {
+              text += `${i + 1}. ${m.name}\n`;
+          });
+      }
 
       const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
       window.open(url, '_blank');
@@ -199,10 +237,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
                             onChange={(e) => setAdminFilterChurch(e.target.value as Church | 'All')}
                         >
                             <option value="All">All Churches</option>
-                            <option value="UJ">UJ</option>
-                            <option value="I">I</option>
-                            <option value="K">K</option>
-                            <option value="LJ">LJ</option>
+                            {CHURCH_ORDER.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                         <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
                     </div>
@@ -401,7 +436,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
 
             {isAdmin ? (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(church => (
+                    {CHURCH_ORDER.map(church => (
                         <button 
                             key={church}
                             onClick={() => handleExport(church)}

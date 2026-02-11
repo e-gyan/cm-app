@@ -184,6 +184,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
       if (activeChurch === 'I') return 'K Check';
       if (activeChurch === 'K') return 'LJ Check';
       if (activeChurch === 'LJ') return 'UJ Check';
+      // Default / UJ
       return 'Teen Check';
   };
 
@@ -592,8 +593,6 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
       </div>
   );
 
-  // ... (Rest of component remains largely the same, logic is handled by renderFormContent)
-  // Just returning the full structure to ensure imports and layout are correct
   return (
     <div className="space-y-6 relative pb-20">
       <div className="flex items-center justify-between mb-4">
@@ -620,10 +619,9 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                     <Building2 size={18}/> Church Filter
                 </h3>
                 
-                {/* Desktop: Horizontal Scroll */}
+                {/* Desktop: Horizontal Scroll - Updated Order I, K, LJ, UJ */}
                 <div className="hidden md:flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto no-scrollbar">
-                    {/* Added 'All' church filter if looking for members assigned to All */}
-                    {(['All', 'UJ', 'I', 'K', 'LJ', 'CM'] as const).map((c) => (
+                    {(['All', 'I', 'K', 'LJ', 'UJ', 'CM'] as const).map((c) => (
                         <button 
                             key={c} 
                             onClick={() => { setChurchFilter(c); setSelectedIds(new Set()); }} 
@@ -634,7 +632,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                     ))}
                 </div>
 
-                {/* Mobile: Dropdown */}
+                {/* Mobile: Dropdown - Updated Order I, K, LJ, UJ */}
                 <div className="md:hidden w-full relative">
                     <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500"><ChevronDown size={16} /></div>
                     <select
@@ -643,7 +641,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                         className="w-full appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-bold rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     >
                          <option value="All">All Branches</option>
-                         {(['UJ', 'I', 'K', 'LJ', 'CM'] as const).map((c) => (
+                         {(['I', 'K', 'LJ', 'UJ', 'CM'] as const).map((c) => (
                              <option key={c} value={c}>{c} Church</option>
                          ))}
                     </select>

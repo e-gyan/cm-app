@@ -51,7 +51,6 @@ const StatCard: React.FC<{ title: string; value: string | number; icon: React.Re
   </div>
 );
 
-// ... (CustomChartTooltip and AdminDashboard remain unchanged) ...
 const CustomChartTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
@@ -81,7 +80,8 @@ const CustomChartTooltip = ({ active, payload, label }: any) => {
 
 // --- ADMIN DASHBOARD ---
 const AdminDashboard: React.FC<{ data: AppData; onUpdateTargets?: () => void }> = ({ data, onUpdateTargets }) => {
-    const churches: Church[] = ['UJ', 'I', 'K', 'LJ'];
+    // Updated order
+    const churches: Church[] = ['I', 'K', 'LJ', 'UJ'];
     const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
     
     // Local state for target editing

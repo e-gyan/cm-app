@@ -54,8 +54,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const getRelevantBranches = (churchFilter: Church | 'COMBINED', mode: 'MEMBERS' | 'STAFF'): Church[] => {
       if (churchFilter !== 'COMBINED') return [churchFilter];
       return mode === 'STAFF' 
-        ? ['UJ', 'I', 'K', 'LJ', 'CM', 'All'] 
-        : ['UJ', 'I', 'K', 'LJ'];
+        ? ['I', 'K', 'LJ', 'UJ', 'CM', 'All'] 
+        : ['I', 'K', 'LJ', 'UJ'];
   };
 
   useEffect(() => {
@@ -263,10 +263,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
         
         // Clean up map entries for people who are NOT in the final present list at all
         const cleanServiceMap: Record<string, ServiceType> = {};
-        // Using Object.keys to avoid tuple inference issues
-        Object.keys(finalServiceMap).forEach((key) => {
+        // Use Object.entries to safely iterate key-values without index type issues
+        Object.entries(finalServiceMap).forEach(([key, value]) => {
             if (finalPresent.includes(key)) {
-                cleanServiceMap[key] = finalServiceMap[key];
+                cleanServiceMap[key] = value;
             }
         });
         finalServiceMap = cleanServiceMap;
@@ -395,7 +395,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
 
   const churchOptions = useMemo(() => {
       const base: Church[] = ['I', 'K', 'LJ', 'UJ'];
-      if (attendanceMode === 'STAFF') return ['All', 'CM', ...base].sort();
+      if (attendanceMode === 'STAFF') return ['All', 'CM', ...base];
       return base; 
   }, [attendanceMode]);
 

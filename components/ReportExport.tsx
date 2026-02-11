@@ -106,7 +106,8 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
   const kpiStats = useMemo(() => {
     if (!isAdmin) return [];
     
-    return (['UJ', 'I', 'K', 'LJ'] as Church[]).map(church => {
+    // Updated order
+    return (['I', 'K', 'LJ', 'UJ'] as Church[]).map(church => {
         // Calculate Avg Attendance (Last 5 weeks)
         const attendance = data.attendance.filter(r => r.churchId === church);
         const sortedAttendance = [...attendance].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -175,7 +176,8 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
          let report = `*CM ATTENDANCE SUMMARY*\n${formattedDate}\n`;
          report += `----------------------------\n`;
 
-         const branches: Church[] = ['UJ', 'I', 'K', 'LJ', 'CM', 'All'];
+         // Updated Order including All and CM at specific spots if needed, but for listing: I, K, LJ, UJ, then CM summary
+         const branches: Church[] = ['I', 'K', 'LJ', 'UJ', 'CM'];
          let ministryTotal = 0;
          let totalTeachers = 0;
 
@@ -385,7 +387,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                   <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><TrendingUp size={18}/> Edit Targets</h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {(['UJ', 'I', 'K', 'LJ'] as Church[]).map(c => (
+                      {(['I', 'K', 'LJ', 'UJ'] as Church[]).map(c => (
                           <div key={c}>
                               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{c} Target</label>
                               <input 
