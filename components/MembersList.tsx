@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppData, Member, MemberType, MemberStatus, Church, Role } from '../types';
-import { User, Users, Edit2, Archive, X, Save, GraduationCap, Undo2, HelpCircle, AlertCircle, Activity, Briefcase, ChevronDown, ChevronUp, Plus, Lock, Key, Heart, Hand, Trash2, Building2, Filter } from 'lucide-react';
+import { User, Users, Edit2, Archive, X, Save, GraduationCap, Undo2, HelpCircle, AlertCircle, Activity, Briefcase, ChevronDown, ChevronUp, Plus, Lock, Key, Heart, Hand, Trash2, Building2, Filter, Sun, Zap } from 'lucide-react';
 import { updateMember, bulkArchiveMembers, addMember, deleteMember } from '../services/storageService';
 import { sanitizeInput } from '../services/securityService';
 
@@ -35,6 +35,9 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   
+  // HISTORY MODAL STATE
+  const [historyMemberId, setHistoryMemberId] = useState<string | null>(null);
+
   // FORM DATA
   const [formData, setFormData] = useState<Partial<Member>>({
       name: '',
@@ -225,8 +228,8 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
       }
 
       return (
-          <div className="w-full max-w-[140px]">
-              <div className={`flex items-center justify-between mb-1 px-2 py-1 rounded-md border ${styles.bg} ${styles.border}`}>
+          <div className="w-full max-w-[140px] cursor-pointer group" onClick={() => setHistoryMemberId(member.id)}>
+              <div className={`flex items-center justify-between mb-1 px-2 py-1 rounded-md border ${styles.bg} ${styles.border} group-hover:shadow-sm transition-all`}>
                   <span className={`text-xs font-bold ${styles.text}`}>{attendanceRate}%</span>
                   <span className={`text-[10px] font-medium ${styles.text} opacity-80 flex items-center gap-1`}>
                       <Activity size={10} />
@@ -755,6 +758,62 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                 </div>
             </div>
         </div>
+      )}
+
+      {/* HISTORY MODAL */}
+      {historyMemberId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md flex flex-col max-h-[80vh] animate-in zoom-in-95 overflow-hidden">
+                  {/* Header */}
+                  <div className="p-6 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
+                      <div>
+                          <h3 className="text-xl font-bold text-slate-800">Attendance History</h3>
+                          <p className="text-sm text-slate-500 font-medium">
+                              {data.members.find(m => m.id === historyMemberId)?.name}
+                          </p>
+                      </div>
+                      <button onClick={() => setHistoryMemberId(null)} className="p-2 bg-white rounded-full hover:bg-slate-100 transition-colors shadow-sm">
+                          <X size={20} className="text-slate-400"/>
+                      </button>
+                  </div>
+                  
+                  {/* Scrollable List */}
+                  <div className="overflow-y-auto p-4 space-y-2 flex-1">
+                      {data.attendance
+                          .filter(r => r.churchId === (data.members.find(m => m.id === historyMemberId)?.assignedChurch || 'UJ'))
+                          .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                          .slice(0, 20) // Show last 20 records
+                          .map((record) => {
+                              const isPresent = record.presentMemberIds.includes(historyMemberId);
+                              const service = record.serviceMap?.[historyMemberId];
+                              
+                              return (
+                                  <div key={record.date} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
+                                      <div className="flex items-center gap-3">
+                                          <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${isPresent ? 'bg-green-50 border-green-500 text-green-600' : 'bg-slate-50 border-slate-200 text-slate-300'}`}>
+                                              {isPresent ? <Activity size={20}/> : <X size={20}/>}
+                                          </div>
+                                          <div>
+                                              <div className="font-bold text-slate-700">{formatDateDDMMYYYY(record.date)}</div>
+                                              <div className="text-[10px] text-slate-400 font-bold uppercase">{isPresent ? 'Present' : 'Absent'}</div>
+                                          </div>
+                                      </div>
+                                      
+                                      {isPresent && service && (
+                                          <div className={`px-2 py-1 rounded text-[10px] font-bold border uppercase flex items-center gap-1 ${service === 'JOY' ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-sky-50 text-sky-700 border-sky-100'}`}>
+                                              {service === 'JOY' ? <Sun size={10}/> : <Zap size={10}/>} {service}
+                                          </div>
+                                      )}
+                                  </div>
+                              );
+                          })
+                      }
+                      {data.attendance.filter(r => r.churchId === (data.members.find(m => m.id === historyMemberId)?.assignedChurch)).length === 0 && (
+                          <div className="text-center py-10 text-slate-400">No attendance records found for this branch.</div>
+                      )}
+                  </div>
+              </div>
+          </div>
       )}
 
     </div>

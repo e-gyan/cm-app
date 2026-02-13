@@ -1,4 +1,3 @@
-
 import { AppData, Member, AttendanceRecord, MemberType, MemberStatus, Church, CloudConfig, Transaction, Notification, NotificationType, OutreachSession, PrayerSlot, Role, ServiceType, AppSettings } from '../types';
 import { INITIAL_MEMBERS, INITIAL_ATTENDANCE, DEFAULT_CLOUD_CONFIG, DEFAULT_SETTINGS } from '../constants';
 import { sanitizeInput, hashString, isValidSchema, hashPasscode, verifyPasscode } from './securityService';
@@ -7,6 +6,7 @@ import { sanitizeInput, hashString, isValidSchema, hashPasscode, verifyPasscode 
 const STORAGE_KEY = 'UJ_CHURCH_DATA_2026_V5'; 
 const SESSION_KEY = 'UJ_CHURCH_SESSION_V1';
 const LOGIN_ATTEMPTS_KEY = 'UJ_LOGIN_ATTEMPTS';
+const CLOUD_CONFIG_KEY = 'UJ_CLOUD_CONFIG_V1';
 
 // --- DATA LOADING & MIGRATION ---
 const loadData = (): AppData => {
@@ -16,17 +16,13 @@ const loadData = (): AppData => {
 
     if (stored) {
       parsed = JSON.parse(stored);
-      // Ensure arrays exist if loaded from legacy data
+      // Ensure transactions exists if loaded from legacy data
       if (!parsed.transactions) parsed.transactions = [];
       if (!parsed.notifications) parsed.notifications = [];
+      if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
       if (!parsed.outreachSessions) parsed.outreachSessions = [];
       if (!parsed.prayerSchedule) parsed.prayerSchedule = [];
-      if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
-      
-      // Initialize Settings if missing (Migration)
-      if (!parsed.settings) {
-          parsed.settings = { ...DEFAULT_SETTINGS };
-      }
+      if (!parsed.settings) parsed.settings = { ...DEFAULT_SETTINGS };
     } else {
       parsed = {
         members: [...INITIAL_MEMBERS],
@@ -37,15 +33,25 @@ const loadData = (): AppData => {
         prayerSchedule: [],
         targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
         settings: { ...DEFAULT_SETTINGS },
-        lastUpdated: 0 
+        lastUpdated: Date.now()
       };
     }
 
-    // --- SECURITY MIGRATION ---
+    // --- SECURITY MIGRATION: HASH PLAIN TEXT PASSWORDS ---
+    // If a passcode is short (e.g. "1234"), it's plaintext. SHA-256 hex is 64 chars.
+    let migrationNeeded = false;
+    
+    // We can't await inside synchronous loadData, so we'll schedule it.
+    // However, to ensure consistency, we check on usage. 
+    // For initial load, we assume if they are short they are legacy.
+    
+    // Migration Logic:
     let adminExists = false;
     parsed.members.forEach((m: any) => {
         if (!m.assignedChurch) m.assignedChurch = 'UJ';
         if (!m.role) m.role = 'NONE';
+        
+        // Ensure critical fields are sanitized even from local storage
         if (m.name) m.name = sanitizeInput(m.name);
 
         if (m.role === 'ADMIN') {
@@ -65,7 +71,7 @@ const loadData = (): AppData => {
             status: MemberStatus.ACTIVE,
             assignedChurch: "CM",
             role: "ADMIN",
-            passcode: "2026", 
+            passcode: "2026", // Plaintext initially, will be hashed on auth or next save cycle logic
             isAccessActive: true
         });
     }
@@ -97,7 +103,7 @@ const loadData = (): AppData => {
         prayerSchedule: [],
         targets: { UJ: 0, I: 0, K: 0, LJ: 0 },
         settings: { ...DEFAULT_SETTINGS },
-        lastUpdated: 0
+        lastUpdated: Date.now()
     };
   }
 };
@@ -207,6 +213,7 @@ export const syncFromCloud = async (force: boolean = false): Promise<{success: b
         const result = await response.json();
         const cloudData: AppData = result.record || result; 
         
+        // Security Check: Validate Schema of Cloud Data before merging
         if (!isValidSchema(cloudData)) {
             console.error("Security Alert: Cloud data schema invalid.");
             return { success: false, message: 'Cloud data corrupted or invalid.' };
@@ -276,7 +283,107 @@ export const deleteMember = (id: string) => { inMemoryData.members = inMemoryDat
 export const bulkArchiveMembers = (ids: string[]) => { let hasChanges = false; inMemoryData.members.forEach(member => { if (ids.includes(member.id)) { member.status = MemberStatus.ARCHIVED; hasChanges = true; } }); if (hasChanges) { isDirty = true; persistData('DEBOUNCE'); } };
 const calculateAge = (birthDate: string) => { const birth = new Date(birthDate); const today = new Date(); let age = today.getFullYear() - birth.getFullYear(); const m = today.getMonth() - birth.getMonth(); if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--; return age; };
 const autoTransferMembersBasedOnAge = () => { let transferChanges = false; const today = new Date(); inMemoryData.members.forEach(member => { if (member.assignedChurch === 'CM') return; if (member.status !== MemberStatus.ACTIVE) return; if (member.type !== MemberType.MEMBER) return; if (!member.birthDate) return; const age = calculateAge(member.birthDate); let targetChurch: Church | 'ARCHIVE' | null = null; if (age >= 0 && age <= 1) targetChurch = 'I'; else if (age >= 2 && age <= 5) targetChurch = 'K'; else if (age >= 6 && age <= 8) targetChurch = 'LJ'; else if (age >= 9 && age <= 13) targetChurch = 'UJ'; else if (age > 13) targetChurch = 'ARCHIVE'; if (targetChurch === 'ARCHIVE' && member.assignedChurch === 'UJ') { if (!member.transferPendingDate) { member.transferPendingDate = today.toISOString(); transferChanges = true; } else { const pendingDate = new Date(member.transferPendingDate); const diffTime = Math.abs(today.getTime() - pendingDate.getTime()); const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); if (diffDays >= 7) { member.status = MemberStatus.ARCHIVED; member.type = MemberType.NOT_MEMBER; member.transferPendingDate = undefined; transferChanges = true; } } return; } if (targetChurch && targetChurch !== 'ARCHIVE') { if (member.assignedChurch !== targetChurch) { member.assignedChurch = targetChurch; transferChanges = true; } } }); if (transferChanges) { isDirty = true; persistData('DEBOUNCE'); } };
-const checkAndAutoUpdateMemberStatus = (churchId: Church) => { if (churchId === 'CM') return; const sortedAttendance = inMemoryData.attendance .filter(r => r.churchId === churchId) .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); if (sortedAttendance.length < 7) return; const churchMembers = inMemoryData.members.filter(m => m.assignedChurch === churchId); if (sortedAttendance.length >= 10) { const last10Weeks = sortedAttendance.slice(0, 10); const presentIds = new Set(last10Weeks.flatMap(r => r.presentMemberIds)); churchMembers.forEach(member => { if (member.status !== MemberStatus.ACTIVE || member.role !== 'NONE') return; if (new Date(member.joinedDate) > new Date(last10Weeks[last10Weeks.length-1].date)) return; if (!presentIds.has(member.id) && member.type !== MemberType.INCONSISTENT) { member.type = MemberType.INCONSISTENT; member.status = MemberStatus.NOT_ACTIVE; isDirty = true; } }); } const last7Weeks = sortedAttendance.slice(0, 7); churchMembers.forEach(member => { if (member.type === MemberType.INCONSISTENT || member.status === MemberStatus.NOT_ACTIVE) { if (last7Weeks.every(r => r.presentMemberIds.includes(member.id))) { member.type = MemberType.MEMBER; member.status = MemberStatus.ACTIVE; isDirty = true; } } }); if (isDirty) persistData('DEBOUNCE'); };
+
+// --- HELPER: NOTIFICATIONS ---
+const addNotification = (type: NotificationType, message: string, churchId: Church, memberId?: string) => {
+    const exists = inMemoryData.notifications.some(n => 
+        n.relatedMemberId === memberId && 
+        n.type === type && 
+        n.message === message && 
+        (Date.now() - new Date(n.createdAt).getTime() < 24 * 60 * 60 * 1000)
+    );
+    if (exists) return;
+
+    const newNotif: Notification = {
+        id: crypto.randomUUID(),
+        type,
+        message,
+        createdAt: new Date().toISOString(),
+        targetChurch: churchId,
+        relatedMemberId: memberId,
+        isRead: false
+    };
+    inMemoryData.notifications.unshift(newNotif);
+    
+    if (inMemoryData.notifications.length > 50) {
+        inMemoryData.notifications = inMemoryData.notifications.slice(0, 50);
+    }
+};
+
+const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
+  if (churchId === 'CM') return;
+
+  const sortedAttendance = inMemoryData.attendance
+    .filter(r => r.churchId === churchId)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  if (sortedAttendance.length < 4) return;
+  const churchMembers = inMemoryData.members.filter(m => m.assignedChurch === churchId);
+
+  churchMembers.forEach(member => {
+      // Skip staff, archived, transferred
+      if (['Teacher','Helper','Volunteer','Admin'].includes(member.type)) return;
+      if (member.status === MemberStatus.ARCHIVED || member.status === MemberStatus.TRANSFERRED) return;
+
+      // 1. REACTIVATION: Not Active -> Active (4 consecutive attendances)
+      if (member.status === MemberStatus.NOT_ACTIVE) {
+          if (sortedAttendance.length >= 4) {
+              const last4 = sortedAttendance.slice(0, 4);
+              const presentInAll4 = last4.every(r => r.presentMemberIds.includes(member.id));
+              
+              if (presentInAll4) {
+                  member.status = MemberStatus.ACTIVE;
+                  member.type = MemberType.MEMBER; // Typically if they come back 4 times, they are back as member
+                  addNotification('STATUS_CHANGE', `${member.name} reactivated! (4 consecutive attendances)`, churchId, member.id);
+                  isDirty = true;
+                  return; // State changed, move to next member
+              }
+          }
+      }
+
+      // 2. PROMOTION: FNF -> Member (7 consecutive attendances)
+      if (member.status === MemberStatus.ACTIVE && member.type === MemberType.FNF) {
+          if (sortedAttendance.length >= 7) {
+              const last7 = sortedAttendance.slice(0, 7);
+              const presentInAll7 = last7.every(r => r.presentMemberIds.includes(member.id));
+              
+              if (presentInAll7) {
+                  member.type = MemberType.MEMBER;
+                  addNotification('PROMOTION', `${member.name} promoted to Full Member! (7 consecutive attendances)`, churchId, member.id);
+                  isDirty = true;
+                  return;
+              }
+          }
+      }
+
+      // 3. DEACTIVATION: Active -> Not Active (7 consecutive absences)
+      // This applies to both MEMBERS and FNF who are currently ACTIVE
+      if (member.status === MemberStatus.ACTIVE) {
+          if (sortedAttendance.length >= 7) {
+              const last7 = sortedAttendance.slice(0, 7);
+              // Check if the member existed during these 7 sessions (joined before the oldest of the 7)
+              const oldestInWindow = new Date(last7[last7.length - 1].date);
+              const joinedDate = new Date(member.joinedDate);
+              
+              if (joinedDate <= oldestInWindow) {
+                  const absentAll7 = last7.every(r => !r.presentMemberIds.includes(member.id));
+                  
+                  if (absentAll7) {
+                      member.status = MemberStatus.NOT_ACTIVE;
+                      if (member.type === MemberType.MEMBER) {
+                          member.type = MemberType.INCONSISTENT;
+                      }
+                      addNotification('STATUS_CHANGE', `${member.name} marked Not Active (7 consecutive absences).`, churchId, member.id);
+                      isDirty = true;
+                  }
+              }
+          }
+      }
+  });
+
+  if (isDirty) persistData('DEBOUNCE');
+};
+
 export const checkBirthdaysAndTeens = () => { const today = new Date(); const currentDay = today.getDate(); const currentMonth = today.getMonth(); const year = today.getFullYear(); const todayStr = today.toISOString().split('T')[0]; inMemoryData.members.forEach(m => { if (m.status !== MemberStatus.ACTIVE || !m.birthDate) return; const birth = new Date(m.birthDate); if (birth.getDate() === currentDay && birth.getMonth() === currentMonth) { const exists = inMemoryData.notifications.some(n => n.type === 'BIRTHDAY' && n.relatedMemberId === m.id && n.createdAt.startsWith(todayStr)); if (!exists) { inMemoryData.notifications.push({ id: crypto.randomUUID(), type: 'BIRTHDAY', message: `It's ${m.name}'s birthday today!`, createdAt: today.toISOString(), targetChurch: m.assignedChurch, relatedMemberId: m.id, isRead: false }); isDirty = true; } } let age = year - birth.getFullYear(); const mMonth = today.getMonth() - birth.getMonth(); if (mMonth < 0 || (mMonth === 0 && today.getDate() < birth.getDate())) age--; if (age === 13) { const exists = inMemoryData.notifications.some(n => n.type === 'TEEN_ALERT' && n.relatedMemberId === m.id && n.createdAt.startsWith(year.toString())); if (!exists) { inMemoryData.notifications.push({ id: crypto.randomUUID(), type: 'TEEN_ALERT', message: `${m.name} is 13. Transition to Youth?`, createdAt: today.toISOString(), targetChurch: m.assignedChurch, relatedMemberId: m.id, isRead: false }); isDirty = true; } } }); if (isDirty) persistData('DEBOUNCE'); };
 export const updateTargets = (targets: Record<string, number>) => { inMemoryData.targets = targets; isDirty = true; persistData('IMMEDIATE'); };
 export const markNotificationAsRead = (id: string) => { const note = inMemoryData.notifications.find(n => n.id === id); if (note) { note.isRead = true; isDirty = true; persistData('DEBOUNCE'); } };

@@ -443,11 +443,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
   };
 
   // --- CONNECT TAB DATA ---
+  // Ensure we are filtering strictly on the latest props data to reflect changes immediately
   const connectList = useMemo(() => {
       return data.members
         .filter(m => m.assignedChurch === 'UJ' && [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT].includes(m.type) && m.status === MemberStatus.ACTIVE)
         .sort((a, b) => a.name.localeCompare(b.name));
-  }, [data.members]);
+  }, [data.members]); // Dependency on data.members ensures sync
 
   return (
     <div className="space-y-4 pb-24 relative min-h-screen">
@@ -946,12 +947,18 @@ const PrayerSlotCard = ({ slot, data, unsavedChanges, onToggle, isExpired }: any
                 <div className="flex flex-wrap gap-2">
                     {slot.assignedMemberIds.map((id: string) => {
                         const m = data.members.find((mem: any) => mem.id === id);
-                        if(!m) return null;
+                        
+                        // Handle removed or archived members
+                        if(!m || m.status === MemberStatus.ARCHIVED || m.status === MemberStatus.TRANSFERRED) {
+                             return <div key={id} className="flex items-center gap-1.5 text-[10px] px-2 py-1.5 rounded-lg font-bold border bg-gray-100 text-gray-400 border-gray-200"><span>{m ? m.name : 'Unknown'}</span><span className="text-[8px] bg-red-100 text-red-600 px-1 rounded">GONE</span></div>;
+                        }
+
                         let colorClass = 'bg-slate-50 text-slate-600 border-slate-100';
                         if (m.type === MemberType.FNF) colorClass = 'bg-amber-50 text-amber-700 border-amber-100';
                         else if (m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE) colorClass = 'bg-rose-50 text-rose-700 border-rose-100';
                         else colorClass = 'bg-indigo-50 text-indigo-700 border-indigo-100';
                         if (slot.isCompleted) colorClass = 'bg-green-50 text-green-700 border-green-100 opacity-80';
+                        
                         return <div key={id} className={`flex items-center gap-1.5 text-[10px] px-2 py-1.5 rounded-lg font-bold border ${colorClass}`}><span>{m.name}</span></div>;
                     })}
                 </div>
@@ -1128,8 +1135,28 @@ const SessionChildList = ({ session, data, onToggle, onMove }: { session: Outrea
         <div className="divide-y divide-slate-50">
             {session.assignedMemberIds.map(id => {
                 const m = data.members.find(mem => mem.id === id);
-                if (!m) return null;
                 const isVisited = session.visitedMemberIds?.includes(id);
+                
+                // Handle archived/deleted members who are still in schedule
+                if (!m || m.status === MemberStatus.ARCHIVED || m.status === MemberStatus.TRANSFERRED) {
+                    return (
+                        <div key={id} className="flex items-center justify-between p-3 bg-red-50/50">
+                            <div className="flex items-center gap-3 opacity-50">
+                                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-500">?</div>
+                                <div>
+                                    <div className="font-bold text-sm text-slate-500">{m ? m.name : 'Unknown Child'}</div>
+                                    <div className="text-[10px] text-red-500 font-bold uppercase">{m ? m.status : 'DELETED'}</div>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); onMove(id, session.id); }}
+                                className="text-xs text-red-500 hover:underline"
+                            >
+                                Remove
+                            </button>
+                        </div>
+                    );
+                }
                 
                 return (
                     <div key={id} onClick={() => onToggle(session.id, id)} className="flex items-center justify-between p-3 hover:bg-slate-50 transition-colors cursor-pointer group">

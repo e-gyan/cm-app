@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { AppData, Church, Member, MemberType, MemberStatus } from '../types';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell
 } from 'recharts';
-import { Calendar, ChevronDown, TrendingUp, TrendingDown, Users, Target, Activity, MessageCircle, Share2, MapPin, Heart, HeartHandshake } from 'lucide-react';
+import { Calendar, ChevronDown, TrendingUp, TrendingDown, Users, Target, Activity, MessageCircle, Share2, MapPin, Heart, HeartHandshake, Sparkles, Loader2, RefreshCw } from 'lucide-react';
+import { GoogleGenAI } from "@google/genai";
 
 interface AnalyticsHubProps {
   data: AppData;
@@ -24,6 +25,10 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [timeRange, setTimeRange] = useState<TimeRange>('1M');
   const [adminFilterChurch, setAdminFilterChurch] = useState<Church | 'All'>('All');
+  
+  // AI State
+  const [aiInsight, setAiInsight] = useState<string>("");
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
 
   // --- HELPERS ---
   const effectiveChurch = isAdmin ? adminFilterChurch : activeChurch;
@@ -141,6 +146,56 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
 
       return { avg, growth, retention, newFaces };
   }, [chartData]);
+
+  // --- AI GENERATION ---
+  const generateInsight = async () => {
+      if (chartData.length < 2) {
+          setAiInsight("Not enough data points in this period to generate a trend analysis.");
+          return;
+      }
+
+      setIsGenerating(true);
+      try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const prompt = `
+            Act as a senior data analyst for a children's ministry.
+            Analyze this attendance data for the period "${timeRange}":
+            - Average Attendance: ${stats.avg}
+            - Growth vs previous half of period: ${stats.growth}%
+            - Retention Rate (Regular Members / Total): ${stats.retention}%
+            - New Visitors (FNF) avg per week: ${stats.newFaces}
+            - Data Points (Chronological): ${JSON.stringify(chartData.map(d => ({ date: d.date, total: d.Total })))}
+
+            Instructions:
+            1. Provide a "Brutal and Honest" inference. Do not use corporate fluff.
+            2. If growth is negative, explicitly point it out as a problem.
+            3. If retention is low (<60%), warn about member bleed.
+            4. If new faces are low, warn about lack of outreach.
+            5. Keep it under 2 sentences. Be direct.
+          `;
+
+          const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash-lite-latest', // Fast model
+              contents: prompt,
+          });
+          
+          setAiInsight(response.text || "Could not generate insight.");
+      } catch (e) {
+          console.error("AI Gen Error", e);
+          setAiInsight("AI Analysis unavailable at the moment.");
+      } finally {
+          setIsGenerating(false);
+      }
+  };
+
+  // Debounced Effect to trigger AI when stats change
+  useEffect(() => {
+      const timer = setTimeout(() => {
+          generateInsight();
+      }, 800); // 800ms debounce to prevent call spam while switching tabs
+      return () => clearTimeout(timer);
+  }, [stats, timeRange, effectiveChurch]);
+
 
   // 3. UJ Outreach Intelligence
   const outreachIntel = useMemo(() => {
@@ -309,15 +364,27 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
                     </div>
                 </div>
                 
-                {/* Insight Text */}
-                <div className="bg-indigo-900 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden">
+                {/* AI Insight Card */}
+                <div className="bg-indigo-900 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden flex flex-col justify-between min-h-[140px]">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-white opacity-5 rounded-full blur-2xl -translate-y-4 translate-x-4"></div>
-                    <h4 className="font-bold text-sm mb-1 flex items-center gap-2"><Activity size={16}/> Insight</h4>
-                    <p className="text-xs text-indigo-200 leading-relaxed">
-                        {stats.growth > 0 
-                            ? "Great momentum! Attendance is trending upwards compared to previous weeks." 
-                            : "Attendance has softened slightly. Consider reviewing the 'Inconsistent' list."}
-                    </p>
+                    <div>
+                        <div className="flex justify-between items-start mb-2">
+                            <h4 className="font-bold text-sm flex items-center gap-2"><Sparkles size={16} className="text-indigo-300"/> AI Insight</h4>
+                            <button onClick={generateInsight} disabled={isGenerating} className="p-1 hover:bg-white/10 rounded-full transition-colors disabled:opacity-50">
+                                <RefreshCw size={12} className={isGenerating ? 'animate-spin' : ''}/>
+                            </button>
+                        </div>
+                        {isGenerating ? (
+                            <div className="flex items-center gap-2 text-indigo-300 text-xs py-2">
+                                <Loader2 size={14} className="animate-spin"/>
+                                <span>Analyzing trends...</span>
+                            </div>
+                        ) : (
+                            <p className="text-xs text-indigo-100 leading-relaxed font-medium">
+                                {aiInsight || "Select a range to analyze."}
+                            </p>
+                        )}
+                    </div>
                 </div>
             </div>
 
