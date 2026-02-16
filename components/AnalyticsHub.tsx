@@ -155,37 +155,59 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
       }
 
       setIsGenerating(true);
-      try {
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          const prompt = `
-            Act as a senior data analyst for a children's ministry.
-            Analyze this attendance data for the period "${timeRange}":
-            - Average Attendance: ${stats.avg}
-            - Growth vs previous half of period: ${stats.growth}%
-            - Retention Rate (Regular Members / Total): ${stats.retention}%
-            - New Visitors (FNF) avg per week: ${stats.newFaces}
-            - Data Points (Chronological): ${JSON.stringify(chartData.map(d => ({ date: d.date, total: d.Total })))}
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `
+        Act as a senior data analyst for a children's ministry.
+        Analyze this attendance data for the period "${timeRange}":
+        - Average Attendance: ${stats.avg}
+        - Growth vs previous half of period: ${stats.growth}%
+        - Retention Rate (Regular Members / Total): ${stats.retention}%
+        - New Visitors (FNF) avg per week: ${stats.newFaces}
+        - Data Points (Chronological): ${JSON.stringify(chartData.map(d => ({ date: d.date, total: d.Total })))}
 
-            Instructions:
-            1. Provide a "Brutal and Honest" inference. Do not use corporate fluff.
-            2. If growth is negative, explicitly point it out as a problem.
-            3. If retention is low (<60%), warn about member bleed.
-            4. If new faces are low, warn about lack of outreach.
-            5. Keep it under 2 sentences. Be direct.
-          `;
+        Instructions:
+        1. Provide a "Brutal and Honest" inference. Do not use corporate fluff.
+        2. If growth is negative, explicitly point it out as a problem.
+        3. If retention is low (<60%), warn about member bleed.
+        4. If new faces are low, warn about lack of outreach.
+        5. Keep it under 2 sentences. Be direct.
+      `;
 
-          const response = await ai.models.generateContent({
-              model: 'gemini-3-flash-preview', // Supported model for text tasks
-              contents: prompt,
-          });
-          
-          setAiInsight(response.text || "Could not generate insight.");
-      } catch (e) {
-          console.error("AI Gen Error", e);
-          setAiInsight("AI Analysis unavailable at the moment.");
-      } finally {
-          setIsGenerating(false);
+      let retryCount = 0;
+      const maxRetries = 3;
+
+      while (retryCount < maxRetries) {
+        try {
+            const response = await ai.models.generateContent({
+                model: 'gemini-3-flash-preview', 
+                contents: prompt,
+            });
+            
+            setAiInsight(response.text || "Could not generate insight.");
+            break; // Success, exit loop
+        } catch (e: any) {
+            console.error(`AI Gen Attempt ${retryCount + 1} Error:`, e);
+            retryCount++;
+            
+            // Check for 503 or 429 errors (High Demand / Rate Limit)
+            const isOverloaded = e.status === 503 || e.message?.includes('503') || e.status === 429 || e.message?.includes('429');
+            
+            if (isOverloaded && retryCount < maxRetries) {
+                // Exponential backoff: 1s, 2s...
+                await new Promise(res => setTimeout(res, 1000 * retryCount));
+                continue;
+            }
+
+            if (retryCount === maxRetries) {
+                 if (isOverloaded) {
+                     setAiInsight("System is currently experiencing high traffic. Please try again in a minute.");
+                 } else {
+                     setAiInsight("AI Analysis unavailable at the moment.");
+                 }
+            }
+        }
       }
+      setIsGenerating(false);
   };
 
   // Debounced Effect to trigger AI when stats change
