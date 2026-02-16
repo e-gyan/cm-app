@@ -175,7 +175,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
           `;
 
           const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash-lite-latest', // Fast model
+              model: 'gemini-3-flash-preview', // Supported model for text tasks
               contents: prompt,
           });
           
