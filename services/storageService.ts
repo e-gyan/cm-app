@@ -317,7 +317,7 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
     .filter(r => r.churchId === churchId)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  if (sortedAttendance.length < 4) return;
+  if (sortedAttendance.length < 3) return; // Need at least 3 for smallest check
   const churchMembers = inMemoryData.members.filter(m => m.assignedChurch === churchId);
 
   churchMembers.forEach(member => {
@@ -325,24 +325,39 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
       if (['Teacher','Helper','Volunteer','Admin'].includes(member.type)) return;
       if (member.status === MemberStatus.ARCHIVED || member.status === MemberStatus.TRANSFERRED) return;
 
-      // 1. REACTIVATION: Not Active -> Active (4 consecutive attendances)
+      // 1. ACTIVATION / REACTIVATION
       if (member.status === MemberStatus.NOT_ACTIVE) {
-          if (sortedAttendance.length >= 4) {
+          // FNF Specific Activation: 3 Consecutive
+          if (member.type === MemberType.FNF) {
+              if (sortedAttendance.length >= 3) {
+                  const last3 = sortedAttendance.slice(0, 3);
+                  const presentInAll3 = last3.every(r => r.presentMemberIds.includes(member.id));
+                  
+                  if (presentInAll3) {
+                      member.status = MemberStatus.ACTIVE;
+                      addNotification('STATUS_CHANGE', `${member.name} marked Active! (3 consecutive visits)`, churchId, member.id);
+                      isDirty = true;
+                      return; // Move to next member
+                  }
+              }
+          } 
+          // Regular Member Reactivation: 4 Consecutive
+          else if (sortedAttendance.length >= 4) {
               const last4 = sortedAttendance.slice(0, 4);
               const presentInAll4 = last4.every(r => r.presentMemberIds.includes(member.id));
               
               if (presentInAll4) {
                   member.status = MemberStatus.ACTIVE;
-                  member.type = MemberType.MEMBER; // Typically if they come back 4 times, they are back as member
+                  member.type = MemberType.MEMBER; 
                   addNotification('STATUS_CHANGE', `${member.name} reactivated! (4 consecutive attendances)`, churchId, member.id);
                   isDirty = true;
-                  return; // State changed, move to next member
+                  return; 
               }
           }
       }
 
       // 2. PROMOTION: FNF -> Member (7 consecutive attendances)
-      if (member.status === MemberStatus.ACTIVE && member.type === MemberType.FNF) {
+      if (member.type === MemberType.FNF && member.status === MemberStatus.ACTIVE) {
           if (sortedAttendance.length >= 7) {
               const last7 = sortedAttendance.slice(0, 7);
               const presentInAll7 = last7.every(r => r.presentMemberIds.includes(member.id));

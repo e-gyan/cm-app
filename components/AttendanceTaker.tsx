@@ -296,7 +296,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
     const cleanName = sanitizeInput(newMemberName);
     const targetChurch = isCombinedView ? 'UJ' : effectiveChurch as Church;
     
-    const newMember = await addMember(cleanName, MemberType.FNF, targetChurch, '');
+    // Set initial status to NOT_ACTIVE for FNF
+    const newMember = await addMember(cleanName, MemberType.FNF, targetChurch, '', MemberStatus.NOT_ACTIVE);
+    
     const newSet = new Set(presentIds);
     newSet.add(newMember.id);
     setPresentIds(newSet);
