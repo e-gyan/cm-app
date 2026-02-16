@@ -424,7 +424,96 @@ export const savePrayerSlot = (slot: PrayerSlot) => {
     return persistData('IMMEDIATE');
 };
 
-export const generateOutreachSchedule = (dates: string[], members: Member[]): { success: boolean, message: string } => { if (dates.length === 0 || members.length === 0) return { success: false, message: 'No dates or members.' }; if (!inMemoryData.outreachSessions) inMemoryData.outreachSessions = []; const existingDates = inMemoryData.outreachSessions.map(s => s.date); const duplicates = dates.filter(d => existingDates.includes(d)); if (duplicates.length > 0) return { success: false, message: `Dates already exist.` }; const today = new Date().toISOString().split('T')[0]; const missedMemberIds = new Set<string>(); inMemoryData.outreachSessions.forEach(session => { if (session.date < today && session.status !== 'COMPLETED') { const visited = session.visitedMemberIds || []; session.assignedMemberIds.forEach(id => { if (!visited.includes(id)) missedMemberIds.add(id); }); } }); const missedMembers = members.filter(m => missedMemberIds.has(m.id)); const generalPool = members.filter(m => !missedMemberIds.has(m.id)); const active = generalPool.filter(m => m.status === MemberStatus.ACTIVE && m.type === MemberType.MEMBER); const fnf = generalPool.filter(m => m.type === MemberType.FNF); const inconsistent = generalPool.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE); const shuffle = (array: Member[]) => array.sort(() => Math.random() - 0.5); shuffle(active); shuffle(fnf); shuffle(inconsistent); const priorityQueue = [...missedMembers]; let dateIndex = 0; while (dateIndex < dates.length) { if (priorityQueue.length === 0 && active.length === 0 && fnf.length === 0 && inconsistent.length === 0) break; const group: string[] = []; const slotsPerDay = 4; while (group.length < slotsPerDay && priorityQueue.length > 0) { group.push(priorityQueue.shift()!.id); } if (group.length < slotsPerDay) { if (fnf.length > 0) group.push(fnf.shift()!.id); if (inconsistent.length > 0 && group.length < slotsPerDay) group.push(inconsistent.shift()!.id); while (group.length < slotsPerDay) { if (active.length > 0) group.push(active.shift()!.id); else if (fnf.length > 0) group.push(fnf.shift()!.id); else if (inconsistent.length > 0) group.push(inconsistent.shift()!.id); else break; } } if (group.length > 0) { inMemoryData.outreachSessions.push({ id: crypto.randomUUID(), date: dates[dateIndex], startTime: '10:00', endTime: '15:00', assignedMemberIds: group, visitedMemberIds: [], status: 'PENDING' }); } dateIndex++; } isDirty = true; persistData('IMMEDIATE'); return { success: true, message: `Scheduled ${dates.length} visits.` }; };
+export const generateOutreachSchedule = (dates: string[], members: Member[]): { success: boolean, message: string } => {
+    if (dates.length === 0 || members.length === 0) return { success: false, message: 'No dates or members.' };
+    if (!inMemoryData.outreachSessions) inMemoryData.outreachSessions = [];
+    
+    const existingDates = inMemoryData.outreachSessions.map(s => s.date);
+    const duplicates = dates.filter(d => existingDates.includes(d));
+    if (duplicates.length > 0) return { success: false, message: `Dates already exist.` };
+    
+    const today = new Date().toISOString().split('T')[0];
+    const missedMemberIds = new Set<string>();
+    
+    // INTERVAL LOGIC: Exclude members visited in the last 60 days
+    const twoMonthsAgo = new Date();
+    twoMonthsAgo.setDate(twoMonthsAgo.getDate() - 60);
+    const recentVisitedIds = new Set<string>();
+
+    inMemoryData.outreachSessions.forEach(session => {
+        // Collect missed visits from pending past sessions
+        if (session.date < today && session.status !== 'COMPLETED') {
+            const visited = session.visitedMemberIds || [];
+            session.assignedMemberIds.forEach(id => {
+                if (!visited.includes(id)) missedMemberIds.add(id);
+            });
+        }
+        
+        // Collect recently visited members (to exclude from rotation)
+        // We consider any visit in the record as a "touch point", regardless of session completion status
+        if (new Date(session.date) >= twoMonthsAgo && session.visitedMemberIds) {
+            session.visitedMemberIds.forEach(id => recentVisitedIds.add(id));
+        }
+    });
+
+    const missedMembers = members.filter(m => missedMemberIds.has(m.id));
+    
+    // General Pool: Exclude those already missed (handled above) AND those recently visited
+    const generalPool = members.filter(m => !missedMemberIds.has(m.id) && !recentVisitedIds.has(m.id));
+    
+    const active = generalPool.filter(m => m.status === MemberStatus.ACTIVE && m.type === MemberType.MEMBER);
+    const fnf = generalPool.filter(m => m.type === MemberType.FNF);
+    const inconsistent = generalPool.filter(m => m.type === MemberType.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE);
+    
+    const shuffle = (array: Member[]) => array.sort(() => Math.random() - 0.5);
+    
+    shuffle(active);
+    shuffle(fnf);
+    shuffle(inconsistent);
+    
+    const priorityQueue = [...missedMembers]; // Missed members skip the rotation filter to ensure they are caught up
+    
+    let dateIndex = 0;
+    while (dateIndex < dates.length) {
+        if (priorityQueue.length === 0 && active.length === 0 && fnf.length === 0 && inconsistent.length === 0) break;
+        
+        const group: string[] = [];
+        const slotsPerDay = 4;
+        
+        while (group.length < slotsPerDay && priorityQueue.length > 0) {
+            group.push(priorityQueue.shift()!.id);
+        }
+        
+        if (group.length < slotsPerDay) {
+            if (fnf.length > 0) group.push(fnf.shift()!.id);
+            if (inconsistent.length > 0 && group.length < slotsPerDay) group.push(inconsistent.shift()!.id);
+            
+            while (group.length < slotsPerDay) {
+                if (active.length > 0) group.push(active.shift()!.id);
+                else if (fnf.length > 0) group.push(fnf.shift()!.id);
+                else if (inconsistent.length > 0) group.push(inconsistent.shift()!.id);
+                else break;
+            }
+        }
+        
+        if (group.length > 0) {
+            inMemoryData.outreachSessions.push({
+                id: crypto.randomUUID(),
+                date: dates[dateIndex],
+                startTime: '10:00',
+                endTime: '15:00',
+                assignedMemberIds: group,
+                visitedMemberIds: [],
+                status: 'PENDING'
+            });
+        }
+        dateIndex++;
+    }
+    
+    isDirty = true;
+    persistData('IMMEDIATE');
+    return { success: true, message: `Scheduled ${dates.length} visits.` };
+};
 
 export const generatePrayerSchedule = (startWeekDate: Date, members: Member[]): { success: boolean, message: string } => {
     if (!inMemoryData.prayerSchedule) inMemoryData.prayerSchedule = [];

@@ -387,6 +387,24 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       return { nextUp, otherPending, completed };
   }, [localSessions]);
 
+  // Derived list of MISSED/INCOMPLETE visits from past sessions
+  const incompleteVisits = useMemo(() => {
+      const today = new Date().toISOString().split('T')[0];
+      const list: { memberId: string, date: string, sessionId: string }[] = [];
+
+      (localSessions || []).forEach(session => {
+          // If session date is past, find unvisited members
+          if (session.date < today) {
+              session.assignedMemberIds.forEach(mid => {
+                  if (!session.visitedMemberIds?.includes(mid)) {
+                      list.push({ memberId: mid, date: session.date, sessionId: session.id });
+                  }
+              });
+          }
+      });
+      return list.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [localSessions]);
+
   const prayerData = useMemo(() => {
       if(localPrayerSlots.length === 0) return { active: [], expired: [], completed: [] };
       const today = new Date().toISOString().split('T')[0];
@@ -443,12 +461,17 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
   };
 
   // --- CONNECT TAB DATA ---
-  // Ensure we are filtering strictly on the latest props data to reflect changes immediately
+  // Updated Filter: Include Inconsistent Members regardless of status (often NOT_ACTIVE)
   const connectList = useMemo(() => {
       return data.members
-        .filter(m => m.assignedChurch === 'UJ' && [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT].includes(m.type) && m.status === MemberStatus.ACTIVE)
+        .filter(m => m.assignedChurch === 'UJ' &&
+            (
+                (m.status === MemberStatus.ACTIVE && [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT].includes(m.type)) ||
+                (m.type === MemberType.INCONSISTENT) // Include Inconsistent regardless of status
+            )
+        )
         .sort((a, b) => a.name.localeCompare(b.name));
-  }, [data.members]); // Dependency on data.members ensures sync
+  }, [data.members]); 
 
   return (
     <div className="space-y-4 pb-24 relative min-h-screen">
@@ -594,26 +617,75 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                       </div>
                   ))}
 
+                  {/* MISSED / YET TO COMPLETE SECTION */}
+                  {incompleteVisits.length > 0 && (
+                      <div className="pt-4 border-t border-dashed border-slate-200">
+                          <h4 className="text-xs font-bold text-rose-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                              <AlertCircle size={14}/> Yet to Complete
+                          </h4>
+                          <div className="bg-white rounded-2xl border border-red-100 overflow-hidden shadow-sm">
+                              <div className="divide-y divide-red-50">
+                                  {incompleteVisits.map((item, idx) => {
+                                      const m = data.members.find(mem => mem.id === item.memberId);
+                                      if (!m) return null;
+                                      return (
+                                          <div key={`${item.sessionId}-${item.memberId}`} className="flex items-center justify-between p-3 bg-red-50/10 hover:bg-red-50/30 transition-colors">
+                                              <div className="flex items-center gap-3">
+                                                  <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-xs font-bold text-red-500">
+                                                      {m.name.charAt(0)}
+                                                  </div>
+                                                  <div>
+                                                      <div className="font-bold text-sm text-slate-800">{m.name}</div>
+                                                      <div className="text-[10px] text-red-400 font-medium">Missed on {formatDateDDMMYYYY(item.date)}</div>
+                                                  </div>
+                                              </div>
+                                              <button 
+                                                  onClick={() => setMoveModal({show: true, memberId: item.memberId, currentSessionId: item.sessionId})}
+                                                  className="text-xs bg-white border border-red-100 text-red-500 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors shadow-sm font-bold"
+                                              >
+                                                  Reschedule
+                                              </button>
+                                          </div>
+                                      );
+                                  })}
+                              </div>
+                          </div>
+                      </div>
+                  )}
+
                   {sortedVisits.completed.length > 0 && (
                       <div className="pt-6">
                           <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 text-center">Completed History</h4>
                           <div className="space-y-3 opacity-60 hover:opacity-100 transition-opacity">
                               {sortedVisits.completed.map(s => (
-                                  <div key={s.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex justify-between items-center">
-                                      <div className="flex items-center gap-3">
-                                          <div className="p-2 bg-green-100 text-green-600 rounded-full"><CheckCircle2 size={16}/></div>
-                                          <div>
-                                              <div className="font-bold text-slate-700 text-sm line-through">{formatDateDDMMYYYY(s.date)}</div>
-                                              <div className="text-[10px] text-slate-400">By {s.completedBy || 'Teacher'}</div>
+                                  <div key={s.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col gap-2">
+                                      <div className="flex justify-between items-center">
+                                          <div className="flex items-center gap-3">
+                                              <div className="p-2 bg-green-100 text-green-600 rounded-full"><CheckCircle2 size={16}/></div>
+                                              <div>
+                                                  <div className="font-bold text-slate-700 text-sm line-through">{formatDateDDMMYYYY(s.date)}</div>
+                                                  <div className="text-[10px] text-slate-400">By {s.completedBy || 'Teacher'}</div>
+                                              </div>
                                           </div>
+                                          <button 
+                                            onClick={(e) => handleDeleteSession(s.id, e)}
+                                            disabled={loadingId === s.id}
+                                            className="text-slate-300 hover:text-red-500 disabled:opacity-50"
+                                          >
+                                              {loadingId === s.id ? <Loader2 size={16} className="animate-spin text-indigo-500"/> : <Trash2 size={16}/>}
+                                          </button>
                                       </div>
-                                      <button 
-                                        onClick={(e) => handleDeleteSession(s.id, e)}
-                                        disabled={loadingId === s.id}
-                                        className="text-slate-300 hover:text-red-500 disabled:opacity-50"
-                                      >
-                                          {loadingId === s.id ? <Loader2 size={16} className="animate-spin text-indigo-500"/> : <Trash2 size={16}/>}
-                                      </button>
+                                      {/* Show visited members in history as confirmation */}
+                                      {s.visitedMemberIds && s.visitedMemberIds.length > 0 && (
+                                          <div className="flex flex-wrap gap-1 mt-1 pl-11">
+                                              {s.visitedMemberIds.map(vid => {
+                                                  const m = data.members.find(mem => mem.id === vid);
+                                                  return m ? (
+                                                      <span key={vid} className="text-[9px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded border border-green-200">{m.name}</span>
+                                                  ) : null;
+                                              })}
+                                          </div>
+                                      )}
                                   </div>
                               ))}
                           </div>
