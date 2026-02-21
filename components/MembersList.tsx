@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppData, Member, MemberType, MemberStatus, Church, Role } from '../types';
+import { AppData, Member, MemberType, MemberStatus, Church, Role, PromotionRecord } from '../types';
 import { User, Users, Edit2, Archive, X, Save, GraduationCap, Undo2, HelpCircle, AlertCircle, Activity, Briefcase, ChevronDown, ChevronUp, Plus, Lock, Key, Heart, Hand, Trash2, Building2, Filter, Sun, Zap } from 'lucide-react';
 import { updateMember, bulkArchiveMembers, addMember, deleteMember } from '../services/storageService';
 import { sanitizeInput } from '../services/securityService';
@@ -103,7 +103,22 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
         // UPDATE EXISTING
         const original = data.members.find(m => m.id === editingId);
         if (original) {
-            await updateMember({ ...original, ...formData, name: cleanName } as Member);
+            let updatedMember = { ...original, ...formData, name: cleanName } as Member;
+
+            // Check for promotion/transfer
+            if (original.assignedChurch !== formData.assignedChurch) {
+                const promotion: PromotionRecord = {
+                    date: new Date().toISOString(),
+                    fromChurch: original.assignedChurch,
+                    toChurch: formData.assignedChurch as Church
+                };
+                updatedMember.promotionHistory = [
+                    ...(original.promotionHistory || []),
+                    promotion
+                ];
+            }
+
+            await updateMember(updatedMember);
         }
         setIsEditModalOpen(false);
     } else {
@@ -211,7 +226,19 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
 
   const AttendanceBadge = ({ member }: { member: Member }) => {
       // Calculate attendance stats
-      const churchAttendance = data.attendance.filter(r => r.churchId === member.assignedChurch);
+      // Filter sessions based on promotion history
+      const latestPromotion = member.promotionHistory
+          ?.filter(p => p.toChurch === member.assignedChurch)
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
+      const startDate = latestPromotion ? new Date(latestPromotion.date) : new Date(0); // Default to beginning of time
+
+      const churchAttendance = data.attendance.filter(r => {
+          const recordDate = new Date(r.date);
+          // Include if it's the current church AND after the promotion date (if any)
+          return r.churchId === member.assignedChurch && recordDate >= startDate;
+      });
+
       const totalSessions = churchAttendance.length;
       const attendedSessions = churchAttendance.filter(r => r.presentMemberIds.includes(member.id)).length;
       const attendanceRate = totalSessions > 0 ? Math.round((attendedSessions / totalSessions) * 100) : 0;
@@ -779,13 +806,41 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                   
                   {/* Scrollable List */}
                   <div className="overflow-y-auto p-4 space-y-2 flex-1">
-                      {data.attendance
-                          .filter(r => r.churchId === (data.members.find(m => m.id === historyMemberId)?.assignedChurch || 'UJ'))
-                          .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                          .slice(0, 20) // Show last 20 records
-                          .map((record) => {
-                              const isPresent = record.presentMemberIds.includes(historyMemberId);
-                              const service = record.serviceMap?.[historyMemberId];
+                      {(() => {
+                          const member = data.members.find(m => m.id === historyMemberId);
+                          if (!member) return null;
+
+                          const history = data.attendance.filter(r => {
+                              const recordDate = new Date(r.date);
+                              const isPresent = r.presentMemberIds.includes(member.id);
+                              if (isPresent) return true;
+
+                              // Determine assigned church at recordDate
+                              let assignedAtDate = member.assignedChurch;
+                              
+                              if (member.promotionHistory && member.promotionHistory.length > 0) {
+                                  const promoHistory = [...member.promotionHistory].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                                  const activePromo = promoHistory.find(p => recordDate >= new Date(p.date));
+                                  
+                                  if (activePromo) {
+                                      assignedAtDate = activePromo.toChurch;
+                                  } else {
+                                      // Before first recorded promotion, use the 'from' of the earliest promotion
+                                      const earliest = promoHistory[promoHistory.length - 1];
+                                      assignedAtDate = earliest.fromChurch;
+                                  }
+                              }
+
+                              return r.churchId === assignedAtDate;
+                          }).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                          if (history.length === 0) {
+                              return <div className="text-center py-10 text-slate-400">No attendance records found.</div>;
+                          }
+
+                          return history.slice(0, 20).map((record) => {
+                              const isPresent = record.presentMemberIds.includes(member.id);
+                              const service = record.serviceMap?.[member.id];
                               
                               return (
                                   <div key={record.date} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
@@ -796,6 +851,9 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                                           <div>
                                               <div className="font-bold text-slate-700">{formatDateDDMMYYYY(record.date)}</div>
                                               <div className="text-[10px] text-slate-400 font-bold uppercase">{isPresent ? 'Present' : 'Absent'}</div>
+                                              {record.churchId !== member.assignedChurch && (
+                                                  <div className="text-[10px] text-indigo-400 font-bold uppercase mt-0.5">{record.churchId} Church</div>
+                                              )}
                                           </div>
                                       </div>
                                       
@@ -806,11 +864,8 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                                       )}
                                   </div>
                               );
-                          })
-                      }
-                      {data.attendance.filter(r => r.churchId === (data.members.find(m => m.id === historyMemberId)?.assignedChurch)).length === 0 && (
-                          <div className="text-center py-10 text-slate-400">No attendance records found for this branch.</div>
-                      )}
+                          });
+                      })()}
                   </div>
               </div>
           </div>

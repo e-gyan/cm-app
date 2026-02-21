@@ -3,7 +3,7 @@ import { AppData, Church, Member, MemberType, MemberStatus } from '../types';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell
 } from 'recharts';
-import { Calendar, ChevronDown, TrendingUp, TrendingDown, Users, Target, Activity, MessageCircle, Share2, MapPin, Heart, HeartHandshake, Sparkles, Loader2, RefreshCw } from 'lucide-react';
+import { Calendar, ChevronDown, TrendingUp, TrendingDown, Users, Target, Activity, MessageCircle, Share2, MapPin, Heart, HeartHandshake, Sparkles, Loader2, RefreshCw, Wallet } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { motion } from "motion/react";
 
@@ -256,6 +256,48 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
 
       return { visitCoverage, prayerCoverage, notVisited, notPrayed, totalEligible };
   }, [data, isUJTeacher, effectiveChurch, timeRange, selectedYear]);
+
+  // 4. Financial Intelligence
+  const financialIntel = useMemo(() => {
+      const { start, end } = getDateRange();
+      
+      let txns = data.transactions || [];
+      
+      // Filter by Church and Date
+      txns = txns.filter(t => {
+          const d = new Date(t.date);
+          const churchMatch = effectiveChurch === 'All' ? true : t.churchId === effectiveChurch;
+          return d >= start && d <= end && churchMatch;
+      });
+
+      let totalIncome = 0;
+      let totalExpense = 0;
+      
+      // Group by Date for chart
+      const groupedByDate = new Map<string, { date: string, income: number, expense: number }>();
+
+      txns.forEach(t => {
+          if (t.type === 'INCOME') totalIncome += t.amount;
+          else totalExpense += t.amount;
+
+          const dateKey = t.date;
+          if (!groupedByDate.has(dateKey)) {
+              groupedByDate.set(dateKey, { 
+                  date: new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), 
+                  income: 0, 
+                  expense: 0 
+              });
+          }
+          const entry = groupedByDate.get(dateKey)!;
+          if (t.type === 'INCOME') entry.income += t.amount;
+          else entry.expense += t.amount;
+      });
+
+      // Sort chronological
+      const chartData = Array.from(groupedByDate.values()).sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      return { totalIncome, totalExpense, balance: totalIncome - totalExpense, chartData };
+  }, [data.transactions, effectiveChurch, timeRange, selectedYear]);
 
 
   // --- EXPORT LOGIC (Grouped) ---
@@ -562,7 +604,65 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
             </div>
         )}
 
-        {/* SECTION C: MEMBER EXPORT */}
+        {/* SECTION C: FINANCIAL INTELLIGENCE */}
+        <div className="space-y-4">
+            <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2 px-1">
+                <Wallet size={20} className="text-emerald-600"/> Financial Intelligence
+            </h3>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="space-y-4 lg:col-span-1">
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl"><TrendingUp size={20}/></div>
+                            <span className="text-xs font-bold text-slate-400 uppercase">Total Income</span>
+                        </div>
+                        <div className="text-3xl font-extrabold text-slate-800">GH₵ {financialIntel.totalIncome.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="p-2 bg-rose-50 text-rose-600 rounded-xl"><TrendingDown size={20}/></div>
+                            <span className="text-xs font-bold text-slate-400 uppercase">Total Expense</span>
+                        </div>
+                        <div className="text-3xl font-extrabold text-slate-800">GH₵ {financialIntel.totalExpense.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white p-6 rounded-3xl shadow-lg">
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="p-2 bg-white/10 text-white rounded-xl"><Wallet size={20}/></div>
+                            <span className="text-xs font-bold text-slate-400 uppercase">Net Balance</span>
+                        </div>
+                        <div className="text-3xl font-extrabold">GH₵ {financialIntel.balance.toLocaleString()}</div>
+                    </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-2 flex flex-col">
+                    <div className="mb-6 flex justify-between items-center">
+                        <h3 className="font-bold text-slate-800">Financial Trend</h3>
+                    </div>
+                    <div className="flex-1 min-h-[250px]">
+                        {financialIntel.chartData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={financialIntel.chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} dy={10}/>
+                                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}}/>
+                                    <Tooltip 
+                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                        cursor={{ fill: '#f8fafc' }}
+                                    />
+                                    <Bar dataKey="income" name="Income" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
+                                    <Bar dataKey="expense" name="Expense" fill="#f43f5e" radius={[4, 4, 0, 0]} barSize={20} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-slate-400 text-sm">No financial data for this period</div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {/* SECTION D: MEMBER EXPORT */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
             <div className="flex items-center justify-between mb-6">
                 <div>

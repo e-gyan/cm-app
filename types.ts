@@ -41,6 +41,13 @@ export interface Member {
   parentPhone?: string;
   address?: string;
   gpsCoordinates?: string; // e.g., "5.6037, -0.1870" for Maps
+  promotionHistory?: PromotionRecord[];
+}
+
+export interface PromotionRecord {
+  date: string; // ISO Date
+  fromChurch: Church;
+  toChurch: Church;
 }
 
 export interface AttendanceRecord {
