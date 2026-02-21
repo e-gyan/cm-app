@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { Calendar, ChevronDown, TrendingUp, TrendingDown, Users, Target, Activity, MessageCircle, Share2, MapPin, Heart, HeartHandshake, Sparkles, Loader2, RefreshCw } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
+import { motion } from "motion/react";
 
 interface AnalyticsHubProps {
   data: AppData;
@@ -352,38 +353,87 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
             
             {/* KPI Cards */}
             <div className="space-y-4 lg:col-span-1">
-                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                <motion.div 
+                    key={`avg-${stats.avg}`}
+                    initial={{ opacity: 0.8, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.3 }}
+                    className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100"
+                >
                     <div className="flex items-center gap-3 mb-2">
                         <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl"><Users size={20}/></div>
                         <span className="text-xs font-bold text-slate-400 uppercase">Avg Attendance</span>
                     </div>
                     <div className="flex items-end gap-3">
-                        <span className="text-4xl font-extrabold text-slate-800">{stats.avg}</span>
+                        <motion.span 
+                            key={`avg-val-${stats.avg}`}
+                            initial={{ y: -10, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            className="text-4xl font-extrabold text-slate-800"
+                        >
+                            {stats.avg}
+                        </motion.span>
                         {stats.growth !== 0 && (
-                            <div className={`flex items-center text-xs font-bold mb-1.5 px-2 py-0.5 rounded-full ${stats.growth > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            <motion.div 
+                                key={`growth-${stats.growth}`}
+                                initial={{ x: -10, opacity: 0 }}
+                                animate={{ x: 0, opacity: 1 }}
+                                className={`flex items-center text-xs font-bold mb-1.5 px-2 py-0.5 rounded-full ${stats.growth > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
+                            >
                                 {stats.growth > 0 ? <TrendingUp size={12} className="mr-1"/> : <TrendingDown size={12} className="mr-1"/>}
                                 {Math.abs(stats.growth)}%
-                            </div>
+                            </motion.div>
                         )}
                     </div>
                     <p className="text-[10px] text-slate-400 mt-2 font-medium">vs previous period</p>
-                </div>
+                </motion.div>
 
                 <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+                    <motion.div 
+                        key={`retention-${stats.retention}`}
+                        initial={{ opacity: 0.8, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: 0.1 }}
+                        className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100"
+                    >
                         <div className="text-xs font-bold text-slate-400 uppercase mb-2">Retention</div>
-                        <div className="text-2xl font-bold text-slate-800">{stats.retention}%</div>
+                        <motion.div 
+                            key={`retention-val-${stats.retention}`}
+                            initial={{ scale: 0.9 }}
+                            animate={{ scale: 1 }}
+                            className="text-2xl font-bold text-slate-800"
+                        >
+                            {stats.retention}%
+                        </motion.div>
                         <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
-                            <div className="bg-purple-500 h-full rounded-full" style={{width: `${stats.retention}%`}}></div>
+                            <motion.div 
+                                initial={{ width: 0 }}
+                                animate={{ width: `${stats.retention}%` }}
+                                transition={{ duration: 0.8, ease: "easeOut" }}
+                                className="bg-purple-500 h-full rounded-full" 
+                            />
                         </div>
-                    </div>
-                    <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+                    </motion.div>
+                    <motion.div 
+                        key={`newfaces-${stats.newFaces}`}
+                        initial={{ opacity: 0.8, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: 0.2 }}
+                        className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100"
+                    >
                         <div className="text-xs font-bold text-slate-400 uppercase mb-2">New Faces</div>
                         <div className="text-2xl font-bold text-slate-800 flex items-center gap-1">
-                            +{stats.newFaces} <span className="text-xs text-slate-400 font-normal">/wk</span>
+                            <motion.span
+                                key={`newfaces-val-${stats.newFaces}`}
+                                initial={{ scale: 0.9 }}
+                                animate={{ scale: 1 }}
+                            >
+                                +{stats.newFaces}
+                            </motion.span>
+                            <span className="text-xs text-slate-400 font-normal">/wk</span>
                         </div>
                         <p className="text-[10px] text-slate-400 mt-1">Avg FNF attendees</p>
-                    </div>
+                    </motion.div>
                 </div>
                 
                 {/* AI Insight Card */}
