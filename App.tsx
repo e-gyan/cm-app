@@ -20,6 +20,7 @@ enum View {
   MEMBERS = 'People Hub',
   OUTREACH = 'Outreach',
   ANALYTICS = 'Analytics', 
+  FINANCES = 'Finances',
   EXPORT = 'Reports',
   SETTINGS = 'Settings' // New View Enum
 }
@@ -145,6 +146,7 @@ const App: React.FC = () => {
 
   const isAdmin = currentUser.role === 'ADMIN';
   const showOutreach = currentUser.role === 'TEACHER' && currentUser.assignedChurch === 'UJ';
+  const showFinances = isAdmin || (currentUser.role === 'TEACHER' && currentUser.assignedChurch === 'UJ');
 
   const NavItem = ({ view, icon: Icon }: { view: View; icon: React.ElementType }) => (
     <button
@@ -256,6 +258,7 @@ const App: React.FC = () => {
             <NavItem view={View.MEMBERS} icon={Users} />
             <NavItem view={View.ANALYTICS} icon={PieChart} />
             {showOutreach && <NavItem view={View.OUTREACH} icon={HeartHandshake} />}
+            {showFinances && <NavItem view={View.FINANCES} icon={Building2} />}
             <NavItem view={View.EXPORT} icon={Share2} />
             {isAdmin && <div className="pt-4 mt-4 border-t border-slate-100"><NavItem view={View.SETTINGS} icon={SettingsIcon} /></div>}
           </nav>
@@ -407,6 +410,11 @@ const App: React.FC = () => {
                         <OutreachHub data={data} onUpdate={refreshData} currentUser={currentUser} />
                     </div>
                 )}
+                {showFinances && (
+                    <div style={{ display: currentView === View.FINANCES ? 'block' : 'none' }}>
+                        <Finances data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />
+                    </div>
+                )}
                 <div style={{ display: currentView === View.EXPORT ? 'block' : 'none' }}>
                     <ReportExport data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />
                 </div>
@@ -426,6 +434,7 @@ const App: React.FC = () => {
             <MobileNavItem view={View.MEMBERS} icon={Users} label="People" />
             <MobileNavItem view={View.ANALYTICS} icon={PieChart} label="Stats" />
             {showOutreach && <MobileNavItem view={View.OUTREACH} icon={HeartHandshake} label="Outreach" />}
+            {showFinances && <MobileNavItem view={View.FINANCES} icon={Building2} label="Finances" />}
             {isAdmin ? <MobileNavItem view={View.SETTINGS} icon={SettingsIcon} label="Config" /> : <MobileNavItem view={View.EXPORT} icon={Share2} label="Reports" />}
         </nav>
       </main>

@@ -313,64 +313,38 @@ const addNotification = (type: NotificationType, message: string, churchId: Chur
 const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
   if (churchId === 'CM') return;
 
+  const sortedAttendance = inMemoryData.attendance
+    .filter(r => r.churchId === churchId)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  if (sortedAttendance.length < 3) return; // Need at least 3 for smallest check
   const churchMembers = inMemoryData.members.filter(m => m.assignedChurch === churchId);
-  const currentYear = new Date().getFullYear();
-  const startOfYear = new Date(currentYear, 0, 1);
-
-  // LOGIC UPDATE: Get ALL attendance records sorted by date descending.
-  // This ensures if a member moved from one church to another, we count their *person* attendance, not just church-specific records.
-  const uniqueDates = [...new Set(inMemoryData.attendance.map(r => r.date))]
-    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-
-  // Helper to check if a specific member was present on a global date (across any church)
-  const wasPresentOnDate = (date: string, memberId: string): boolean => {
-      const recordsOnDate = inMemoryData.attendance.filter(r => r.date === date);
-      return recordsOnDate.some(r => r.presentMemberIds.includes(memberId));
-  };
 
   churchMembers.forEach(member => {
       // Skip staff, archived, transferred
       if (['Teacher','Helper','Volunteer','Admin'].includes(member.type)) return;
       if (member.status === MemberStatus.ARCHIVED || member.status === MemberStatus.TRANSFERRED) return;
 
-      // LOGIC UPDATE: Calculate effective start date for tracking
-      // "Start count from the time added OR joined... maintain logic just only for this year's sundays"
-      // This means we ignore data before they joined, AND we ignore data from previous years.
-      const joinedDate = new Date(member.joinedDate);
-      const effectiveStartDate = joinedDate > startOfYear ? joinedDate : startOfYear;
-      
-      const today = new Date();
-
-      // Filter global unique dates to find "Eligible Session Dates" for this member
-      // A session is eligible if it happened this year AND after they joined.
-      const eligibleDates = uniqueDates.filter(d => {
-          const dateObj = new Date(d);
-          // Compare using timestamps to handle time components safely if present, though dates are YYYY-MM-DD
-          // We treat the date string as UTC midnight effectively for comparison or just use ISO string compare
-          return dateObj >= effectiveStartDate && dateObj <= today;
-      });
-
-      if (eligibleDates.length < 3) return; // Not enough data points yet
-
-      // --- 1. ACTIVATION (FNF: Not Active -> Active) ---
-      if (member.status === MemberStatus.NOT_ACTIVE && member.type === MemberType.FNF) {
-          // Check last 3 eligible sessions
-          const last3Dates = eligibleDates.slice(0, 3);
-          const presentInAll3 = last3Dates.every(d => wasPresentOnDate(d, member.id));
-          
-          if (presentInAll3) {
-              member.status = MemberStatus.ACTIVE;
-              addNotification('STATUS_CHANGE', `${member.name} marked Active! (3 consecutive visits)`, churchId, member.id);
-              isDirty = true;
-              return;
-          }
-      }
-
-      // --- 2. REACTIVATION (Regular: Not Active -> Active) ---
-      if (member.status === MemberStatus.NOT_ACTIVE && member.type !== MemberType.FNF) {
-          if (eligibleDates.length >= 4) {
-              const last4Dates = eligibleDates.slice(0, 4);
-              const presentInAll4 = last4Dates.every(d => wasPresentOnDate(d, member.id));
+      // 1. ACTIVATION / REACTIVATION
+      if (member.status === MemberStatus.NOT_ACTIVE) {
+          // FNF Specific Activation: 3 Consecutive
+          if (member.type === MemberType.FNF) {
+              if (sortedAttendance.length >= 3) {
+                  const last3 = sortedAttendance.slice(0, 3);
+                  const presentInAll3 = last3.every(r => r.presentMemberIds.includes(member.id));
+                  
+                  if (presentInAll3) {
+                      member.status = MemberStatus.ACTIVE;
+                      addNotification('STATUS_CHANGE', `${member.name} marked Active! (3 consecutive visits)`, churchId, member.id);
+                      isDirty = true;
+                      return; // Move to next member
+                  }
+              }
+          } 
+          // Regular Member Reactivation: 4 Consecutive
+          else if (sortedAttendance.length >= 4) {
+              const last4 = sortedAttendance.slice(0, 4);
+              const presentInAll4 = last4.every(r => r.presentMemberIds.includes(member.id));
               
               if (presentInAll4) {
                   member.status = MemberStatus.ACTIVE;
@@ -382,11 +356,11 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
           }
       }
 
-      // --- 3. PROMOTION (FNF -> Member) ---
+      // 2. PROMOTION: FNF -> Member (7 consecutive attendances)
       if (member.type === MemberType.FNF && member.status === MemberStatus.ACTIVE) {
-          if (eligibleDates.length >= 7) {
-              const last7Dates = eligibleDates.slice(0, 7);
-              const presentInAll7 = last7Dates.every(d => wasPresentOnDate(d, member.id));
+          if (sortedAttendance.length >= 7) {
+              const last7 = sortedAttendance.slice(0, 7);
+              const presentInAll7 = last7.every(r => r.presentMemberIds.includes(member.id));
               
               if (presentInAll7) {
                   member.type = MemberType.MEMBER;
@@ -397,19 +371,26 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
           }
       }
 
-      // --- 4. DEACTIVATION (Active -> Not Active) ---
+      // 3. DEACTIVATION: Active -> Not Active (7 consecutive absences)
+      // This applies to both MEMBERS and FNF who are currently ACTIVE
       if (member.status === MemberStatus.ACTIVE) {
-          if (eligibleDates.length >= 7) {
-              const last7Dates = eligibleDates.slice(0, 7);
-              const absentAll7 = last7Dates.every(d => !wasPresentOnDate(d, member.id));
+          if (sortedAttendance.length >= 7) {
+              const last7 = sortedAttendance.slice(0, 7);
+              // Check if the member existed during these 7 sessions (joined before the oldest of the 7)
+              const oldestInWindow = new Date(last7[last7.length - 1].date);
+              const joinedDate = new Date(member.joinedDate);
               
-              if (absentAll7) {
-                  member.status = MemberStatus.NOT_ACTIVE;
-                  if (member.type === MemberType.MEMBER) {
-                      member.type = MemberType.INCONSISTENT;
+              if (joinedDate <= oldestInWindow) {
+                  const absentAll7 = last7.every(r => !r.presentMemberIds.includes(member.id));
+                  
+                  if (absentAll7) {
+                      member.status = MemberStatus.NOT_ACTIVE;
+                      if (member.type === MemberType.MEMBER) {
+                          member.type = MemberType.INCONSISTENT;
+                      }
+                      addNotification('STATUS_CHANGE', `${member.name} marked Not Active (7 consecutive absences).`, churchId, member.id);
+                      isDirty = true;
                   }
-                  addNotification('STATUS_CHANGE', `${member.name} marked Not Active (7 consecutive absences).`, churchId, member.id);
-                  isDirty = true;
               }
           }
       }

@@ -227,7 +227,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
 
         if (existingRecord) {
             if (attendanceMode === 'STAFF') {
-                const existingMembers = existingRecord.presentMemberIds.filter((id: string) => {
+                const existingMembers = existingRecord.presentMemberIds.filter(id => {
                     const m = data.members.find(mem => mem.id === id);
                     return m && !['Teacher','Helper','Volunteer'].includes(m.type);
                 });
@@ -238,14 +238,13 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                 finalPresent = [...existingMembers, ...currentBranchPresentIds];
                 finalPunctual = [...existingMembersPunctual, ...currentBranchPunctualIds];
             } else {
-                const existingStaff = existingRecord.presentMemberIds.filter((id: string) => {
+                const existingStaff = existingRecord.presentMemberIds.filter(id => {
                     const m = data.members.find(mem => mem.id === id);
-                    // Explicit cast to string[] for includes check to avoid 'unknown' index type error
-                    return m && (['Teacher','Helper','Volunteer'] as string[]).includes(m.type as string);
+                    return m && ['Teacher','Helper','Volunteer'].includes(m.type);
                 });
                 const existingStaffPunctual = (existingRecord.punctualMemberIds || []).filter((id: string) => {
                     const m = data.members.find(mem => mem.id === id);
-                    return m && (['Teacher','Helper','Volunteer'] as string[]).includes(m.type as string);
+                    return m && ['Teacher','Helper','Volunteer'].includes(m.type);
                 });
                 finalPresent = [...existingStaff, ...currentBranchPresentIds];
                 finalPunctual = [...existingStaffPunctual, ...currentBranchPunctualIds];
@@ -266,7 +265,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
         // Clean up map entries for people who are NOT in the final present list at all
         const cleanServiceMap: Record<string, ServiceType> = {};
         const keys = Object.keys(finalServiceMap);
-        keys.forEach((key: string) => {
+        keys.forEach(key => {
             if (finalPresent.includes(key)) {
                 cleanServiceMap[key] = finalServiceMap[key];
             }
