@@ -42,6 +42,7 @@ export interface Member {
   address?: string;
   gpsCoordinates?: string; // e.g., "5.6037, -0.1870" for Maps
   promotionHistory?: PromotionRecord[];
+  lastActivationDate?: string; // Date when status changed from Inconsistent to Active/FNF
 }
 
 export interface PromotionRecord {

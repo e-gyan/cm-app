@@ -100,6 +100,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
   const [newDateInput, setNewDateInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [moveModal, setMoveModal] = useState<{ show: boolean, memberId: string, currentSessionId: string } | null>(null);
+  const [addMemberModal, setAddMemberModal] = useState<{ show: boolean, sessionId: string } | null>(null);
   
   // UNIFIED LOCAL STATE FOR BATCH SAVING
   const [localSessions, setLocalSessions] = useState<OutreachSession[]>([]);
@@ -164,9 +165,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
               if (ujMembers.length > 0) {
                   const res = generatePrayerSchedule(startOfCurrentWeek, ujMembers);
                   if (res.success) {
+                      if (res.data) {
+                          setLocalPrayerSlots(JSON.parse(JSON.stringify(res.data)));
+                      }
                       onUpdate();
-                      setGenMsg({ type: 'success', text: "New weekly schedule auto-generated" });
-                      setTimeout(() => setGenMsg(null), 3000);
+                      setGenMsg({ type: 'success', text: "New weekly prayer schedule ready! Don't forget to add it to your calendar." });
+                      setTimeout(() => setGenMsg(null), 5000);
                   }
               }
           }
@@ -203,6 +207,9 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       const ujMembers = data.members.filter(m => m.assignedChurch === 'UJ' && !['Teacher','Helper','Volunteer'].includes(m.type));
       const res = generateOutreachSchedule(selectedDates, ujMembers);
       if (res.success) {
+          if (res.data) {
+              setLocalSessions(JSON.parse(JSON.stringify(res.data)));
+          }
           setSelectedDates([]);
           setIsCreatorOpen(false);
           setUnsavedChanges(new Set()); // Reset local state
@@ -282,31 +289,123 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       setCompletionConfirm(null);
   };
 
-  const handleMoveMember = (targetSessionId: string) => {
+  const handleMoveMember = (targetSessionId: string | 'REMOVE') => {
       if (!moveModal) return;
       const { memberId, currentSessionId } = moveModal;
       
       const currentIdx = localSessions.findIndex(s => s.id === currentSessionId);
-      const targetIdx = localSessions.findIndex(s => s.id === targetSessionId);
       
-      if (currentIdx !== -1 && targetIdx !== -1) {
+      if (currentIdx !== -1) {
           const currentSession = { ...localSessions[currentIdx] };
-          const targetSession = { ...localSessions[targetIdx] };
-
+          
+          // Remove from current
           currentSession.assignedMemberIds = currentSession.assignedMemberIds.filter(id => id !== memberId);
           currentSession.visitedMemberIds = (currentSession.visitedMemberIds || []).filter(id => id !== memberId);
           
-          if (!targetSession.assignedMemberIds.includes(memberId)) {
-              targetSession.assignedMemberIds.push(memberId);
-          }
-          
           const newSessions = [...localSessions];
           newSessions[currentIdx] = currentSession;
-          newSessions[targetIdx] = targetSession;
+
+          if (targetSessionId !== 'REMOVE') {
+              const targetIdx = localSessions.findIndex(s => s.id === targetSessionId);
+              if (targetIdx !== -1) {
+                  const targetSession = { ...localSessions[targetIdx] };
+                  if (!targetSession.assignedMemberIds.includes(memberId)) {
+                      targetSession.assignedMemberIds.push(memberId);
+                  }
+                  newSessions[targetIdx] = targetSession;
+                  setUnsavedChanges(prev => new Set(prev).add(targetSessionId));
+              }
+          }
           
           setLocalSessions(newSessions);
-          setUnsavedChanges(prev => new Set(prev).add(currentSessionId).add(targetSessionId));
+          setUnsavedChanges(prev => new Set(prev).add(currentSessionId));
           setMoveModal(null);
+      }
+  };
+
+  const handleAutoFill = (sessionId: string) => {
+      const sessionIdx = localSessions.findIndex(s => s.id === sessionId);
+      if (sessionIdx === -1) return;
+      
+      const session = { ...localSessions[sessionIdx] };
+      const currentMemberIds = session.assignedMemberIds;
+      
+      // 1. Analyze Composition
+      const currentMembers = currentMemberIds.map(id => data.members.find(m => m.id === id)).filter(Boolean) as Member[];
+      const activeCount = currentMembers.filter(m => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE).length;
+      const fnfCount = currentMembers.filter(m => m.type === MemberType.FNF).length;
+      const inconsistentCount = currentMembers.filter(m => m.type === MemberType.INCONSISTENT).length;
+      
+      // 2. Determine Need
+      let neededType: MemberType | 'ANY' = 'ANY';
+      if (inconsistentCount < 1) neededType = MemberType.INCONSISTENT;
+      else if (fnfCount < 1) neededType = MemberType.FNF;
+      else if (activeCount < 2) neededType = MemberType.MEMBER;
+      
+      // 3. Find Candidate
+      const twoMonthsAgo = new Date();
+      twoMonthsAgo.setDate(twoMonthsAgo.getDate() - 60);
+      
+      const recentlyVisited = new Set<string>();
+      localSessions.forEach(s => {
+          if (new Date(s.date) >= twoMonthsAgo && s.visitedMemberIds) {
+              s.visitedMemberIds.forEach(id => recentlyVisited.add(id));
+          }
+      });
+      
+      const assignedInPending = new Set<string>();
+      localSessions.filter(s => s.status === 'PENDING' && s.id !== sessionId).forEach(s => {
+          s.assignedMemberIds.forEach(id => assignedInPending.add(id));
+      });
+
+      const candidates = data.members.filter(m => 
+          m.assignedChurch === 'UJ' &&
+          !currentMemberIds.includes(m.id) &&
+          !recentlyVisited.has(m.id) &&
+          !assignedInPending.has(m.id) &&
+          !['Teacher','Helper','Volunteer'].includes(m.type) &&
+          (neededType === 'ANY' || m.type === neededType)
+      );
+      
+      let candidate = candidates.length > 0 ? candidates[Math.floor(Math.random() * candidates.length)] : null;
+      
+      // Fallback to ANY if specific type not found
+      if (!candidate && neededType !== 'ANY') {
+           const anyCandidates = data.members.filter(m => 
+              m.assignedChurch === 'UJ' &&
+              !currentMemberIds.includes(m.id) &&
+              !recentlyVisited.has(m.id) &&
+              !assignedInPending.has(m.id) &&
+              !['Teacher','Helper','Volunteer'].includes(m.type)
+          );
+          if (anyCandidates.length > 0) candidate = anyCandidates[Math.floor(Math.random() * anyCandidates.length)];
+      }
+
+      if (candidate) {
+          session.assignedMemberIds = [...session.assignedMemberIds, candidate.id];
+          const newSessions = [...localSessions];
+          newSessions[sessionIdx] = session;
+          setLocalSessions(newSessions);
+          setUnsavedChanges(prev => new Set(prev).add(sessionId));
+          setGenMsg({ type: 'success', text: `Auto-added ${candidate.name}` });
+      } else {
+          setGenMsg({ type: 'error', text: 'No suitable candidates found.' });
+      }
+      setTimeout(() => setGenMsg(null), 3000);
+  };
+
+  const handleAddMember = (sessionId: string, memberId: string) => {
+      const sessionIdx = localSessions.findIndex(s => s.id === sessionId);
+      if (sessionIdx === -1) return;
+      
+      const session = { ...localSessions[sessionIdx] };
+      if (!session.assignedMemberIds.includes(memberId)) {
+          session.assignedMemberIds = [...session.assignedMemberIds, memberId];
+          const newSessions = [...localSessions];
+          newSessions[sessionIdx] = session;
+          setLocalSessions(newSessions);
+          setUnsavedChanges(prev => new Set(prev).add(sessionId));
+          setAddMemberModal(null);
       }
   };
 
@@ -317,6 +416,9 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       const res = generatePrayerSchedule(prayerWeek, ujMembers);
       
       if (res.success) {
+          if (res.data) {
+              setLocalPrayerSlots(JSON.parse(JSON.stringify(res.data)));
+          }
           setGenMsg({ type: 'success', text: res.message });
           onUpdate();
       } else {
@@ -555,6 +657,16 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                                     onToggle={toggleVisitForMember} 
                                     onMove={(mid, sid) => setMoveModal({show: true, memberId: mid, currentSessionId: sid})}
                                   />
+                                  <div className="mt-3 flex gap-2">
+                                      <button onClick={() => setAddMemberModal({show: true, sessionId: sortedVisits.nextUp!.id})} className="flex-1 py-2 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors flex items-center justify-center gap-1">
+                                          <Plus size={14}/> Add Member
+                                      </button>
+                                      {sortedVisits.nextUp.assignedMemberIds.length < 4 && (
+                                          <button onClick={() => handleAutoFill(sortedVisits.nextUp!.id)} className="flex-1 py-2 text-xs font-bold text-amber-600 bg-amber-50 rounded-xl hover:bg-amber-100 transition-colors flex items-center justify-center gap-1">
+                                              <Zap size={14}/> Auto-Fill
+                                          </button>
+                                      )}
+                                  </div>
                               </div>
                               <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
                                   <span className="text-xs font-bold text-slate-400">{sortedVisits.nextUp.assignedMemberIds.length} Kids Assigned</span>
@@ -613,82 +725,41 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                                 onToggle={toggleVisitForMember} 
                                 onMove={(mid, sid) => setMoveModal({show: true, memberId: mid, currentSessionId: sid})}
                               />
+                              <div className="mt-3 flex gap-2">
+                                  <button onClick={() => setAddMemberModal({show: true, sessionId: session.id})} className="flex-1 py-2 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors flex items-center justify-center gap-1">
+                                      <Plus size={14}/> Add Member
+                                  </button>
+                                  {session.assignedMemberIds.length < 4 && (
+                                      <button onClick={() => handleAutoFill(session.id)} className="flex-1 py-2 text-xs font-bold text-amber-600 bg-amber-50 rounded-xl hover:bg-amber-100 transition-colors flex items-center justify-center gap-1">
+                                          <Zap size={14}/> Auto-Fill
+                                      </button>
+                                  )}
+                              </div>
                           </div>
                       </div>
                   ))}
 
-                  {/* MISSED / YET TO COMPLETE SECTION */}
+                  {/* MISSED / YET TO COMPLETE SECTION - FOLDABLE ASCENDING */}
                   {incompleteVisits.length > 0 && (
                       <div className="pt-4 border-t border-dashed border-slate-200">
-                          <h4 className="text-xs font-bold text-rose-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                              <AlertCircle size={14}/> Yet to Complete
-                          </h4>
-                          <div className="bg-white rounded-2xl border border-red-100 overflow-hidden shadow-sm">
-                              <div className="divide-y divide-red-50">
-                                  {incompleteVisits.map((item, idx) => {
-                                      const m = data.members.find(mem => mem.id === item.memberId);
-                                      if (!m) return null;
-                                      return (
-                                          <div key={`${item.sessionId}-${item.memberId}`} className="flex items-center justify-between p-3 bg-red-50/10 hover:bg-red-50/30 transition-colors">
-                                              <div className="flex items-center gap-3">
-                                                  <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-xs font-bold text-red-500">
-                                                      {m.name.charAt(0)}
-                                                  </div>
-                                                  <div>
-                                                      <div className="font-bold text-sm text-slate-800">{m.name}</div>
-                                                      <div className="text-[10px] text-red-400 font-medium">Missed on {formatDateDDMMYYYY(item.date)}</div>
-                                                  </div>
-                                              </div>
-                                              <button 
-                                                  onClick={() => setMoveModal({show: true, memberId: item.memberId, currentSessionId: item.sessionId})}
-                                                  className="text-xs bg-white border border-red-100 text-red-500 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors shadow-sm font-bold"
-                                              >
-                                                  Reschedule
-                                              </button>
-                                          </div>
-                                      );
-                                  })}
-                              </div>
-                          </div>
+                          <CollapsibleMissedSection 
+                              title="Missed & Awaiting Rescheduling" 
+                              items={incompleteVisits} 
+                              data={data} 
+                              onReschedule={(mid, sid) => setMoveModal({show: true, memberId: mid, currentSessionId: sid})}
+                          />
                       </div>
                   )}
 
                   {sortedVisits.completed.length > 0 && (
                       <div className="pt-6">
-                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 text-center">Completed History</h4>
-                          <div className="space-y-3 opacity-60 hover:opacity-100 transition-opacity">
-                              {sortedVisits.completed.map(s => (
-                                  <div key={s.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col gap-2">
-                                      <div className="flex justify-between items-center">
-                                          <div className="flex items-center gap-3">
-                                              <div className="p-2 bg-green-100 text-green-600 rounded-full"><CheckCircle2 size={16}/></div>
-                                              <div>
-                                                  <div className="font-bold text-slate-700 text-sm line-through">{formatDateDDMMYYYY(s.date)}</div>
-                                                  <div className="text-[10px] text-slate-400">By {s.completedBy || 'Teacher'}</div>
-                                              </div>
-                                          </div>
-                                          <button 
-                                            onClick={(e) => handleDeleteSession(s.id, e)}
-                                            disabled={loadingId === s.id}
-                                            className="text-slate-300 hover:text-red-500 disabled:opacity-50"
-                                          >
-                                              {loadingId === s.id ? <Loader2 size={16} className="animate-spin text-indigo-500"/> : <Trash2 size={16}/>}
-                                          </button>
-                                      </div>
-                                      {/* Show visited members in history as confirmation */}
-                                      {s.visitedMemberIds && s.visitedMemberIds.length > 0 && (
-                                          <div className="flex flex-wrap gap-1 mt-1 pl-11">
-                                              {s.visitedMemberIds.map(vid => {
-                                                  const m = data.members.find(mem => mem.id === vid);
-                                                  return m ? (
-                                                      <span key={vid} className="text-[9px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded border border-green-200">{m.name}</span>
-                                                  ) : null;
-                                              })}
-                                          </div>
-                                      )}
-                                  </div>
-                              ))}
-                          </div>
+                          <CollapsibleCompletedVisits 
+                              title="Completed History" 
+                              sessions={sortedVisits.completed} 
+                              data={data} 
+                              loadingId={loadingId}
+                              onDelete={handleDeleteSession}
+                          />
                       </div>
                   )}
               </div>
@@ -753,7 +824,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                   }
               />
 
-              {/* Completed History Section (Grouped by Month) */}
+              {/* Completed History Section (Grouped by Period) */}
               <CollapsibleHistorySection 
                   items={prayerData.completed} 
                   data={data} 
@@ -813,6 +884,11 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                   <h3 className="font-bold text-lg mb-1 text-slate-800">Reschedule</h3>
                   <p className="text-sm text-slate-500 mb-4">Choose a new date for this child:</p>
                   <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+                      <button onClick={() => handleMoveMember('REMOVE')} className="w-full p-4 text-left border border-red-100 bg-red-50/30 rounded-2xl hover:bg-red-50 hover:border-red-200 transition-colors group mb-2">
+                          <div className="font-bold text-red-600 group-hover:text-red-700 flex items-center gap-2"><Trash2 size={16}/> Remove from Schedule</div>
+                          <div className="text-xs text-red-400 mt-1">Will be added back to pool for future generation</div>
+                      </button>
+
                       {sortedVisits.nextUp && sortedVisits.nextUp.id !== moveModal.currentSessionId && (
                           <button onClick={() => handleMoveMember(sortedVisits.nextUp!.id)} className="w-full p-4 text-left border rounded-2xl hover:bg-indigo-50 hover:border-indigo-200 transition-colors group">
                               <div className="font-bold text-slate-800 group-hover:text-indigo-700">{formatDateDDMMYYYY(sortedVisits.nextUp.date)}</div>
@@ -828,6 +904,17 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
                   <button onClick={() => setMoveModal(null)} className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold">Cancel</button>
               </div>
           </div>
+      )}
+
+      {/* ADD MEMBER MODAL */}
+      {addMemberModal && (
+          <AddMemberModal 
+              isOpen={addMemberModal.show} 
+              onClose={() => setAddMemberModal(null)} 
+              onSelect={(mid: string) => handleAddMember(addMemberModal.sessionId, mid)}
+              members={data.members}
+              currentSessionMembers={localSessions.find(s => s.id === addMemberModal.sessionId)?.assignedMemberIds || []}
+          />
       )}
 
       {/* CONFIRM COMPLETION MODAL */}
@@ -880,24 +967,47 @@ interface CollapsibleHistorySectionProps {
 const CollapsibleHistorySection = ({ items, data, unsavedChanges, onToggle }: CollapsibleHistorySectionProps) => {
     const [isOpen, setIsOpen] = useState(false);
     
-    // Group By Month Year
+    // Group By Period (2 Weeks, This Month, Quarter)
     const groupedHistory = useMemo(() => {
         const groups: Record<string, PrayerSlot[]> = {};
         if (!items) return groups;
         
+        const now = new Date();
+        const twoWeeksAgo = new Date();
+        twoWeeksAgo.setDate(now.getDate() - 14);
+        
         items.forEach((slot: PrayerSlot) => {
             const d = new Date(slot.date);
-            const key = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            let key = '';
+            
+            if (d >= twoWeeksAgo) {
+                key = 'Last 2 Weeks';
+            } else if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+                key = 'This Month';
+            } else {
+                const q = Math.floor(d.getMonth() / 3) + 1;
+                key = `Q${q} ${d.getFullYear()}`;
+            }
+            
             if (!groups[key]) groups[key] = [];
             groups[key].push(slot);
         });
         
-        // Sort groups (Current month first)
-        // Since object keys aren't ordered, we'll handle sorting in render
         return groups;
     }, [items]);
 
     if (!items || items.length === 0) return null;
+
+    // Define sort order for keys
+    const sortKeys = (keys: string[]) => {
+        return keys.sort((a, b) => {
+            if (a === 'Last 2 Weeks') return -1;
+            if (b === 'Last 2 Weeks') return 1;
+            if (a === 'This Month') return -1;
+            if (b === 'This Month') return 1;
+            return b.localeCompare(a); // Descending for Quarters
+        });
+    };
 
     return (
         <div className="border border-slate-100 rounded-2xl bg-white overflow-hidden shadow-sm">
@@ -914,16 +1024,115 @@ const CollapsibleHistorySection = ({ items, data, unsavedChanges, onToggle }: Co
             
             {isOpen && (
                 <div className="p-3 space-y-4 bg-slate-50/30">
-                    {Object.entries(groupedHistory)
-                        .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime()) // Hacky sort by string date, actually usually works for Month Year if standard
-                        .map(([month, slots]: [string, PrayerSlot[]]) => (
-                        <div key={month}>
-                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 pl-2 sticky top-0 bg-slate-50/90 backdrop-blur py-1 z-10">{month}</h4>
+                    {sortKeys(Object.keys(groupedHistory)).map((period) => (
+                        <div key={period}>
+                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 pl-2 sticky top-0 bg-slate-50/90 backdrop-blur py-1 z-10">{period}</h4>
                             <div className="space-y-3">
-                                {slots.map((slot: PrayerSlot) => (
+                                {groupedHistory[period]
+                                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) // Descending date
+                                    .map((slot: PrayerSlot) => (
                                     <PrayerSlotCard key={slot.id} slot={slot} data={data} unsavedChanges={unsavedChanges} onToggle={onToggle} isExpired={false} />
                                 ))}
                             </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const CollapsibleMissedSection = ({ title, items, data, onReschedule }: any) => {
+    const [isOpen, setIsOpen] = useState(false);
+    
+    return (
+        <div className="bg-white rounded-2xl border border-red-100 overflow-hidden shadow-sm">
+             <button 
+                onClick={() => setIsOpen(!isOpen)}
+                className={`w-full flex items-center justify-between p-4 transition-colors ${isOpen ? 'bg-red-50/50 text-rose-600' : 'bg-white hover:bg-red-50/10'}`}
+            >
+                <h4 className="text-xs font-bold text-rose-500 uppercase tracking-widest flex items-center gap-2">
+                    <AlertCircle size={14}/> {title} ({items.length})
+                </h4>
+                {isOpen ? <ChevronUp size={16} className="text-rose-300"/> : <ChevronDown size={16} className="text-rose-300"/>}
+            </button>
+
+            {isOpen && (
+                <div className="divide-y divide-red-50">
+                    {items.map((item: any) => {
+                        const m = data.members.find((mem: any) => mem.id === item.memberId);
+                        if (!m) return null;
+                        return (
+                            <div key={`${item.sessionId}-${item.memberId}`} className="flex items-center justify-between p-3 bg-red-50/10 hover:bg-red-50/30 transition-colors">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-xs font-bold text-red-500">
+                                        {m.name.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <div className="font-bold text-sm text-slate-800">{m.name}</div>
+                                        <div className="text-[10px] text-red-400 font-medium">Missed on {formatDateDDMMYYYY(item.date)}</div>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => onReschedule(item.memberId, item.sessionId)}
+                                    className="text-xs bg-white border border-red-100 text-red-500 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors shadow-sm font-bold"
+                                >
+                                    Reschedule
+                                </button>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const CollapsibleCompletedVisits = ({ title, sessions, data, loadingId, onDelete }: any) => {
+    const [isOpen, setIsOpen] = useState(false);
+
+    return (
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+             <button 
+                onClick={() => setIsOpen(!isOpen)}
+                className={`w-full flex items-center justify-between p-4 transition-colors ${isOpen ? 'bg-slate-50' : 'bg-white hover:bg-slate-50'}`}
+            >
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <CheckCircle2 size={14}/> {title} ({sessions.length})
+                </h4>
+                {isOpen ? <ChevronUp size={16} className="text-slate-300"/> : <ChevronDown size={16} className="text-slate-300"/>}
+            </button>
+
+            {isOpen && (
+                <div className="space-y-3 p-3 bg-slate-50/30">
+                    {sessions.map((s: OutreachSession) => (
+                        <div key={s.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex flex-col gap-2 shadow-sm">
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-green-100 text-green-600 rounded-full"><CheckCircle2 size={16}/></div>
+                                    <div>
+                                        <div className="font-bold text-slate-700 text-sm line-through">{formatDateDDMMYYYY(s.date)}</div>
+                                        <div className="text-[10px] text-slate-400">By {s.completedBy || 'Teacher'}</div>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={(e) => onDelete(s.id, e)}
+                                    disabled={loadingId === s.id}
+                                    className="text-slate-300 hover:text-red-500 disabled:opacity-50"
+                                >
+                                    {loadingId === s.id ? <Loader2 size={16} className="animate-spin text-indigo-500"/> : <Trash2 size={16}/>}
+                                </button>
+                            </div>
+                            {s.visitedMemberIds && s.visitedMemberIds.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1 pl-11">
+                                    {s.visitedMemberIds.map(vid => {
+                                        const m = data.members.find(mem => mem.id === vid);
+                                        return m ? (
+                                            <span key={vid} className="text-[9px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded border border-green-200">{m.name}</span>
+                                        ) : null;
+                                    })}
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -1250,6 +1459,7 @@ const SessionChildList = ({ session, data, onToggle, onMove }: { session: Outrea
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); onMove(id, session.id); }}
                                     className="p-2 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                                    title="Reschedule or Remove"
                                 >
                                     <ArrowRightLeft size={16}/>
                                 </button>
@@ -1261,6 +1471,48 @@ const SessionChildList = ({ session, data, onToggle, onMove }: { session: Outrea
                     </div>
                 );
             })}
+        </div>
+    );
+};
+
+const AddMemberModal = ({ isOpen, onClose, onSelect, members, currentSessionMembers }: any) => {
+    const [search, setSearch] = useState('');
+    if (!isOpen) return null;
+    
+    const available = members.filter((m: Member) => 
+        !currentSessionMembers.includes(m.id) && 
+        m.assignedChurch === 'UJ' &&
+        !['Teacher','Helper','Volunteer'].includes(m.type)
+    ).filter((m: Member) => m.name.toLowerCase().includes(search.toLowerCase()));
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col max-h-[80vh]">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-lg text-slate-800">Add Member</h3>
+                    <button onClick={onClose}><X size={20} className="text-slate-400"/></button>
+                </div>
+                <input 
+                    type="text" 
+                    placeholder="Search..." 
+                    className="w-full p-3 bg-slate-50 rounded-xl mb-4 outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    autoFocus
+                />
+                <div className="overflow-y-auto flex-1 space-y-2">
+                    {available.map((m: Member) => (
+                        <button key={m.id} onClick={() => onSelect(m.id)} className="w-full p-3 text-left hover:bg-slate-50 rounded-xl flex items-center justify-between group">
+                            <div>
+                                <div className="font-bold text-slate-700">{m.name}</div>
+                                <div className="text-[10px] text-slate-400 uppercase font-bold">{m.type}</div>
+                            </div>
+                            <Plus size={16} className="text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity"/>
+                        </button>
+                    ))}
+                    {available.length === 0 && <p className="text-center text-slate-400 text-sm py-4">No members found.</p>}
+                </div>
+            </div>
         </div>
     );
 };

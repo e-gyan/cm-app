@@ -118,6 +118,13 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                 ];
             }
 
+            // Check for Inconsistent -> Active/FNF/Member status change
+            if (original.type === MemberType.INCONSISTENT && 
+               (updatedMember.type === MemberType.MEMBER || updatedMember.type === MemberType.FNF) &&
+               updatedMember.status === MemberStatus.ACTIVE) {
+                updatedMember.lastActivationDate = new Date().toISOString();
+            }
+
             await updateMember(updatedMember);
         }
         setIsEditModalOpen(false);
@@ -231,11 +238,19 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
           ?.filter(p => p.toChurch === member.assignedChurch)
           .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
 
-      const startDate = latestPromotion ? new Date(latestPromotion.date) : new Date(0); // Default to beginning of time
+      // Determine the start date for attendance calculation
+      // Priority: Last Activation Date > Latest Promotion Date > Joined Date
+      let startDate = new Date(member.joinedDate);
+      if (latestPromotion && new Date(latestPromotion.date) > startDate) {
+          startDate = new Date(latestPromotion.date);
+      }
+      if (member.lastActivationDate && new Date(member.lastActivationDate) > startDate) {
+          startDate = new Date(member.lastActivationDate);
+      }
 
       const churchAttendance = data.attendance.filter(r => {
           const recordDate = new Date(r.date);
-          // Include if it's the current church AND after the promotion date (if any)
+          // Include if it's the current church AND after the calculated start date
           return r.churchId === member.assignedChurch && recordDate >= startDate;
       });
 

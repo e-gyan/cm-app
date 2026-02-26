@@ -439,7 +439,7 @@ export const savePrayerSlot = (slot: PrayerSlot) => {
     return persistData('IMMEDIATE');
 };
 
-export const generateOutreachSchedule = (dates: string[], members: Member[]): { success: boolean, message: string } => {
+export const generateOutreachSchedule = (dates: string[], members: Member[]): { success: boolean, message: string, data?: OutreachSession[] } => {
     if (dates.length === 0 || members.length === 0) return { success: false, message: 'No dates or members.' };
     if (!inMemoryData.outreachSessions) inMemoryData.outreachSessions = [];
     
@@ -495,14 +495,31 @@ export const generateOutreachSchedule = (dates: string[], members: Member[]): { 
         const group: string[] = [];
         const slotsPerDay = 4;
         
+        // 1. Fill with Priority (Missed) first
         while (group.length < slotsPerDay && priorityQueue.length > 0) {
             group.push(priorityQueue.shift()!.id);
         }
         
+        // 2. Ensure Mix: 2 Active, 1 FNF, 1 Inconsistent (if slots available)
         if (group.length < slotsPerDay) {
-            if (fnf.length > 0) group.push(fnf.shift()!.id);
-            if (inconsistent.length > 0 && group.length < slotsPerDay) group.push(inconsistent.shift()!.id);
+            // Need 1 Inconsistent
+            if (inconsistent.length > 0 && !group.some(id => members.find(m => m.id === id)?.type === MemberType.INCONSISTENT)) {
+                 group.push(inconsistent.shift()!.id);
+            }
             
+            // Need 1 FNF
+            if (group.length < slotsPerDay && fnf.length > 0 && !group.some(id => members.find(m => m.id === id)?.type === MemberType.FNF)) {
+                 group.push(fnf.shift()!.id);
+            }
+
+            // Need 2 Active
+            let activeCount = group.filter(id => members.find(m => m.id === id)?.type === MemberType.MEMBER).length;
+            while (group.length < slotsPerDay && activeCount < 2 && active.length > 0) {
+                group.push(active.shift()!.id);
+                activeCount++;
+            }
+            
+            // 3. Fill Remainder with any available type if specific pools exhausted
             while (group.length < slotsPerDay) {
                 if (active.length > 0) group.push(active.shift()!.id);
                 else if (fnf.length > 0) group.push(fnf.shift()!.id);
@@ -527,10 +544,10 @@ export const generateOutreachSchedule = (dates: string[], members: Member[]): { 
     
     isDirty = true;
     persistData('IMMEDIATE');
-    return { success: true, message: `Scheduled ${dates.length} visits.` };
+    return { success: true, message: `Scheduled ${dates.length} visits.`, data: inMemoryData.outreachSessions };
 };
 
-export const generatePrayerSchedule = (startWeekDate: Date, members: Member[]): { success: boolean, message: string } => {
+export const generatePrayerSchedule = (startWeekDate: Date, members: Member[]): { success: boolean, message: string, data?: PrayerSlot[] } => {
     if (!inMemoryData.prayerSchedule) inMemoryData.prayerSchedule = [];
     const today = new Date().toISOString().split('T')[0];
     const currentYear = new Date().getFullYear();
@@ -664,5 +681,5 @@ export const generatePrayerSchedule = (startWeekDate: Date, members: Member[]): 
 
     isDirty = true;
     persistData('IMMEDIATE');
-    return { success: true, message: `Generated ${generatedCount} days. ${missedIds.size > 0 ? `Inc. ${missedIds.size} missed prayers.` : ''}` };
+    return { success: true, message: `Generated ${generatedCount} days. ${missedIds.size > 0 ? `Inc. ${missedIds.size} missed prayers.` : ''}`, data: inMemoryData.prayerSchedule };
 };
