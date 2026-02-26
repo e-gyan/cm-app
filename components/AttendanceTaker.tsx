@@ -28,13 +28,13 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   
   // New State for Service Logic
   const [serviceMap, setServiceMap] = useState<Record<string, ServiceType>>({});
-  const [currentService, setCurrentService] = useState<ServiceType>('JOY'); // Default to Joy
+  const [currentService, setCurrentService] = useState<ServiceType>(() => (localStorage.getItem('attendance_service') as any) || 'JOY');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('All');
   
   // Internal Church Filter for Admins when activeChurch is 'CM'
-  const [internalChurchFilter, setInternalChurchFilter] = useState<Church | 'COMBINED'>('COMBINED');
+  const [internalChurchFilter, setInternalChurchFilter] = useState<Church | 'COMBINED'>(() => (localStorage.getItem('attendance_churchFilter') as any) || 'COMBINED');
 
   const [newMemberName, setNewMemberName] = useState('');
   const [isAddingFNF, setIsAddingFNF] = useState(false);
@@ -42,7 +42,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const [leaderboardTimeframe, setLeaderboardTimeframe] = useState<'MONTH' | 'CM'>('MONTH');
   const [successMsg, setSuccessMsg] = useState('');
   
-  const [attendanceMode, setAttendanceMode] = useState<'MEMBERS' | 'STAFF'>('MEMBERS');
+  const [attendanceMode, setAttendanceMode] = useState<'MEMBERS' | 'STAFF'>(() => (localStorage.getItem('attendance_mode') as any) || 'MEMBERS');
+
+  // Persist State
+  useEffect(() => { localStorage.setItem('attendance_mode', attendanceMode); }, [attendanceMode]);
+  useEffect(() => { localStorage.setItem('attendance_churchFilter', internalChurchFilter); }, [internalChurchFilter]);
+  useEffect(() => { localStorage.setItem('attendance_service', currentService); }, [currentService]);
 
   // Determine the effective church context
   const effectiveChurch = activeChurch === 'CM' ? internalChurchFilter : activeChurch;

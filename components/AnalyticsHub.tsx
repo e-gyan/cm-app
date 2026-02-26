@@ -23,9 +23,17 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
   const availableChurches = data.settings.churches;
 
   // --- STATE ---
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-  const [timeRange, setTimeRange] = useState<TimeRange>('1M');
-  const [adminFilterChurch, setAdminFilterChurch] = useState<Church | 'All'>('All');
+  const [selectedYear, setSelectedYear] = useState<number>(() => {
+      const saved = localStorage.getItem('analytics_year');
+      return saved ? parseInt(saved) : new Date().getFullYear();
+  });
+  const [timeRange, setTimeRange] = useState<TimeRange>(() => (localStorage.getItem('analytics_timeRange') as TimeRange) || '1M');
+  const [adminFilterChurch, setAdminFilterChurch] = useState<Church | 'All'>(() => (localStorage.getItem('analytics_churchFilter') as Church | 'All') || 'All');
+  
+  // Persist State
+  useEffect(() => { localStorage.setItem('analytics_year', selectedYear.toString()); }, [selectedYear]);
+  useEffect(() => { localStorage.setItem('analytics_timeRange', timeRange); }, [timeRange]);
+  useEffect(() => { localStorage.setItem('analytics_churchFilter', adminFilterChurch); }, [adminFilterChurch]);
   
   // AI State
   const [aiInsight, setAiInsight] = useState<string>("");

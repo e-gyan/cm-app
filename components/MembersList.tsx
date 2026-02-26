@@ -22,11 +22,16 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
   const availableChurches = data.settings.churches;
 
   // Tabs for the Central Hub
-  const [hubTab, setHubTab] = useState<'MEMBERS' | 'TEACHERS'>('MEMBERS');
-  const [filter, setFilter] = useState<'CM' | 'ARCHIVED' | string>('CM');
+  const [hubTab, setHubTab] = useState<'MEMBERS' | 'TEACHERS'>(() => (localStorage.getItem('members_hubTab') as 'MEMBERS' | 'TEACHERS') || 'MEMBERS');
+  const [filter, setFilter] = useState<'CM' | 'ARCHIVED' | string>(() => localStorage.getItem('members_filter') || 'CM');
   
   // Church Filter for Admins
-  const [churchFilter, setChurchFilter] = useState<Church | 'All'>('All');
+  const [churchFilter, setChurchFilter] = useState<Church | 'All'>(() => (localStorage.getItem('members_churchFilter') as Church | 'All') || 'All');
+  
+  // Persist state changes
+  React.useEffect(() => { localStorage.setItem('members_hubTab', hubTab); }, [hubTab]);
+  React.useEffect(() => { localStorage.setItem('members_filter', filter); }, [filter]);
+  React.useEffect(() => { localStorage.setItem('members_churchFilter', churchFilter); }, [churchFilter]);
   
   // SELECTION STATE
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -247,11 +252,15 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
       if (member.lastActivationDate && new Date(member.lastActivationDate) > startDate) {
           startDate = new Date(member.lastActivationDate);
       }
+      
+      // Normalize to midnight to ensure inclusive comparison regardless of time
+      startDate.setHours(0,0,0,0);
 
       const churchAttendance = data.attendance.filter(r => {
           const recordDate = new Date(r.date);
-          // Include if it's the current church AND after the calculated start date
-          return r.churchId === member.assignedChurch && recordDate >= startDate;
+          recordDate.setHours(0,0,0,0);
+          // Include if it's the current church AND on or after the calculated start date
+          return r.churchId === member.assignedChurch && recordDate.getTime() >= startDate.getTime();
       });
 
       const totalSessions = churchAttendance.length;

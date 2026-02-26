@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { AppData, Transaction, Church, Member } from '../types';
 import { addTransaction, deleteTransaction } from '../services/storageService';
 import { Plus, Trash2, TrendingUp, TrendingDown, Filter, Wallet, Calendar, X } from 'lucide-react';
@@ -21,8 +21,13 @@ const Finances: React.FC<FinancesProps> = ({ data, onUpdate, activeChurch, curre
   const availableChurches = data.settings.churches;
 
   // State
-  const [filterChurch, setFilterChurch] = useState<Church | 'All'>(isAdmin && activeChurch === 'CM' ? 'All' : (activeChurch === 'CM' ? 'UJ' : activeChurch));
-  const [filterType, setFilterType] = useState<'All' | 'INCOME' | 'EXPENSE'>('All');
+  const [filterChurch, setFilterChurch] = useState<Church | 'All'>(() => (localStorage.getItem('finances_churchFilter') as Church | 'All') || (isAdmin && activeChurch === 'CM' ? 'All' : (activeChurch === 'CM' ? 'UJ' : activeChurch)));
+  const [filterType, setFilterType] = useState<'All' | 'INCOME' | 'EXPENSE'>(() => (localStorage.getItem('finances_typeFilter') as any) || 'All');
+  
+  // Persist State
+  useEffect(() => { localStorage.setItem('finances_churchFilter', filterChurch); }, [filterChurch]);
+  useEffect(() => { localStorage.setItem('finances_typeFilter', filterType); }, [filterType]);
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Form State

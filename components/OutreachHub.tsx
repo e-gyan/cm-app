@@ -90,7 +90,12 @@ const downloadICS = (filename: string, events: { title: string, start: Date, end
 };
 
 const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }) => {
-  const [activeTab, setActiveTab] = useState<'VISIT' | 'PRAYER' | 'CONNECT' | 'TRACK'>('VISIT');
+  const [activeTab, setActiveTab] = useState<'VISIT' | 'PRAYER' | 'CONNECT' | 'TRACK'>(() => (localStorage.getItem('outreach_activeTab') as any) || 'VISIT');
+  
+  useEffect(() => {
+    localStorage.setItem('outreach_activeTab', activeTab);
+  }, [activeTab]);
+
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [genMsg, setGenMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);

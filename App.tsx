@@ -27,7 +27,10 @@ enum View {
 
 const App: React.FC = () => {
   const [data, setData] = useState<AppData>({ members: [], attendance: [], transactions: [], notifications: [], settings: DEFAULT_SETTINGS });
-  const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
+  const [currentView, setCurrentView] = useState<View>(() => {
+    const saved = localStorage.getItem('currentView');
+    return (saved as View) || View.DASHBOARD;
+  });
   
   // GLOBAL CONTEXT STATE
   const [currentUser, setCurrentUser] = useState<Member | null>(null);
@@ -76,6 +79,12 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('sidebarState', JSON.stringify(isSidebarCollapsed));
   }, [isSidebarCollapsed]);
+
+  useEffect(() => {
+    if (currentUser) {
+        localStorage.setItem('currentView', currentView);
+    }
+  }, [currentView, currentUser]);
 
   const refreshData = () => {
     setData({ ...getAppData() }); 
