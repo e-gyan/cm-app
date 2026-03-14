@@ -399,7 +399,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
          });
 
          report += `\n----------------------------\n`;
-         report += `*GRAND TOTAL: ${ministryTotal}*\n`;
+         report += `*TOTAL: ${ministryTotal}*\n`;
          //report += `*TOTAL TEACHERS: ${totalTeachers}*\n`;
          
          if (ministryTotal === 0 && totalTeachers === 0) {
