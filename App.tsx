@@ -273,7 +273,18 @@ const App: React.FC = () => {
           </nav>
 
           {/* Sync Status */}
-          <div className={`mt-auto mb-4 ${isSidebarCollapsed ? 'flex justify-center' : 'px-1'}`}>
+          <div className={`mt-auto mb-4 ${isSidebarCollapsed ? 'flex justify-center' : 'px-4'}`}>
+            {!isSidebarCollapsed && (
+                <div className="mb-3">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        <span>Status</span>
+                        {lastSynced && <span>{lastSynced.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>}
+                    </div>
+                    <div className="text-xs font-medium text-slate-600 truncate" title={syncStatus || 'Ready'}>
+                        {isSyncing ? 'Syncing...' : (syncStatus || 'Ready to sync')}
+                    </div>
+                </div>
+            )}
             <button 
                 onClick={handleCloudSync}
                 className={`w-full py-2.5 rounded-xl border border-dashed flex items-center justify-center gap-2 text-xs font-semibold transition-all
@@ -283,9 +294,10 @@ const App: React.FC = () => {
                   ${syncError ? 'border-red-200 bg-red-50 text-red-500' : ''}
                 `}
                 title={syncError || "Force Sync"}
+                disabled={isSyncing}
             >
                 <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-                {!isSidebarCollapsed && (isSyncing ? 'Syncing...' : (syncError ? 'Retry Sync' : 'Sync Repository'))}
+                {!isSidebarCollapsed && (isSyncing ? 'Syncing...' : (syncError ? 'Retry Sync' : 'Sync Now'))}
             </button>
           </div>
 

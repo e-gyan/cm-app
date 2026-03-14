@@ -20,7 +20,7 @@ export type Church = string; // Changed from union type to string to allow dynam
 
 export type Role = 'ADMIN' | 'TEACHER' | 'NONE';
 
-export type ServiceType = 'JOY' | 'ENLARGEMENT';
+export type ServiceType = 'JOY' | 'ENLARGEMENT' | 'SPECIAL';
 
 export interface Member {
   id: string;
@@ -56,6 +56,7 @@ export interface AttendanceRecord {
   presentMemberIds: string[];
   punctualMemberIds?: string[]; // IDs of the top 3 punctual members
   serviceMap?: Record<string, ServiceType>; // Map member ID to specific service
+  eventName?: string; // Name of the special event if serviceType is SPECIAL
   notes?: string;
   churchId: Church;
 }

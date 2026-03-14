@@ -408,14 +408,15 @@ export const deleteTransaction = (id: string) => { if (!inMemoryData.transaction
 export const saveOutreachSession = (session: OutreachSession) => { if (!inMemoryData.outreachSessions) inMemoryData.outreachSessions = []; const idx = inMemoryData.outreachSessions.findIndex(s => s.id === session.id); if (!session.visitedMemberIds) session.visitedMemberIds = []; if (idx >= 0) inMemoryData.outreachSessions[idx] = session; else inMemoryData.outreachSessions.push(session); isDirty = true; return persistData('IMMEDIATE'); };
 export const deleteOutreachSession = async (id: string) => { if (!inMemoryData.outreachSessions) return; inMemoryData.outreachSessions = inMemoryData.outreachSessions.filter(s => s.id !== id); isDirty = true; await persistData('IMMEDIATE'); };
 
-export const saveAttendance = (date: string, churchId: Church, presentIds: string[], punctualIds: string[], serviceMap?: Record<string, ServiceType>) => { 
+export const saveAttendance = (date: string, churchId: Church, presentIds: string[], punctualIds: string[], serviceMap?: Record<string, ServiceType>, eventName?: string) => { 
     const existingIndex = inMemoryData.attendance.findIndex(r => r.date === date && r.churchId === churchId); 
     const record: AttendanceRecord = { 
         date, 
         churchId, 
         presentMemberIds: presentIds, 
         punctualMemberIds: punctualIds,
-        serviceMap: serviceMap // Persist the service map
+        serviceMap: serviceMap, // Persist the service map
+        eventName: eventName
     }; 
     if (existingIndex >= 0) { 
         inMemoryData.attendance[existingIndex] = record; 

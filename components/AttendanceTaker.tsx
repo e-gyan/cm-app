@@ -29,6 +29,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   // New State for Service Logic
   const [serviceMap, setServiceMap] = useState<Record<string, ServiceType>>({});
   const [currentService, setCurrentService] = useState<ServiceType>(() => (localStorage.getItem('attendance_service') as any) || 'JOY');
+  const [specialEventName, setSpecialEventName] = useState('');
+  const [showEventModal, setShowEventModal] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('All');
@@ -92,10 +94,13 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
       const combinedPresent = new Set<string>();
       const combinedPunctual = new Set<string>();
       const combinedServices: Record<string, ServiceType> = {};
+      let loadedEventName = '';
 
       branchesToLoad.forEach(churchId => {
           const record = data.attendance.find(r => r.date === selectedDate && r.churchId === churchId);
           if (record) {
+             if (record.eventName) loadedEventName = record.eventName;
+
              const targetIds = record.presentMemberIds.filter(id => {
                  const m = data.members.find(mem => mem.id === id);
                  if (!m) return false;
@@ -124,6 +129,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
       setPresentIds(combinedPresent);
       setPunctualIds(combinedPunctual);
       setServiceMap(combinedServices);
+      setSpecialEventName(loadedEventName);
     }
   }, [selectedDate, data.attendance, effectiveChurch, attendanceMode, data.members]);
 
@@ -182,8 +188,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
           });
 
           if (currentServiceCount >= 3) {
-              alert(`Maximum 3 punctual stars allowed for ${targetService} Service.`);
-              return;
+              // alert(`Maximum 3 punctual stars allowed for ${targetService} Service.`);
+              return; // Silently block or use UI feedback
           }
       }
       
@@ -204,6 +210,15 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
   const handleSave = async () => {
     if (!selectedDate) return;
 
+    if (currentService === 'SPECIAL' && !specialEventName) {
+        setShowEventModal(true);
+        return;
+    }
+
+    confirmSave();
+  };
+
+  const confirmSave = async () => {
     const syncRes = await syncFromCloud();
     if (syncRes.success && syncRes.message?.includes('New data')) {
         onUpdate(); 
@@ -284,14 +299,18 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
         const newPunctual = finalPunctual.sort().join(',');
         const oldMapStr = JSON.stringify(existingRecord?.serviceMap || {});
         const newMapStr = JSON.stringify(finalServiceMap);
+        const oldEventName = existingRecord?.eventName || '';
+        const newEventName = currentService === 'SPECIAL' ? specialEventName : oldEventName;
 
-        if (oldPresent !== newPresent || oldPunctual !== newPunctual || oldMapStr !== newMapStr) {
+        if (oldPresent !== newPresent || oldPunctual !== newPunctual || oldMapStr !== newMapStr || oldEventName !== newEventName) {
             hasActualChanges = true;
-            saveAttendance(selectedDate, churchId, finalPresent, finalPunctual, finalServiceMap);
+            saveAttendance(selectedDate, churchId, finalPresent, finalPunctual, finalServiceMap, newEventName);
         }
     });
 
     setSuccessMsg(hasActualChanges ? `Changes saved` : `No changes saved`);
+    setShowEventModal(false);
+    if (currentService !== 'SPECIAL') setSpecialEventName(''); // Reset if not special
     onUpdate();
     setTimeout(() => setSuccessMsg(''), 2000);
   };
@@ -415,18 +434,24 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
           
           {/* SERVICE TOGGLE (Visible only in Member Mode for UJ, I, K, LJ) */}
           {attendanceMode === 'MEMBERS' && (effectiveChurch !== 'CM' || isCombinedView) && (
-              <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100 mb-1">
+              <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100 mb-1 overflow-x-auto no-scrollbar">
                   <button 
                     onClick={() => setCurrentService('JOY')}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all ${currentService === 'JOY' ? 'bg-amber-100 text-amber-700 shadow-sm' : 'text-slate-400 hover:bg-slate-50'}`}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === 'JOY' ? 'bg-amber-100 text-amber-700 shadow-sm' : 'text-slate-400 hover:bg-slate-50'}`}
                   >
                       <Sun size={18} fill={currentService === 'JOY' ? "currentColor" : "none"} /> Joy Service
                   </button>
                   <button 
                     onClick={() => setCurrentService('ENLARGEMENT')}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all ${currentService === 'ENLARGEMENT' ? 'bg-sky-100 text-sky-700 shadow-sm' : 'text-slate-400 hover:bg-slate-50'}`}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === 'ENLARGEMENT' ? 'bg-sky-100 text-sky-700 shadow-sm' : 'text-slate-400 hover:bg-slate-50'}`}
                   >
                       <Zap size={18} fill={currentService === 'ENLARGEMENT' ? "currentColor" : "none"} /> Enlargement
+                  </button>
+                  <button 
+                    onClick={() => setCurrentService('SPECIAL')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === 'SPECIAL' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-slate-400 hover:bg-slate-50'}`}
+                  >
+                      <Crown size={18} fill={currentService === 'SPECIAL' ? "currentColor" : "none"} /> Special
                   </button>
               </div>
           )}
@@ -457,17 +482,26 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                     <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                         <Calendar size={16} />
                     </div>
-                    <select 
-                        value={selectedDate} 
-                        onChange={(e) => setSelectedDate(e.target.value)}
-                        className="bg-slate-50 border border-slate-200 text-slate-800 text-xs md:text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-9 p-3 appearance-none cursor-pointer truncate"
-                    >
-                        {sundays2026.map(d => {
-                        const strDate = d.toISOString().split('T')[0];
-                        const isToday = strDate === new Date().toISOString().split('T')[0];
-                        return <option key={strDate} value={strDate}>{isToday ? 'Today, ' : ''}{formatDateDDMMYYYY(strDate)}</option>
-                        })}
-                    </select>
+                    {currentService === 'SPECIAL' ? (
+                        <input 
+                            type="date"
+                            value={selectedDate}
+                            onChange={(e) => setSelectedDate(e.target.value)}
+                            className="bg-slate-50 border border-slate-200 text-slate-800 text-xs md:text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-9 p-3 appearance-none cursor-pointer"
+                        />
+                    ) : (
+                        <select 
+                            value={selectedDate} 
+                            onChange={(e) => setSelectedDate(e.target.value)}
+                            className="bg-slate-50 border border-slate-200 text-slate-800 text-xs md:text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-9 p-3 appearance-none cursor-pointer truncate"
+                        >
+                            {sundays2026.map(d => {
+                            const strDate = d.toISOString().split('T')[0];
+                            const isToday = strDate === new Date().toISOString().split('T')[0];
+                            return <option key={strDate} value={strDate}>{isToday ? 'Today, ' : ''}{formatDateDDMMYYYY(strDate)}</option>
+                            })}
+                        </select>
+                    )}
                 </div>
 
                 <button 
@@ -644,13 +678,16 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
                                 {enablePunctuality && (
                                     <button 
                                         onClick={(e) => handlePunctualToggle(e, member.id)}
-                                        disabled={!isPunctual && !isCombinedView && punctualIds.size >= 6} // Hard cap total just in case, logic handled in function
+                                        disabled={!isPunctual && !isCombinedView && (
+                                            // Calculate current count for this service
+                                            [...punctualIds].filter(pid => (serviceMap[pid] || 'JOY') === (assignedService || currentService)).length >= 3
+                                        )}
                                         className={`p-1.5 rounded-lg transition-all ${
                                             isPunctual 
                                                 ? 'bg-amber-400 text-white shadow-sm' 
                                                 : isPresent 
-                                                    ? 'bg-black/10 hover:bg-black/20 text-current' 
-                                                    : 'bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-500'
+                                                    ? 'bg-black/10 hover:bg-black/20 text-current disabled:opacity-30 disabled:cursor-not-allowed' 
+                                                    : 'bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-500 disabled:opacity-30 disabled:cursor-not-allowed'
                                         }`}
                                     >
                                         <Trophy size={16} fill={isPunctual ? "currentColor" : "none"} />
@@ -673,6 +710,33 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({ data, onUpdate, activ
             <CheckCircle2 size={32} className="text-green-400" />
             <span className="font-bold text-lg">{successMsg}</span>
         </div>
+      )}
+
+      {/* Event Name Modal */}
+      {showEventModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 animate-in zoom-in-95">
+                  <h3 className="text-xl font-bold text-slate-800 mb-4">Name this Special Event</h3>
+                  <input 
+                    type="text" 
+                    placeholder="e.g., Easter Service, Convention" 
+                    value={specialEventName}
+                    onChange={(e) => setSpecialEventName(e.target.value)}
+                    className="w-full p-3 border border-slate-200 rounded-xl mb-4 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-bold text-slate-700"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                      <button onClick={() => setShowEventModal(false)} className="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl">Cancel</button>
+                      <button 
+                        onClick={confirmSave}
+                        disabled={!specialEventName.trim()}
+                        className="flex-1 py-3 font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                          Confirm Save
+                      </button>
+                  </div>
+              </div>
+          </div>
       )}
 
       {/* Leaderboard Modal */}
