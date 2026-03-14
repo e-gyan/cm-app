@@ -104,6 +104,13 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     });
   }, [data, editTargets, isAdmin, availableChurches]);
 
+  const handleSaveTargets = () => {
+    updateTargets(editTargets);
+    setImportMsg({ type: 'success', text: 'Targets updated successfully!' });
+    setTimeout(() => setImportMsg(null), 3000);
+    onUpdate();
+  };
+
   // --- Executive Report Logic ---
   const generateExecutiveReport = async () => {
       if (!process.env.GEMINI_API_KEY) {
@@ -393,7 +400,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
 
          report += `\n----------------------------\n`;
          report += `*GRAND TOTAL: ${ministryTotal}*\n`;
-         report += `*TOTAL TEACHERS: ${totalTeachers}*\n`;
+         //report += `*TOTAL TEACHERS: ${totalTeachers}*\n`;
          
          if (ministryTotal === 0 && totalTeachers === 0) {
              report += `\n_No attendance data recorded yet for this date._`;
