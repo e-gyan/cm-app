@@ -348,22 +348,31 @@ const ChurchDashboard: React.FC<{ data: AppData, activeChurch: Church }> = ({ da
     const outreachStats = useMemo(() => {
         if (activeChurch !== 'UJ' || !data.settings.features.outreach) return null;
         
-        const eligibleKids = data.members.filter(m => m.assignedChurch === 'UJ' && ['Member','FNF','Inconsistent'].includes(m.type) && m.status === 'Active').length;
+        const eligibleMembers = data.members.filter(m => m.assignedChurch === 'UJ' && ['Member','FNF','Inconsistent'].includes(m.type) && m.status === 'Active');
+        const eligibleKids = eligibleMembers.length;
+        const eligibleKidIds = new Set(eligibleMembers.map(m => m.id));
+
         const visitTarget = eligibleKids * 2; // Annual Target: 2 visits per kid
         
-        // Prayer Time Logic: 5 kids * 5 days * 52 weeks * 30 mins
-        // 5 * 5 * 52 * 30 = 39,000 mins per year target
-        const prayerTargetMins = 39000; 
+        // Prayer Time Logic: Dynamic based on eligible kids
+        // 5 days * 52 weeks * 30 mins = 7,800 mins per kid per year
+        const prayerTargetMins = eligibleKids * 5 * 52 * 30; 
 
-        // Actual Visits Count (Unique visits per member this year) - Simplified to total visits for dashboard
+        // Actual Visits Count (Only counting visits for currently eligible kids)
         const totalVisitsDone = (data.outreachSessions || [])
             .filter(s => s.status === 'COMPLETED' && new Date(s.date).getFullYear() === new Date().getFullYear())
-            .reduce((acc, s) => acc + (s.visitedMemberIds?.length || 0), 0);
+            .reduce((acc, s) => {
+                const validVisits = (s.visitedMemberIds || []).filter(id => eligibleKidIds.has(id)).length;
+                return acc + validVisits;
+            }, 0);
 
-        // Actual Prayer Time (Completed Slots * 30 mins)
+        // Actual Prayer Time (Only counting prayer time for currently eligible kids)
         const totalPrayerMins = (data.prayerSchedule || [])
             .filter(s => s.isCompleted && new Date(s.date).getFullYear() === new Date().getFullYear())
-            .reduce((acc, s) => acc + (s.durationMins || 30), 0);
+            .reduce((acc, s) => {
+                const validPrayers = (s.assignedMemberIds || []).filter(id => eligibleKidIds.has(id)).length;
+                return acc + (validPrayers * (s.durationMins || 30));
+            }, 0);
 
         return { visitTarget, totalVisitsDone, prayerTargetMins, totalPrayerMins };
     }, [data, activeChurch]);
