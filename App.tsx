@@ -93,6 +93,41 @@ const App: React.FC = () => {
     }
   }, [currentView, currentUser]);
 
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (currentUser) {
+      // Periodic sync every 60 seconds
+      interval = setInterval(async () => {
+        if (!isSyncing) {
+            const result = await syncFromCloud();
+            if (result.success) {
+                refreshData();
+                setLastSynced(new Date());
+                setSyncStatus("Cloud Synced");
+            }
+        }
+      }, 60000);
+      
+      const handleVisibilityChange = async () => {
+        if (document.visibilityState === 'visible' && !isSyncing) {
+           const result = await syncFromCloud();
+           if (result.success) {
+               refreshData();
+               setLastSynced(new Date());
+               setSyncStatus("Cloud Synced");
+           }
+        }
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      
+      return () => {
+        clearInterval(interval);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
+    }
+  }, [currentUser]);
+
   const refreshData = () => {
     setData({ ...getAppData() }); 
   };

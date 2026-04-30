@@ -54,15 +54,22 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     const cleanName = sanitizeInput(name);
 
     try {
-        // PER USER REQUEST: Force fetch from cloud before authentication to ensure 
-        // we have the absolute latest credentials (e.g. newly added users).
-        // This makes sure we "read from the cloud" when logging in.
+        // Optimistic fast login using local data
+        let result = await authenticateUser(cleanName, passcode, true);
         
-        // Pass TRUE to force overwrite local data with cloud data
-        await syncFromCloud(true); 
-        
-        // Now auth against the updated in-memory store
-        const result = await authenticateUser(cleanName, passcode);
+        // If local authentication fails, force fetch from cloud 
+        // to ensure we have the absolute latest credentials (e.g. newly added users)
+        // and try again.
+        if (!result.success && result.message === 'Invalid credentials.') {
+            await syncFromCloud(true);
+            result = await authenticateUser(cleanName, passcode);
+        } else if (!result.success) {
+            // e.g. Locked account, or access deactivated
+            setError(result.message || 'Login failed');
+            setIsLoading(false);
+            return;
+        }
+
         if (result.success && result.member) {
             onLogin(result.member);
         } else {
@@ -184,7 +191,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     
                     <button 
                         type="submit"
-                        disabled={isLoading || isSyncing}
+                        disabled={isLoading}
                         className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-bold text-lg shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
                     >
                         {isLoading ? 'Verifying...' : 'Sign In'}
