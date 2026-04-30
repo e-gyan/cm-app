@@ -38,6 +38,8 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -54,10 +56,15 @@ const App: React.FC = () => {
              const result = await syncFromCloud();
              if (!result.success) {
                  setSyncError("Cloud connection failed. Using local data.");
+                 setSyncStatus("Offline Mode");
+             } else {
+                 setLastSynced(new Date());
+                 setSyncStatus("Cloud Synced");
              }
         } catch (e) {
              console.warn("Initial cloud sync failed", e);
              setSyncError("Network error. Using local data.");
+             setSyncStatus("Sync Error");
         }
 
         refreshData();
@@ -93,11 +100,15 @@ const App: React.FC = () => {
   const handleCloudSync = async () => {
     setIsSyncing(true);
     setSyncError(null);
+    setSyncStatus("Syncing...");
     const result = await syncFromCloud();
     if (result.success) {
         refreshData();
+        setLastSynced(new Date());
+        setSyncStatus("Cloud Synced");
     } else {
         setSyncError("Sync failed");
+        setSyncStatus("Sync Failed");
     }
     setIsSyncing(false);
   };
@@ -180,7 +191,7 @@ const App: React.FC = () => {
     <button
       onClick={() => setCurrentView(view)}
       className={`
-        flex flex-col items-center justify-center w-full py-2 gap-1 active:scale-95 transition-transform
+        flex flex-col items-center justify-center min-w-[4.5rem] flex-1 py-2 gap-1 active:scale-95 transition-transform
         ${currentView === view ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}
       `}
     >
@@ -449,14 +460,15 @@ const App: React.FC = () => {
         </div>
 
         {/* Mobile Bottom Navigation */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 px-4 py-1 pb-safe flex justify-around items-center shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.05)]">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 px-2 py-1 pb-safe flex justify-start sm:justify-around items-center shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.05)] overflow-x-auto gap-2 hide-scrollbar">
             <MobileNavItem view={View.DASHBOARD} icon={LayoutDashboard} label="Home" />
             <MobileNavItem view={View.ATTENDANCE} icon={CalendarCheck} label="Attend" />
             <MobileNavItem view={View.MEMBERS} icon={Users} label="People" />
             <MobileNavItem view={View.ANALYTICS} icon={PieChart} label="Stats" />
             {showOutreach && <MobileNavItem view={View.OUTREACH} icon={HeartHandshake} label="Outreach" />}
             {showFinances && <MobileNavItem view={View.FINANCES} icon={Building2} label="Finances" />}
-            {isAdmin ? <MobileNavItem view={View.SETTINGS} icon={SettingsIcon} label="Config" /> : <MobileNavItem view={View.EXPORT} icon={Share2} label="Reports" />}
+            <MobileNavItem view={View.EXPORT} icon={Share2} label="Reports" />
+            {isAdmin && <MobileNavItem view={View.SETTINGS} icon={SettingsIcon} label="Config" />}
         </nav>
       </main>
     </div>

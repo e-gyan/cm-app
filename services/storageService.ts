@@ -125,8 +125,8 @@ const getCloudConfig = (): CloudConfig | null => {
     if (settings && settings.apiKey && settings.binId) {
         return {
             enabled: settings.enabled,
-            apiKey: settings.apiKey,
-            binId: settings.binId,
+            apiKey: settings.apiKey.trim(),
+            binId: settings.binId.trim(),
             url: 'https://api.jsonbin.io/v3/b'
         };
     }
@@ -134,25 +134,49 @@ const getCloudConfig = (): CloudConfig | null => {
 };
 
 // Helper to try Master Key first, then Access Key
-const fetchWithRetryHeaders = async (url: string, method: string, apiKey: string, body?: string) => {
-    const headersMaster = {
+const fetchWithRetryHeaders = async (url: string, method: string, apiKey: string, body?: string, isFallback = false): Promise<Response> => {
+    const headersMaster: Record<string, string> = {
         'Content-Type': 'application/json',
-        'X-Master-Key': apiKey
+        'X-Master-Key': apiKey,
+        'X-Bin-Versioning': 'false' // Avoid hitting versioning limits
     };
 
     try {
-        let response = await fetch(url, { method, headers: headersMaster, body });
+        let response = await fetch(url, { method, headers: headersMaster, body, mode: 'cors' });
         
         // If Master Key fails (401/403), try Access Key
         if (response.status === 401 || response.status === 403) {
-            const headersAccess = {
+            const headersAccess: Record<string, string> = {
                 'Content-Type': 'application/json',
-                'X-Access-Key': apiKey
+                'X-Access-Key': apiKey,
+                'X-Bin-Versioning': 'false'
             };
-            response = await fetch(url, { method, headers: headersAccess, body });
+            response = await fetch(url, { method, headers: headersAccess, body, mode: 'cors' });
         }
+        
+        if (!response.ok) {
+            // Fallback to default API key if the user's custom key is invalid
+            if ((response.status === 401 || response.status === 403) && !isFallback && apiKey !== DEFAULT_CLOUD_CONFIG.apiKey) {
+                console.warn("User API Key invalid, falling back to default credentials...");
+                return fetchWithRetryHeaders(url, method, DEFAULT_CLOUD_CONFIG.apiKey, body, true);
+            }
+
+            let errorText = '';
+            try { errorText = await response.text(); } catch(e) {}
+            
+            // Provide more specific errors mimicking original logic
+            if (response.status === 404) throw new Error("Bin ID not found or invalid URL.");
+            if (response.status === 401 || response.status === 403) throw new Error("Invalid API Key.");
+            
+            throw new Error(`Cloud fetch failed: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+        
         return response;
-    } catch (e) {
+    } catch (e: any) {
+        // Provide better error messages for common network failures
+        if (e.message && e.message.includes('Failed to fetch')) {
+            throw new Error('Failed to fetch from cloud. This may be due to a network error, CORS, or an adblocker blocking the request.');
+        }
         throw e;
     }
 };
@@ -173,8 +197,8 @@ const syncToCloud = async (immediate = false): Promise<void> => {
                 JSON.stringify(inMemoryData)
             );
             console.log("Data synced to cloud successfully.");
-        } catch (e) {
-            console.error("Failed to sync to cloud", e);
+        } catch (e: any) {
+            console.warn(`Failed to sync to cloud: ${e.message}`);
         }
     };
 
@@ -203,19 +227,13 @@ export const syncFromCloud = async (force: boolean = false): Promise<{success: b
             'GET', 
             config.apiKey
         );
-        
-        if (!response.ok) {
-            if (response.status === 404) throw new Error("Bin ID not found.");
-            if (response.status === 401 || response.status === 403) throw new Error("Invalid API Key.");
-            throw new Error(`Cloud fetch failed: ${response.status}`);
-        }
 
         const result = await response.json();
         const cloudData: AppData = result.record || result; 
         
         // Security Check: Validate Schema of Cloud Data before merging
         if (!isValidSchema(cloudData)) {
-            console.error("Security Alert: Cloud data schema invalid.");
+            console.warn("Security Alert: Cloud data schema invalid.");
             return { success: false, message: 'Cloud data corrupted or invalid.' };
         }
 
@@ -237,7 +255,7 @@ export const syncFromCloud = async (force: boolean = false): Promise<{success: b
             return { success: true, message: 'Local data is up to date' };
         }
     } catch (e: any) {
-        console.error("Failed to pull from cloud", e);
+        console.warn(`Failed to pull from cloud: ${e.message}`);
         return { success: false, message: e.message || 'Failed to connect to cloud' };
     }
 };
