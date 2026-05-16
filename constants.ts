@@ -8,7 +8,7 @@ const ENV_API_KEY = (import.meta as any).env?.VITE_API_KEY || '';
 const ENV_BIN_ID = (import.meta as any).env?.VITE_BIN_ID || '';
 
 export const DEFAULT_CLOUD_CONFIG = {
-    apiKey: ENV_API_KEY || '$2a$10$ND0zIcPdo58JCZimZAcwRO.hL596gLZ3bxo/F0Po4bcSu.b0nvjEa', 
+    apiKey: ENV_API_KEY || '$2a$10$K5M6PsdqUpAmMJHp06t1PeEK2tabwlgLoFMHLo/yEWV5ndxGCMcRu', 
     binId: ENV_BIN_ID || '6968447b43b1c97be9314e21'   
 };
 
