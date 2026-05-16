@@ -247,7 +247,7 @@ const fetchWithRetryHeaders = async (
 // DEBOUNCE TIMER
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
-const syncToCloud = async (immediate = false): Promise<void> => {
+export const syncToCloud = async (immediate = false): Promise<void> => {
   const config = getCloudConfig();
   if (!config || !config.enabled || !config.apiKey || !config.binId)
     return Promise.resolve();
@@ -263,6 +263,7 @@ const syncToCloud = async (immediate = false): Promise<void> => {
       console.log("Data synced to cloud successfully.");
     } catch (e: any) {
       console.warn(`Failed to sync to cloud: ${e.message}`);
+      throw e;
     }
   };
 
@@ -274,7 +275,7 @@ const syncToCloud = async (immediate = false): Promise<void> => {
   if (immediate) {
     return performSync();
   } else {
-    syncTimer = setTimeout(performSync, 2000);
+    syncTimer = setTimeout(() => performSync().catch(e => console.warn("Background sync failed", e)), 2000);
     return Promise.resolve();
   }
 };

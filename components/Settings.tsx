@@ -47,13 +47,26 @@ const Settings: React.FC<SettingsProps> = ({ data, onUpdate, currentUser }) => {
   };
 
   const handleManualSync = async () => {
+      if (!window.confirm("WARNING: This will overwrite any unsaved local changes with what is on the cloud. Proceed?")) return;
       setIsSyncing(true);
       const res = await syncFromCloud(true);
       if (res.success) {
-          setStatusMsg({ type: 'success', text: 'Cloud sync successful' });
+          setStatusMsg({ type: 'success', text: 'Cloud pull successful' });
           onUpdate();
       } else {
           setStatusMsg({ type: 'error', text: res.message || 'Sync failed' });
+      }
+      setIsSyncing(false);
+  };
+
+  const handleForcePush = async () => {
+      setIsSyncing(true);
+      try {
+          const { syncToCloud } = await import('../services/storageService');
+          await syncToCloud(true);
+          setStatusMsg({ type: 'success', text: 'Cloud push successful' });
+      } catch (err: any) {
+          setStatusMsg({ type: 'error', text: err.message || 'Push failed' });
       }
       setIsSyncing(false);
   };
@@ -184,7 +197,7 @@ const Settings: React.FC<SettingsProps> = ({ data, onUpdate, currentUser }) => {
                                 />
                             </div>
                             
-                            <div className="flex items-center gap-3 pt-4">
+                            <div className="flex flex-wrap items-center gap-3 pt-4">
                                 <button 
                                     onClick={saveConfig} 
                                     className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700"
@@ -192,11 +205,18 @@ const Settings: React.FC<SettingsProps> = ({ data, onUpdate, currentUser }) => {
                                     Save Credentials
                                 </button>
                                 <button 
+                                    onClick={handleForcePush}
+                                    disabled={isSyncing}
+                                    className="px-6 py-3 bg-green-100 text-green-700 font-bold rounded-xl hover:bg-green-200 flex items-center gap-2"
+                                >
+                                    <Cloud size={18} className={isSyncing ? 'animate-pulse' : ''}/> Force Push
+                                </button>
+                                <button 
                                     onClick={handleManualSync}
                                     disabled={isSyncing}
                                     className="px-6 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 flex items-center gap-2"
                                 >
-                                    <RefreshCw size={18} className={isSyncing ? 'animate-spin' : ''}/> Test Sync
+                                    <RefreshCw size={18} className={isSyncing ? 'animate-spin' : ''}/> Force Pull
                                 </button>
                             </div>
                         </div>
