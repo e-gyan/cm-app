@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { authenticateUser, getAppData, syncFromCloud } from '../services/storageService';
-import { Member } from '../types';
+import { Member, MemberType, MemberStatus } from '../types';
 import { ArrowRight, AlertCircle, Users, Sparkles, RefreshCw, Cloud, Eye, EyeOff } from 'lucide-react';
 import { sanitizeInput } from '../services/securityService';
 import { APP_VERSION } from '../constants';

@@ -146,124 +146,25 @@ export const initializeRepository = async () => {
 };
 
 // --- CLOUD SYNC SERVICE ---
-// Now reads primarily from AppData Settings for encapsulation
-const getCloudConfig = (): CloudConfig | null => {
-  const settings = inMemoryData.settings?.cloudConfig;
-  if (settings && settings.apiKey && settings.binId) {
-    return {
-      enabled: settings.enabled,
-      apiKey: settings.apiKey.trim(),
-      binId: settings.binId.trim(),
-      url: "https://api.jsonbin.io/v3/b",
-    };
-  }
-  return null;
-};
-
-// Helper to try Master Key first, then Access Key
-const fetchWithRetryHeaders = async (
-  url: string,
-  method: string,
-  apiKey: string,
-  body?: string,
-  isFallback = false,
-): Promise<Response> => {
-  const headersMaster: Record<string, string> = {
-    "Content-Type": "application/json",
-    "X-Master-Key": apiKey,
-    "X-Bin-Versioning": "false", // Avoid hitting versioning limits
-  };
-
-  try {
-    let response = await fetch(url, {
-      method,
-      headers: headersMaster,
-      body,
-      mode: "cors",
-    });
-
-    // If Master Key fails (401/403), try Access Key
-    if (response.status === 401 || response.status === 403) {
-      const headersAccess: Record<string, string> = {
-        "Content-Type": "application/json",
-        "X-Access-Key": apiKey,
-        "X-Bin-Versioning": "false",
-      };
-      response = await fetch(url, {
-        method,
-        headers: headersAccess,
-        body,
-        mode: "cors",
-      });
-    }
-
-    if (!response.ok) {
-      // Fallback to default API key if the user's custom key is invalid
-      if (
-        (response.status === 401 || response.status === 403) &&
-        !isFallback &&
-        apiKey !== DEFAULT_CLOUD_CONFIG.apiKey
-      ) {
-        console.warn(
-          "User API Key invalid, falling back to default credentials...",
-        );
-        return fetchWithRetryHeaders(
-          url,
-          method,
-          DEFAULT_CLOUD_CONFIG.apiKey,
-          body,
-          true,
-        );
-      }
-
-      let errorText = "";
-      try {
-        errorText = await response.text();
-      } catch (e) {}
-
-      // Provide more specific errors mimicking original logic
-      if (response.status === 404)
-        throw new Error("Bin ID not found or invalid URL.");
-      if (response.status === 401 || response.status === 403)
-        throw new Error("Invalid API Key.");
-
-      throw new Error(
-        `Cloud fetch failed: ${response.status} ${response.statusText} - ${errorText}`,
-      );
-    }
-
-    return response;
-  } catch (e: any) {
-    // Provide better error messages for common network failures
-    if (e.message && e.message.includes("Failed to fetch")) {
-      throw new Error(
-        "Failed to fetch from cloud. This may be due to a network error, CORS, or an adblocker blocking the request.",
-      );
-    }
-    throw e;
-  }
-};
-
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { db, auth } from "./firebase";
+import { handleFirestoreError, OperationType } from "./firebaseErrors";
+import { isValidSchema } from "./securityService";
 // DEBOUNCE TIMER
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const syncToCloud = async (immediate = false): Promise<void> => {
-  const config = getCloudConfig();
-  if (!config || !config.enabled || !config.apiKey || !config.binId)
-    return Promise.resolve();
+  if (!auth.currentUser) return Promise.resolve();
 
   const performSync = async () => {
     try {
-      await fetchWithRetryHeaders(
-        `${config.url}/${config.binId}`,
-        "PUT",
-        config.apiKey,
-        JSON.stringify(inMemoryData),
-      );
-      console.log("Data synced to cloud successfully.");
+      const docRef = doc(db, "appData", "main");
+      // Use the monolithic appData block to replace the single JSONbin.
+      await setDoc(docRef, inMemoryData);
+      console.log("Data synced to Firebase successfully.");
     } catch (e: any) {
-      console.warn(`Failed to sync to cloud: ${e.message}`);
-      throw e;
+      console.warn(`Failed to sync to Firebase: ${e.message}`);
+      handleFirestoreError(e, OperationType.WRITE, "appData/main");
     }
   };
 
@@ -283,20 +184,19 @@ export const syncToCloud = async (immediate = false): Promise<void> => {
 export const syncFromCloud = async (
   force: boolean = false,
 ): Promise<{ success: boolean; message?: string }> => {
-  const config = getCloudConfig();
-  if (!config || !config.enabled || !config.apiKey || !config.binId) {
-    return { success: false, message: "Cloud not configured" };
+  if (!auth.currentUser) {
+    return { success: false, message: "Firebase not authenticated. Sign in from Settings -> Cloud Sync." };
   }
 
   try {
-    const response = await fetchWithRetryHeaders(
-      `${config.url}/${config.binId}?t=${Date.now()}`,
-      "GET",
-      config.apiKey,
-    );
+    const docRef = doc(db, "appData", "main");
+    const docSnap = await getDoc(docRef);
 
-    const result = await response.json();
-    const cloudData: AppData = result.record || result;
+    if (!docSnap.exists()) {
+       return { success: true, message: "No cloud data found. Ready to push." };
+    }
+
+    const cloudData: AppData = docSnap.data() as AppData;
 
     // Security Check: Validate Schema of Cloud Data before merging
     if (!isValidSchema(cloudData)) {
@@ -317,15 +217,18 @@ export const syncFromCloud = async (
 
       inMemoryData = cloudData;
       persistData("NONE");
-      return { success: true, message: "New data downloaded from cloud" };
+      return { success: true, message: "New data downloaded from Firebase" };
     } else {
       return { success: true, message: "Local data is up to date" };
     }
   } catch (e: any) {
-    console.warn(`Failed to pull from cloud: ${e.message}`);
+    if (e.message && e.message.includes('missing or insufficient permissions') || e.code === 'permission-denied') {
+        handleFirestoreError(e, OperationType.GET, "appData/main");
+    }
+    console.warn(`Failed to pull from Firebase: ${e.message}`);
     return {
       success: false,
-      message: e.message || "Failed to connect to cloud",
+      message: e.message || "Failed to connect to Firebase",
     };
   }
 };

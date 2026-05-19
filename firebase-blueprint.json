@@ -1,0 +1,28 @@
+{
+  "entities": {
+    "AppData": {
+      "title": "AppData",
+      "description": "Monolithic application state",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "members": { "type": "array" },
+        "attendance": { "type": "array" },
+        "transactions": { "type": "array" },
+        "notifications": { "type": "array" },
+        "outreachSessions": { "type": "array" },
+        "prayerSchedule": { "type": "array" },
+        "settings": { "type": "object" },
+        "targets": { "type": "object" },
+        "lastUpdated": { "type": "number" },
+        "ownerId": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/appData/{userId}": {
+      "schema": { "$ref": "#/entities/AppData" },
+      "description": "User specific app state. We store data per user because Firebase requires auth to secure data."
+    }
+  }
+}

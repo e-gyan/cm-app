@@ -169,40 +169,27 @@ const Settings: React.FC<SettingsProps> = ({ data, onUpdate, currentUser }) => {
                 {/* CLOUD TAB */}
                 {activeTab === 'CLOUD' && (
                     <div className="space-y-6">
-                        <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Cloud size={20} className="text-indigo-600"/> Cloud Configuration</h3>
+                        <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Cloud size={20} className="text-indigo-600"/> Firebase Sync Configuration</h3>
                         
                         <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl text-blue-800 text-sm">
-                            <p>Data is synchronized securely with JSONBin.io. Only Admins should modify these keys.</p>
+                            <p>Data is synchronized securely with Firebase. Ensure you are signed in with the authorized Google Account.</p>
                         </div>
-
+                        
                         <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">JSONBin Master Key</label>
-                                <input 
-                                    type="password" 
-                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm"
-                                    value={localSettings.cloudConfig.apiKey}
-                                    onChange={e => setLocalSettings({...localSettings, cloudConfig: {...localSettings.cloudConfig, apiKey: e.target.value}})}
-                                    placeholder="$2b$10$..."
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Bin ID</label>
-                                <input 
-                                    type="text" 
-                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm"
-                                    value={localSettings.cloudConfig.binId}
-                                    onChange={e => setLocalSettings({...localSettings, cloudConfig: {...localSettings.cloudConfig, binId: e.target.value}})}
-                                    placeholder="65a..."
-                                />
-                            </div>
-                            
                             <div className="flex flex-wrap items-center gap-3 pt-4">
                                 <button 
-                                    onClick={saveConfig} 
-                                    className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700"
+                                    onClick={async () => {
+                                        try {
+                                            const { loginWithGoogle } = await import('../services/firebase');
+                                            await loginWithGoogle();
+                                            setStatusMsg({ type: 'success', text: 'Firebase signed in successfully!' });
+                                        } catch (e: any) {
+                                            setStatusMsg({ type: 'error', text: 'Firebase Sign in failed' });
+                                        }
+                                    }} 
+                                    className="px-6 py-3 bg-red-500 text-white font-bold rounded-xl shadow-lg hover:bg-red-600"
                                 >
-                                    Save Credentials
+                                    Sign In with Google
                                 </button>
                                 <button 
                                     onClick={handleForcePush}
