@@ -154,8 +154,6 @@ import { isValidSchema } from "./securityService";
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const syncToCloud = async (immediate = false): Promise<void> => {
-  if (!auth.currentUser) return Promise.resolve();
-
   const performSync = async () => {
     try {
       const docRef = doc(db, "appData", "main");
@@ -184,10 +182,6 @@ export const syncToCloud = async (immediate = false): Promise<void> => {
 export const syncFromCloud = async (
   force: boolean = false,
 ): Promise<{ success: boolean; message?: string }> => {
-  if (!auth.currentUser) {
-    return { success: false, message: "Firebase not authenticated. Sign in from Settings -> Cloud Sync." };
-  }
-
   try {
     const docRef = doc(db, "appData", "main");
     const docSnap = await getDoc(docRef);

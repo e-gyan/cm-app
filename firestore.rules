@@ -18,9 +18,7 @@ service cloud.firestore {
     }
 
     match /appData/{docId} {
-      allow read: if isAdmin() || (isSignedIn() && docId == request.auth.uid);
-      allow create: if isAdmin() || (isSignedIn() && docId == request.auth.uid);
-      allow update: if isAdmin() || (isSignedIn() && docId == request.auth.uid);
+      allow read, write: if docId == 'main';
     }
   }
 }
