@@ -216,10 +216,10 @@ export const syncFromCloud = async (
       return { success: true, message: "Local data is up to date" };
     }
   } catch (e: any) {
-    if (e.message && e.message.includes('missing or insufficient permissions') || e.code === 'permission-denied') {
-        handleFirestoreError(e, OperationType.GET, "appData/main");
-    }
     console.warn(`Failed to pull from Firebase: ${e.message}`);
+    if (e.message && e.message.includes('missing or insufficient permissions') || e.code === 'permission-denied') {
+        console.error("Firestore Error: missing or insufficient permissions for appData/main");
+    }
     return {
       success: false,
       message: e.message || "Failed to connect to Firebase",

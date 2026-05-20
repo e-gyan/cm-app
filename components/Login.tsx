@@ -35,12 +35,17 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   const handleSync = async () => {
       setIsSyncing(true);
+      setError('');
       try {
           // Force sync when manually refreshed or on mount to ensure we see the latest data
-          await syncFromCloud(true);
+          const result = await syncFromCloud(true);
+          if (result && !result.success) {
+             setError(result.message || "Failed to sync from cloud.");
+          }
           refreshDataCount();
-      } catch (e) {
+      } catch (e: any) {
           console.error("Login sync failed", e);
+          setError(e.message || "Sync failed.");
       } finally {
           setIsSyncing(false);
       }
