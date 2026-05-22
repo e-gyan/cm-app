@@ -192,6 +192,14 @@ export const syncFromCloud = async (
 
     const cloudData: AppData = docSnap.data() as AppData;
 
+    console.log("--- FIRESTORE RAW DATA FETCHED ---");
+    console.log("Keys available:", cloudData ? Object.keys(cloudData) : "null");
+    console.log("Members present?", cloudData?.members ? `Array(${cloudData.members.length})` : "false");
+    console.log("Attendance present?", cloudData?.attendance ? `Array(${cloudData.attendance.length})` : "false");
+    console.log("Settings present?", !!cloudData?.settings);
+    console.log("Last Updated:", cloudData?.lastUpdated);
+    console.log("----------------------------------");
+
     // Security Check: Validate Schema of Cloud Data before merging
     if (!isValidSchema(cloudData)) {
       console.warn("Security Alert: Cloud data schema invalid.");

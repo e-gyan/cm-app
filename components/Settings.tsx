@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { AppData, Member, AppSettings } from '../types';
 import { updateSettings, syncFromCloud } from '../services/storageService';
-import { Settings as SettingsIcon, Cloud, List, Save, RefreshCw, AlertCircle, CheckCircle, Database } from 'lucide-react';
+import { Settings as SettingsIcon, Cloud, List, Save, RefreshCw, AlertCircle, CheckCircle, Database, Terminal } from 'lucide-react';
 
 interface SettingsProps {
   data: AppData;
@@ -19,6 +19,30 @@ const Settings: React.FC<SettingsProps> = ({ data, onUpdate, currentUser }) => {
   const [newChurch, setNewChurch] = useState('');
   const [statusMsg, setStatusMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [cloudLastUpdated, setCloudLastUpdated] = useState<number | null>(null);
+
+  const handleInspectCloud = async () => {
+      try {
+          const { doc, getDoc } = await import('firebase/firestore');
+          const { db } = await import('../services/firebase');
+          const docRef = doc(db, "appData", "main");
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+              const cloudD = docSnap.data();
+              console.log("=== RAW FIRESTORE DOCUMENT ===");
+              console.log(cloudD);
+              console.log("===============================");
+              setCloudLastUpdated(cloudD.lastUpdated || null);
+              setStatusMsg({ type: 'success', text: 'Printed raw document to console.' });
+          } else {
+              console.log("=== RAW FIRESTORE DOCUMENT: NOT FOUND ===");
+              setStatusMsg({ type: 'error', text: 'Document appData/main not found.' });
+          }
+      } catch (e: any) {
+          console.error(e);
+          setStatusMsg({ type: 'error', text: 'Failed to fetch raw document: ' + e.message });
+      }
+  };
 
   const saveConfig = () => {
       updateSettings(localSettings);
@@ -207,6 +231,30 @@ const Settings: React.FC<SettingsProps> = ({ data, onUpdate, currentUser }) => {
                                 </button>
                             </div>
                         </div>
+
+                        {isAdmin && (
+                            <div className="mt-8 pt-6 border-t border-slate-100">
+                                <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-4">
+                                    <Terminal size={18} className="text-slate-500"/> Sync Debug
+                                </h4>
+                                <div className="space-y-3 text-sm text-slate-600 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                    <div className="flex justify-between">
+                                        <span className="font-medium">Local `lastUpdated`:</span>
+                                        <span className="font-mono">{data.lastUpdated ? new Date(data.lastUpdated).toISOString() : 'Never'}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="font-medium">Cloud `lastUpdated`:</span>
+                                        <span className="font-mono">{cloudLastUpdated ? new Date(cloudLastUpdated).toISOString() : 'Not Fetched Yet'}</span>
+                                    </div>
+                                    <button
+                                        onClick={handleInspectCloud}
+                                        className="w-full mt-2 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg transition-colors flex justify-center items-center gap-2"
+                                    >
+                                        <Database size={16}/> Force Fetch Raw Cloud Document
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
