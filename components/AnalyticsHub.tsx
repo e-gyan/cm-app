@@ -3,7 +3,7 @@ import { AppData, Church, Member, MemberType, MemberStatus } from '../types';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell
 } from 'recharts';
-import { Calendar, ChevronDown, TrendingUp, TrendingDown, Users, Target, Activity, MessageCircle, Share2, MapPin, Heart, HeartHandshake, Sparkles, Loader2, RefreshCw, Wallet } from 'lucide-react';
+import { Calendar, ChevronDown, TrendingUp, TrendingDown, Users, Target, Activity, MessageCircle, Share2, MapPin, Heart, HeartHandshake, Sparkles, Loader2, RefreshCw, Wallet, X, User } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { motion } from "motion/react";
 
@@ -38,6 +38,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
   // AI State
   const [aiInsight, setAiInsight] = useState<string>("");
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [selectedChartDate, setSelectedChartDate] = useState<{date: string, presentIds: string[]} | null>(null);
 
   // --- HELPERS ---
   const effectiveChurch = isAdmin ? adminFilterChurch : activeChurch;
@@ -98,7 +99,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
       records.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       // Group by Date (handles combined view having multiple records per date)
-      const groupedByDate = new Map<string, { date: string, dateObj: Date, Member: number, FNF: number, Inconsistent: number, Total: number }>();
+      const groupedByDate = new Map<string, { date: string, dateObj: Date, Member: number, FNF: number, Inconsistent: number, Total: number, presentIds: string[] }>();
 
       records.forEach(r => {
           // Normalize date string to ensure grouping by day
@@ -108,7 +109,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
               groupedByDate.set(dateKey, { 
                   date: new Date(r.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), 
                   dateObj: new Date(r.date),
-                  Member: 0, FNF: 0, Inconsistent: 0, Total: 0 
+                  Member: 0, FNF: 0, Inconsistent: 0, Total: 0, presentIds: []
                 });
           }
           
@@ -119,8 +120,9 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
               const m = data.members.find(mem => mem.id === id);
               if (m && !['Teacher','Helper','Volunteer'].includes(m.type)) {
                   entry.Total++;
+                  entry.presentIds.push(id);
                   if (m.type === MemberType.MEMBER) entry.Member++;
-                  else if (m.type === MemberType.FNF) entry.FNF++;
+                  else if (m.type === MemberType.FNF || m.type === MemberType.VISITOR) entry.FNF++;
                   else entry.Inconsistent++;
               }
           });
@@ -523,7 +525,17 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
                 
                 <div className="flex-1 min-h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <AreaChart 
+                            data={chartData} 
+                            margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                            onClick={(e) => {
+                                if (e && e.activePayload && e.activePayload.length > 0) {
+                                    const payload = e.activePayload[0].payload;
+                                    setSelectedChartDate({ date: payload.date, presentIds: payload.presentIds });
+                                }
+                            }}
+                            className="cursor-pointer"
+                        >
                             <defs>
                                 <linearGradient id="colorMem" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
@@ -712,6 +724,54 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
             )}
         </div>
 
+        {/* DETAILS MODAL */}
+        {selectedChartDate && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
+                <div className="bg-white w-full max-w-md rounded-3xl shadow-xl border border-slate-100 flex flex-col max-h-[85vh] animate-in zoom-in-95">
+                    <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50 rounded-t-3xl text-slate-800">
+                        <div>
+                            <h3 className="font-bold">Attendees on {selectedChartDate.date}</h3>
+                            <p className="text-xs text-slate-500 font-medium">{selectedChartDate.presentIds.length} present (excluding staff)</p>
+                        </div>
+                        <button onClick={() => setSelectedChartDate(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
+                    </div>
+                    <div className="overflow-y-auto p-4 flex-1">
+                        <div className="space-y-2">
+                            {(() => {
+                                // Maps ids to member names and sort alphabetically
+                                const membersPresent = selectedChartDate.presentIds
+                                    .map(id => data.members.find(m => m.id === id))
+                                    .filter(m => !!m)
+                                    .sort((a, b) => a!.name.localeCompare(b!.name));
+                                    
+                                if (membersPresent.length === 0) {
+                                    return <div className="text-center py-10 text-slate-400">No attendees found.</div>;
+                                }
+
+                                return membersPresent.map(m => (
+                                    <div key={m!.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
+                                        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-indigo-50 text-indigo-500">
+                                            <User size={18} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="font-bold text-slate-700">{m!.name}</div>
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                                <span className="text-[10px] font-bold uppercase text-slate-400">{m!.type}</span>
+                                                {m!.assignedChurch !== effectiveChurch && (
+                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-600 uppercase border border-indigo-100">
+                                                        {m!.assignedChurch}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ));
+                            })()}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
     </div>
   );
 };

@@ -19,6 +19,7 @@ async function checkDb() {
       for (const a of admins) {
         console.log(`- ${a.name} (Role: ${a.role}, Passcode: ${a.passcode})`);
       }
+      console.log('Member[0]:', data.members[0]);
     }
   } catch(e) {
     console.error("Error:", e);

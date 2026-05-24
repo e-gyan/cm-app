@@ -430,10 +430,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     const cleanName = sanitizeInput(newMemberName);
     const targetChurch = isCombinedView ? "UJ" : (effectiveChurch as Church);
 
-    // Set initial status to NOT_ACTIVE for FNF
+    // Set initial status to NOT_ACTIVE for VISITOR
     const newMember = await addMember(
       cleanName,
-      MemberType.FNF,
+      MemberType.VISITOR,
       targetChurch,
       "",
       MemberStatus.NOT_ACTIVE,
@@ -720,7 +720,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               <button
                 onClick={() => setIsAddingFNF(!isAddingFNF)}
                 className="p-3 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-100"
-                title="Add FNF"
+                title="Add Visitor"
               >
                 <UserPlus size={20} />
               </button>
@@ -773,7 +773,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               </button>
               {(attendanceMode === "STAFF"
                 ? [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER]
-                : [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT]
+                : [MemberType.MEMBER, MemberType.FNF, MemberType.VISITOR, MemberType.INCONSISTENT]
               ).map((type) => (
                 <button
                   key={type}

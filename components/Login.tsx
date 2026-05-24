@@ -139,9 +139,14 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Welcome Back</h2>
                     <p className="text-slate-500 mt-2 font-medium">Please sign in to continue</p>
                     {dataCount <= 1 && !isSyncing && (
-                        <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-full border border-amber-100">
-                            <AlertCircle size={12}/>
-                            <span>Database Empty</span>
+                        <div className="mt-3 flex flex-col items-center gap-2">
+                            <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-full border border-amber-100">
+                                <AlertCircle size={12}/>
+                                <span>Database Empty</span>
+                            </div>
+                            <span className="text-xs text-slate-400 font-medium tracking-wide">
+                                Use <b>admin</b> / <b>setup123</b> to initialize
+                            </span>
                         </div>
                     )}
                     {isSyncing && (

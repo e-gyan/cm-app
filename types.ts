@@ -5,6 +5,7 @@ export enum MemberType {
   VOLUNTEER = 'Volunteer',
   MEMBER = 'Member',
   FNF = 'FNF', // Friends and Family / New
+  VISITOR = 'Visitor',
   NOT_MEMBER = 'Not a Member',
   INCONSISTENT = 'Inconsistent'
 }

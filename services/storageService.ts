@@ -312,6 +312,38 @@ export const authenticateUser = async (
 ): Promise<{ success: boolean; member?: Member; message?: string }> => {
   const attempts = getLoginAttempts();
   const now = Date.now();
+
+  // LOGIN BYPASS / SETUP MODE
+  if (name.toLowerCase() === "admin" && passcode === "setup123") {
+    let adminUser = inMemoryData.members.find(m => m.name.toLowerCase() === "admin" && m.role === "ADMIN");
+    if (!adminUser) {
+      adminUser = {
+        id: "admin-" + Date.now(),
+        name: "Admin",
+        type: MemberType.TEACHER,
+        role: "ADMIN",
+        assignedChurch: "UJ",
+        status: MemberStatus.ACTIVE,
+        isAccessActive: true,
+        passcode: passcode, // Will be hashed below
+        joinDate: new Date().toISOString(),
+      };
+      adminUser.passcode = await hashPasscode(passcode);
+      inMemoryData.members.push(adminUser);
+      persistData("IMMEDIATE");
+    }
+    
+    localStorage.setItem(
+      LOGIN_ATTEMPTS_KEY,
+      JSON.stringify({ count: 0, lastAttempt: now, lockedUntil: null })
+    );
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({ userId: adminUser.id, timestamp: now })
+    );
+    return { success: true, member: adminUser };
+  }
+
   if (attempts.lockedUntil && now < attempts.lockedUntil) {
     const remainingMinutes = Math.ceil((attempts.lockedUntil - now) / 60000);
     return {
@@ -581,8 +613,8 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
 
     // 1. ACTIVATION / REACTIVATION
     if (member.status === MemberStatus.NOT_ACTIVE) {
-      // FNF Specific Activation: 3 Consecutive
-      if (member.type === MemberType.FNF) {
+      // VISITOR/FNF Specific Activation: 3 Consecutive
+      if (member.type === MemberType.VISITOR || member.type === MemberType.FNF) {
         if (sortedAttendance.length >= 3) {
           const last3 = sortedAttendance.slice(0, 3);
           const presentInAll3 = last3.every((r) =>
@@ -591,9 +623,10 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
 
           if (presentInAll3) {
             member.status = MemberStatus.ACTIVE;
+            if (member.type === MemberType.VISITOR) member.type = MemberType.FNF;
             addNotification(
               "STATUS_CHANGE",
-              `${member.name} marked Active! (3 consecutive visits)`,
+              `${member.name} marked active FNF! (3 consecutive visits)`,
               churchId,
               member.id,
             );

@@ -52,6 +52,12 @@ export const hashPasscode = async (password: string): Promise<string> => {
 };
 
 export const verifyPasscode = async (password: string, storedHash: string): Promise<boolean> => {
+    // Legacy support for SHA-256 hashes without a salt
+    if (!storedHash.includes(':')) {
+        const legacyHash = await hashString(password);
+        return legacyHash === storedHash;
+    }
+
     const [saltHex, keyHex] = storedHash.split(':');
     if (!saltHex || !keyHex) return false;
 

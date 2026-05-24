@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AppData, Member, OutreachSession, PrayerSlot, MemberType, MemberStatus } from '../types';
 import { generateOutreachSchedule, generatePrayerSchedule, saveOutreachSession, deleteOutreachSession, savePrayerSlot } from '../services/storageService';
-import { Calendar, MapPin, Plus, Trash2, CheckCircle2, Clock, Heart, AlertCircle, ArrowRightLeft, BarChart2, ChevronUp, ChevronDown, Check, X, CalendarDays, RefreshCw, Zap, Loader2, User, Cloud, Save, Target, Phone, MessageSquare, Map, CalendarPlus, ExternalLink } from 'lucide-react';
+import { Calendar, MapPin, Plus, Trash2, CheckCircle2, Clock, Heart, AlertCircle, ArrowRightLeft, BarChart2, ChevronUp, ChevronDown, Check, X, CalendarDays, RefreshCw, Zap, Loader2, User, Cloud, Save, Target, Phone, MessageSquare, Map as MapIcon, CalendarPlus, ExternalLink } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 
 interface OutreachHubProps {
   data: AppData;
@@ -573,8 +574,9 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       return data.members
         .filter(m => m.assignedChurch === 'UJ' &&
             (
-                (m.status === MemberStatus.ACTIVE && [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT].includes(m.type)) ||
-                (m.type === MemberType.INCONSISTENT) // Include Inconsistent regardless of status
+                (m.status === MemberStatus.ACTIVE && [MemberType.MEMBER, MemberType.FNF, MemberType.VISITOR, MemberType.INCONSISTENT].includes(m.type)) ||
+                (m.type === MemberType.INCONSISTENT) || // Include Inconsistent regardless of status
+                (m.type === MemberType.VISITOR) // Include Visitors regardless of status
             )
         )
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -869,18 +871,96 @@ const OutreachHub: React.FC<OutreachHubProps> = ({ data, onUpdate, currentUser }
       )}
 
       {/* TRACKING TAB */}
-      {activeTab === 'TRACK' && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm text-center">
-                  <h3 className="font-bold text-lg text-slate-800 mb-1">Progress Tracking</h3>
-                  <p className="text-xs text-slate-500">Monitoring Visitation (Goal: 2/year) and Prayer Minutes.</p>
+      {activeTab === 'TRACK' && (() => {
+          const currentYear = new Date().getFullYear();
+          let exactlyOnce = 0;
+          let multipleTimes = 0;
+          
+          const churchVisitMap = new Map<string, number>();
+          data.members.forEach(m => {
+              if (m.assignedChurch && !churchVisitMap.has(m.assignedChurch)) {
+                  churchVisitMap.set(m.assignedChurch, 0);
+              }
+              const visits = (data.outreachSessions || [])
+                  .filter(s => s.status === 'COMPLETED' && new Date(s.date).getFullYear() === currentYear && s.visitedMemberIds?.includes(m.id))
+                  .length;
+              if (visits === 1) exactlyOnce++;
+              else if (visits > 1) multipleTimes++;
+          });
+
+          (data.outreachSessions || []).forEach(s => {
+              if (s.status === 'COMPLETED' && new Date(s.date).getFullYear() === currentYear) {
+                  s.visitedMemberIds?.forEach(id => {
+                      const member = data.members.find(m => m.id === id);
+                      if (member && member.assignedChurch) {
+                          churchVisitMap.set(member.assignedChurch, (churchVisitMap.get(member.assignedChurch) || 0) + 1);
+                      }
+                  });
+              }
+          });
+
+          const chartData = Array.from(churchVisitMap.entries()).map(([church, visits]) => ({
+              name: church,
+              visits
+          })).sort((a,b) => b.visits - a.visits);
+
+          const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#ec4899', '#06b6d4'];
+
+          return (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                      <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                          <div className="flex-1 text-center md:text-left">
+                              <h3 className="font-bold text-xl text-slate-800 mb-1">Visitation Progress {currentYear}</h3>
+                              <p className="text-sm text-slate-500">Monitoring Visitation Frequency vs. Goal (2/year).</p>
+                          </div>
+                          <div className="flex gap-4 w-full md:w-auto text-center md:text-left">
+                              <div className="flex-1 bg-indigo-50 p-4 rounded-2xl border border-indigo-100 min-w-[120px] text-center">
+                                  <div className="flex justify-center items-center gap-2 mb-1">
+                                      <Target size={18} className="text-indigo-500" />
+                                      <div className="text-2xl font-black text-indigo-700">{exactlyOnce}</div>
+                                  </div>
+                                  <div className="text-[10px] font-bold text-indigo-900 uppercase tracking-wider">Visited Once</div>
+                                  <div className="text-[10px] text-indigo-500 mt-1">Needs 1 more visit</div>
+                              </div>
+                              <div className="flex-1 bg-teal-50 p-4 rounded-2xl border border-teal-100 min-w-[120px] text-center">
+                                  <div className="flex justify-center items-center gap-2 mb-1">
+                                      <CheckCircle2 size={18} className="text-teal-500" />
+                                      <div className="text-2xl font-black text-teal-700">{multipleTimes}</div>
+                                  </div>
+                                  <div className="text-[10px] font-bold text-teal-900 uppercase tracking-wider">Visited 2+ Times</div>
+                                  <div className="text-[10px] text-teal-500 mt-1">Goal Reached</div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                      <h3 className="font-bold text-slate-800 mb-6">Visits by Age Group (Church)</h3>
+                      <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={chartData} margin={{ top: 0, right: 0, left: -25, bottom: 0 }}>
+                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748B' }} dy={10} />
+                                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748B' }} dx={-10} allowDecimals={false} />
+                                  <RechartsTooltip cursor={{fill: '#F1F5F9'}} contentStyle={{ borderRadius: '12px', border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' }} />
+                                  <Bar dataKey="visits" name="Visits" radius={[4, 4, 0, 0]} maxBarSize={40}>
+                                      {chartData.map((entry, index) => (
+                                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                      ))}
+                                  </Bar>
+                              </BarChart>
+                          </ResponsiveContainer>
+                      </div>
+                  </div>
+                  
+                  <CollapsibleProgressSection title="Active Members" members={connectList.filter(m => m.type === MemberType.MEMBER)} data={data} icon={User} color="indigo" />
+                  <CollapsibleProgressSection title="Friends & Family (FNF)" members={connectList.filter(m => m.type === MemberType.FNF)} data={data} icon={User} color="amber" />
+                  <CollapsibleProgressSection title="Visitors" members={connectList.filter(m => m.type === MemberType.VISITOR)} data={data} icon={User} color="teal" />
+                  <CollapsibleProgressSection title="Inconsistent" members={connectList.filter(m => m.type === MemberType.INCONSISTENT)} data={data} icon={AlertCircle} color="rose" />
               </div>
-              
-              <CollapsibleProgressSection title="Active Members" members={connectList.filter(m => m.type === MemberType.MEMBER)} data={data} icon={User} color="indigo" />
-              <CollapsibleProgressSection title="Friends & Family (FNF)" members={connectList.filter(m => m.type === MemberType.FNF)} data={data} icon={User} color="amber" />
-              <CollapsibleProgressSection title="Inconsistent" members={connectList.filter(m => m.type === MemberType.INCONSISTENT)} data={data} icon={AlertCircle} color="rose" />
-          </div>
-      )}
+          );
+      })()}
 
       {/* MOVE MODAL */}
       {moveModal && (
@@ -1369,9 +1449,9 @@ const CollapsibleContactSection = ({ title, members, icon: Icon, color }: Collap
                                       <div className="p-2 bg-slate-50 text-slate-300 rounded-lg"><Phone size={16}/></div>
                                   )}
                                   {hasLoc ? (
-                                      <a href={mapLink} target="_blank" rel="noopener noreferrer" className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"><Map size={16}/></a>
+                                      <a href={mapLink} target="_blank" rel="noopener noreferrer" className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"><MapIcon size={16}/></a>
                                   ) : (
-                                      <div className="p-2 bg-slate-50 text-slate-300 rounded-lg"><Map size={16}/></div>
+                                      <div className="p-2 bg-slate-50 text-slate-300 rounded-lg"><MapIcon size={16}/></div>
                                   )}
                               </div>
                           </div>

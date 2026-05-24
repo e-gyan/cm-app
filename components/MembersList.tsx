@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { AppData, Member, MemberType, MemberStatus, Church, Role, PromotionRecord } from '../types';
-import { User, Users, Edit2, Archive, X, Save, GraduationCap, Undo2, HelpCircle, AlertCircle, Activity, Briefcase, ChevronDown, ChevronUp, Plus, Lock, Key, Heart, Hand, Trash2, Building2, Filter, Sun, Zap } from 'lucide-react';
+import { User, Users, Edit2, Archive, X, Save, GraduationCap, Undo2, HelpCircle, AlertCircle, Activity, Briefcase, ChevronDown, ChevronUp, Plus, Lock, Key, Heart, Hand, Trash2, Building2, Filter, Sun, Zap, LineChart } from 'lucide-react';
 import { updateMember, bulkArchiveMembers, addMember, deleteMember } from '../services/storageService';
 import { sanitizeInput } from '../services/securityService';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface MembersListProps {
   data: AppData;
@@ -405,6 +406,11 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                         {canManage && (
                             <td className="px-6 py-4 text-right">
                             <div className="flex justify-end gap-2">
+                                {!isTeacherSection && (
+                                    <button onClick={() => setHistoryMemberId(member.id)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Attendance History">
+                                        <LineChart size={16} />
+                                    </button>
+                                )}
                                 <button onClick={() => openEditModal(member)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Edit">
                                     <Edit2 size={16} />
                                 </button>
@@ -460,6 +466,9 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                          
                          {canManage && (
                             <div className="flex flex-col gap-2 pl-2">
+                                {!isTeacherSection && (
+                                    <button onClick={() => setHistoryMemberId(member.id)} className="p-2 text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors shadow-sm" title="History"><LineChart size={18} /></button>
+                                )}
                                 <button onClick={() => openEditModal(member)} className="p-2 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors shadow-sm"><Edit2 size={18} /></button>
                                 {member.status === MemberStatus.ARCHIVED ? (
                                     <>
@@ -528,6 +537,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
             <div className="space-y-4">
                 <MemberTableSection title="Members" members={membersToShow.filter(m => m.type === MemberType.MEMBER)} icon={User} colorClass="text-indigo-600" badgeClass="bg-indigo-100 text-indigo-700" />
                 <MemberTableSection title="Friends & Family" members={membersToShow.filter(m => m.type === MemberType.FNF)} icon={Users} colorClass="text-amber-600" badgeClass="bg-amber-100 text-amber-700" />
+                <MemberTableSection title="Visitors" members={membersToShow.filter(m => m.type === MemberType.VISITOR)} icon={Users} colorClass="text-teal-600" badgeClass="bg-teal-100 text-teal-700" />
                  <MemberTableSection title="Inconsistent" members={membersToShow.filter(m => m.type === MemberType.INCONSISTENT)} icon={AlertCircle} colorClass="text-rose-600" badgeClass="bg-rose-100 text-rose-700" />
                  <MemberTableSection title="Not A Member" members={membersToShow.filter(m => m.type === MemberType.NOT_MEMBER)} icon={HelpCircle} colorClass="text-slate-600" badgeClass="bg-slate-100 text-slate-700" />
             </div>
@@ -539,7 +549,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
     if (hubTab === 'TEACHERS') {
         return [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER];
     } else {
-        return [MemberType.MEMBER, MemberType.FNF, MemberType.INCONSISTENT, MemberType.NOT_MEMBER];
+        return [MemberType.MEMBER, MemberType.FNF, MemberType.VISITOR, MemberType.INCONSISTENT, MemberType.NOT_MEMBER];
     }
   };
 
@@ -828,8 +838,8 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                       </button>
                   </div>
                   
-                  {/* Scrollable List */}
-                  <div className="overflow-y-auto p-4 space-y-2 flex-1">
+                  {/* Content */}
+                  <div className="overflow-y-auto p-4 flex-1">
                       {(() => {
                           const member = data.members.find(m => m.id === historyMemberId);
                           if (!member) return null;
@@ -858,37 +868,100 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                               return r.churchId === assignedAtDate;
                           }).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-                          if (history.length === 0) {
-                              return <div className="text-center py-10 text-slate-400">No attendance records found.</div>;
+                          // Calculate chart data (last 6 months)
+                          const chartData = [];
+                          const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                          const today = new Date();
+                          
+                          // Simplified current church size (for average denominator)
+                          const currentChurchMembersCount = data.members.filter(m => m.assignedChurch === member.assignedChurch && ['Member', 'FNF', 'Visitor', 'Inconsistent'].includes(m.type) && m.status === 'Active').length || 1;
+
+                          for (let i = 5; i >= 0; i--) {
+                              const targetDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
+                              const targetMonth = targetDate.getMonth();
+                              const targetYear = targetDate.getFullYear();
+                              
+                              const recordsInMonth = history.filter(r => {
+                                  const d = new Date(r.date);
+                                  return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+                              });
+                              
+                              const attendedCount = recordsInMonth.filter(r => r.presentMemberIds.includes(member.id)).length;
+                              
+                              const churchRecordsInMonth = data.attendance.filter(r => {
+                                  const d = new Date(r.date);
+                                  return r.churchId === member.assignedChurch && d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+                              });
+                              
+                              const totalAttendances = churchRecordsInMonth.reduce((acc, r) => {
+                                  return acc + r.presentMemberIds.filter(id => {
+                                      const m = data.members.find(x => x.id === id);
+                                      return m && ['Member', 'FNF', 'Visitor', 'Inconsistent'].includes(m.type);
+                                  }).length;
+                              }, 0);
+                              
+                              const avgAttended = parseFloat((totalAttendances / currentChurchMembersCount).toFixed(1));
+
+                              chartData.push({
+                                  name: `${monthNames[targetMonth]}`,
+                                  personalFreq: attendedCount,
+                                  avgFreq: avgAttended
+                              });
                           }
 
-                          return history.slice(0, 20).map((record) => {
-                              const isPresent = record.presentMemberIds.includes(member.id);
-                              const service = record.serviceMap?.[member.id];
-                              
-                              return (
-                                  <div key={record.date} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
-                                      <div className="flex items-center gap-3">
-                                          <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${isPresent ? 'bg-green-50 border-green-500 text-green-600' : 'bg-slate-50 border-slate-200 text-slate-300'}`}>
-                                              {isPresent ? <Activity size={20}/> : <X size={20}/>}
-                                          </div>
-                                          <div>
-                                              <div className="font-bold text-slate-700">{formatDateDDMMYYYY(record.date)}</div>
-                                              <div className="text-[10px] text-slate-400 font-bold uppercase">{isPresent ? 'Present' : 'Absent'}</div>
-                                              {record.churchId !== member.assignedChurch && (
-                                                  <div className="text-[10px] text-indigo-400 font-bold uppercase mt-0.5">{record.churchId} Church</div>
-                                              )}
-                                          </div>
-                                      </div>
-                                      
-                                      {isPresent && service && (
-                                          <div className={`px-2 py-1 rounded text-[10px] font-bold border uppercase flex items-center gap-1 ${service === 'JOY' ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-sky-50 text-sky-700 border-sky-100'}`}>
-                                              {service === 'JOY' ? <Sun size={10}/> : <Zap size={10}/>} {service}
-                                          </div>
+                          return (
+                              <>
+                                  <div className="mb-6 h-56 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">6-Month Frequency vs Church Avg</h4>
+                                      <ResponsiveContainer width="100%" height="80%">
+                                          <BarChart data={chartData} margin={{ top: 0, right: 0, left: -25, bottom: 0 }}>
+                                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                                              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748B' }} dy={10} />
+                                              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748B' }} dx={-10} allowDecimals={false} />
+                                              <RechartsTooltip cursor={{fill: '#F1F5F9'}} contentStyle={{ borderRadius: '12px', border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' }} />
+                                              <Legend wrapperStyle={{ fontSize: '10px' }} iconType="circle" />
+                                              <Bar dataKey="personalFreq" name="This Member" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                                              <Bar dataKey="avgFreq" name={`${member.assignedChurch} Avg`} fill="#cbd5e1" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                                          </BarChart>
+                                      </ResponsiveContainer>
+                                  </div>
+
+                                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Recent Records</h4>
+                                  <div className="space-y-2">
+                                      {history.length === 0 ? (
+                                          <div className="text-center py-10 text-slate-400">No attendance records found.</div>
+                                      ) : (
+                                          history.slice(0, 20).map((record) => {
+                                              const isPresent = record.presentMemberIds.includes(member.id);
+                                              const service = record.serviceMap?.[member.id];
+                                              
+                                              return (
+                                                  <div key={record.date} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
+                                                      <div className="flex items-center gap-3">
+                                                          <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${isPresent ? 'bg-emerald-50 border-emerald-500 text-emerald-600' : 'bg-slate-50 border-slate-200 text-slate-300'}`}>
+                                                              {isPresent ? <Activity size={20}/> : <X size={20}/>}
+                                                          </div>
+                                                          <div>
+                                                              <div className="font-bold text-slate-700">{formatDateDDMMYYYY(record.date)}</div>
+                                                              <div className="text-[10px] text-slate-400 font-bold uppercase">{isPresent ? 'Present' : 'Absent'}</div>
+                                                              {record.churchId !== member.assignedChurch && (
+                                                                  <div className="text-[10px] text-indigo-400 font-bold uppercase mt-0.5">{record.churchId} Church</div>
+                                                              )}
+                                                          </div>
+                                                      </div>
+                                                      
+                                                      {isPresent && service && (
+                                                          <div className={`px-2 py-1 rounded text-[10px] font-bold border uppercase flex items-center gap-1 ${service === 'JOY' ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-sky-50 text-sky-700 border-sky-100'}`}>
+                                                              {service === 'JOY' ? <Sun size={10}/> : <Zap size={10}/>} {service}
+                                                          </div>
+                                                      )}
+                                                  </div>
+                                              );
+                                          })
                                       )}
                                   </div>
-                              );
-                          });
+                              </>
+                          );
                       })()}
                   </div>
               </div>

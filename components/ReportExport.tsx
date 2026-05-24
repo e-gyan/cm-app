@@ -345,6 +345,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
 
              const membersCount = children.filter(m => m.type === MemberType.MEMBER).length;
              const fnfCount = children.filter(m => m.type === MemberType.FNF).length;
+             const visitorCount = children.filter(m => m.type === MemberType.VISITOR).length;
              const inconsistentCount = children.filter(m => m.type === MemberType.INCONSISTENT).length;
              const notMemberCount = children.filter(m => m.type === MemberType.NOT_MEMBER).length;
 
@@ -379,6 +380,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
                      // Render lists
                      const members = children.filter(m => m.type === MemberType.MEMBER);
                      const fnfs = children.filter(m => m.type === MemberType.FNF);
+                     const visitors = children.filter(m => m.type === MemberType.VISITOR);
                      const inconsistent = children.filter(m => m.type === MemberType.INCONSISTENT);
                      const notMembers = children.filter(m => m.type === MemberType.NOT_MEMBER);
 
@@ -386,6 +388,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
                      else report += `*MEMBERS (0)*\n_None_\n\n`;
 
                      if (fnfs.length > 0) report += renderListWithServices(fnfs, 'FNF', record);
+                     if (visitors.length > 0) report += renderListWithServices(visitors, 'VISITORS', record);
                      if (inconsistent.length > 0) report += renderListWithServices(inconsistent, 'INCONSISTENT', record);
                      if (notMembers.length > 0) report += renderListWithServices(notMembers, 'NOT A MEMBER', record);
                      
@@ -456,6 +459,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     // Filter categories
     const members = allChildren.filter(m => m.type === MemberType.MEMBER);
     const fnfs = allChildren.filter(m => m.type === MemberType.FNF);
+    const visitors = allChildren.filter(m => m.type === MemberType.VISITOR);
     const inconsistent = allChildren.filter(m => m.type === MemberType.INCONSISTENT);
     const notMembers = allChildren.filter(m => m.type === MemberType.NOT_MEMBER);
 
@@ -463,6 +467,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     else report += `*MEMBERS (0)*\n_None_\n\n`;
 
     if (fnfs.length > 0) report += renderListWithServices(fnfs, 'FNF', record);
+    if (visitors.length > 0) report += renderListWithServices(visitors, 'VISITORS', record);
     if (inconsistent.length > 0) report += renderListWithServices(inconsistent, 'INCONSISTENT', record);
     if (notMembers.length > 0) report += renderListWithServices(notMembers, 'NOT A MEMBER', record);
 
