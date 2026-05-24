@@ -125,9 +125,9 @@ const DemographicsChart = ({ members, effectiveChurch }: { members: Member[], ef
             .enter()
             .append("rect")
             .attr("x", d => x(d.group)!)
-            .attr("y", d => y(d.count))
+            .attr("y", height)
             .attr("width", x.bandwidth())
-            .attr("height", d => height - y(d.count))
+            .attr("height", 0)
             .attr("fill", "#8b5cf6")
             .attr("rx", 4)
             .on("mouseover", (event, d) => {
@@ -138,7 +138,12 @@ const DemographicsChart = ({ members, effectiveChurch }: { members: Member[], ef
             })
             .on("mouseout", () => {
                 tooltip.transition().duration(500).style("opacity", 0);
-            });
+            })
+            .transition()
+            .duration(800)
+            .attr("y", d => y(d.count))
+            .attr("height", d => height - y(d.count))
+            .delay((d, i) => i * 100);
 
         return () => {
              d3.select(svgRef.current?.parentNode as any).selectAll("div").remove();
