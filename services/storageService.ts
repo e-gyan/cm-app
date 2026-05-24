@@ -326,7 +326,7 @@ export const authenticateUser = async (
         status: MemberStatus.ACTIVE,
         isAccessActive: true,
         passcode: passcode, // Will be hashed below
-        joinDate: new Date().toISOString(),
+        joinedDate: new Date().toISOString(),
       };
       adminUser.passcode = await hashPasscode(passcode);
       inMemoryData.members.push(adminUser);

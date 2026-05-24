@@ -6,6 +6,7 @@ import {
 import { Calendar, ChevronDown, TrendingUp, TrendingDown, Users, Target, Activity, MessageCircle, Share2, MapPin, Heart, HeartHandshake, Sparkles, Loader2, RefreshCw, Wallet, X, User } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { motion } from "motion/react";
+import * as d3 from "d3";
 
 interface AnalyticsHubProps {
   data: AppData;
@@ -14,6 +15,142 @@ interface AnalyticsHubProps {
 }
 
 type TimeRange = '2W' | '1M' | '3M' | 'YTD' | '1Y';
+
+const calculateAge = (birthDateString?: string) => {
+    if (!birthDateString) return null;
+    let parts = birthDateString.split('/');
+    if (parts.length === 3) {
+       const [d, m, y] = parts;
+       const bd = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
+       if (isNaN(bd.getTime())) return null;
+       const ageDifMs = Date.now() - bd.getTime();
+       const ageDate = new Date(ageDifMs);
+       return Math.abs(ageDate.getUTCFullYear() - 1970);
+    }
+    const bd = new Date(birthDateString);
+    if (!isNaN(bd.getTime())) {
+       const ageDifMs = Date.now() - bd.getTime();
+       const ageDate = new Date(ageDifMs);
+       return Math.abs(ageDate.getUTCFullYear() - 1970);
+    }
+    return null;
+}
+
+const DemographicsChart = ({ members, effectiveChurch }: { members: Member[], effectiveChurch: string }) => {
+    const svgRef = React.useRef<SVGSVGElement>(null);
+
+    useEffect(() => {
+        if (!svgRef.current) return;
+
+        const filtered = members.filter(m => effectiveChurch === 'All' ? true : m.assignedChurch === effectiveChurch);
+        
+        let ageData = [
+            { group: '0-5', count: 0 },
+            { group: '6-9', count: 0 },
+            { group: '10-12', count: 0 },
+            { group: '13-15', count: 0 },
+            { group: '16-19', count: 0 },
+            { group: '20+', count: 0 },
+            { group: 'Unknown', count: 0 }
+        ];
+
+        filtered.forEach(m => {
+            const age = calculateAge(m.birthDate);
+            if (age === null) ageData[6].count++;
+            else if (age <= 5) ageData[0].count++;
+            else if (age <= 9) ageData[1].count++;
+            else if (age <= 12) ageData[2].count++;
+            else if (age <= 15) ageData[3].count++;
+            else if (age <= 19) ageData[4].count++;
+            else ageData[5].count++;
+        });
+
+        const margin = {top: 20, right: 20, bottom: 40, left: 40};
+        const width = 600 - margin.left - margin.right;
+        const height = 300 - margin.top - margin.bottom;
+
+        const selection = d3.select(svgRef.current);
+        selection.selectAll("*").remove();
+
+        // preserve aspect ratio and enable scaling
+        selection
+            .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+            .attr("preserveAspectRatio", "xMidYMid meet");
+
+        const svg = selection.append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const x = d3.scaleBand()
+            .range([0, width])
+            .domain(ageData.map(d => d.group))
+            .padding(0.2);
+            
+        svg.append("g")
+            .attr("transform", `translate(0,${height})`)
+            .call(d3.axisBottom(x))
+            .selectAll("text")
+            .attr("fill", "#64748b")
+            .style("font-size", "12px");
+            
+        svg.selectAll(".domain, .tick line").attr("stroke", "#e2e8f0");
+
+        const maxCount = d3.max(ageData, d => d.count) || 10;
+        const y = d3.scaleLinear()
+            .domain([0, maxCount])
+            .range([height, 0]);
+            
+        svg.append("g")
+            .call(d3.axisLeft(y).ticks(5).tickFormat(d3.format("d")))
+            .selectAll("text")
+            .attr("fill", "#64748b")
+            .style("font-size", "12px");
+            
+        svg.selectAll(".domain").attr("stroke", "transparent");
+        svg.selectAll(".tick line").attr("stroke", "#e2e8f0").attr("stroke-dasharray", "3 3");
+
+        const tooltip = d3.select(svgRef.current.parentNode as any)
+            .append("div")
+            .style("position", "absolute")
+            .style("padding", "8px")
+            .style("background", "white")
+            .style("border", "1px solid #e2e8f0")
+            .style("border-radius", "8px")
+            .style("pointer-events", "none")
+            .style("opacity", 0)
+            .style("font-size", "12px")
+            .style("box-shadow", "0 4px 6px -1px rgb(0 0 0 / 0.1)");
+
+        svg.selectAll("mybar")
+            .data(ageData)
+            .enter()
+            .append("rect")
+            .attr("x", d => x(d.group)!)
+            .attr("y", d => y(d.count))
+            .attr("width", x.bandwidth())
+            .attr("height", d => height - y(d.count))
+            .attr("fill", "#8b5cf6")
+            .attr("rx", 4)
+            .on("mouseover", (event, d) => {
+                tooltip.transition().duration(200).style("opacity", 1);
+                tooltip.html(`<b>${d.group}</b>: ${d.count} members`)
+                    .style("left", (event.pageX + 10) + "px")
+                    .style("top", (event.pageY - 28) + "px");
+            })
+            .on("mouseout", () => {
+                tooltip.transition().duration(500).style("opacity", 0);
+            });
+
+        return () => {
+             d3.select(svgRef.current?.parentNode as any).selectAll("div").remove();
+        }
+    }, [members, effectiveChurch]);
+
+    return (
+        <div className="w-full h-full relative flex items-center justify-center min-w-[500px]">
+            <svg ref={svgRef} className="w-full h-full" style={{ maxHeight: '250px' }}></svg>
+        </div>
+    );
+}
 
 const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, currentUser }) => {
   const isAdmin = currentUser.role === 'ADMIN';
@@ -523,41 +660,53 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
                     </div>
                 </div>
                 
-                <div className="flex-1 min-h-[250px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart 
-                            data={chartData} 
-                            margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                            onClick={(e) => {
-                                if (e && e.activePayload && e.activePayload.length > 0) {
-                                    const payload = e.activePayload[0].payload;
-                                    setSelectedChartDate({ date: payload.date, presentIds: payload.presentIds });
-                                }
-                            }}
-                            className="cursor-pointer"
-                        >
-                            <defs>
-                                <linearGradient id="colorMem" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
-                                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                                </linearGradient>
-                                <linearGradient id="colorFnf" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8}/>
-                                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-                            <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} dy={10}/>
-                            <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}}/>
-                            <Tooltip 
-                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                                cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }}
-                            />
-                            <Area type="monotone" dataKey="Member" stackId="1" stroke="#6366f1" fill="url(#colorMem)" />
-                            <Area type="monotone" dataKey="FNF" stackId="1" stroke="#f59e0b" fill="url(#colorFnf)" />
-                            <Area type="monotone" dataKey="Inconsistent" stackId="1" stroke="#f43f5e" fill="#f43f5e" fillOpacity={0.6} />
-                        </AreaChart>
-                    </ResponsiveContainer>
+                <div className="flex-1 min-h-[250px] overflow-x-auto scrollbar-hide">
+                    <div className="min-w-[600px] h-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart 
+                                data={chartData} 
+                                margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                                onClick={(e) => {
+                                    if (e && e.activePayload && e.activePayload.length > 0) {
+                                        const payload = e.activePayload[0].payload;
+                                        setSelectedChartDate({ date: payload.date, presentIds: payload.presentIds });
+                                    }
+                                }}
+                                className="cursor-pointer"
+                            >
+                                <defs>
+                                    <linearGradient id="colorMem" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
+                                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                                    </linearGradient>
+                                    <linearGradient id="colorFnf" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8}/>
+                                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} dy={10}/>
+                                <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}}/>
+                                <Tooltip 
+                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                    cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }}
+                                />
+                                <Area type="monotone" dataKey="Member" stackId="1" stroke="#6366f1" fill="url(#colorMem)" />
+                                <Area type="monotone" dataKey="FNF" stackId="1" stroke="#f59e0b" fill="url(#colorFnf)" />
+                                <Area type="monotone" dataKey="Inconsistent" stackId="1" stroke="#f43f5e" fill="#f43f5e" fillOpacity={0.6} />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* Demographics D3 Chart */}
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-3 flex flex-col">
+                <div className="mb-6 flex justify-between items-center">
+                    <h3 className="font-bold text-slate-800">Age Demographics</h3>
+                </div>
+                <div className="flex-1 min-h-[250px] overflow-x-auto scrollbar-hide">
+                    <DemographicsChart members={data.members} effectiveChurch={effectiveChurch} />
                 </div>
             </div>
         </div>
@@ -659,21 +808,23 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
                     <div className="mb-6 flex justify-between items-center">
                         <h3 className="font-bold text-slate-800">Financial Trend</h3>
                     </div>
-                    <div className="flex-1 min-h-[250px]">
+                    <div className="flex-1 min-h-[250px] overflow-x-auto scrollbar-hide">
                         {financialIntel.chartData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={financialIntel.chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-                                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} dy={10}/>
-                                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}}/>
-                                    <Tooltip 
-                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                                        cursor={{ fill: '#f8fafc' }}
-                                    />
-                                    <Bar dataKey="income" name="Income" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
-                                    <Bar dataKey="expense" name="Expense" fill="#f43f5e" radius={[4, 4, 0, 0]} barSize={20} />
-                                </BarChart>
-                            </ResponsiveContainer>
+                            <div className="min-w-[500px] h-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={financialIntel.chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                                        <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}} dy={10}/>
+                                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10}}/>
+                                        <Tooltip 
+                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                            cursor={{ fill: '#f8fafc' }}
+                                        />
+                                        <Bar dataKey="income" name="Income" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
+                                        <Bar dataKey="expense" name="Expense" fill="#f43f5e" radius={[4, 4, 0, 0]} barSize={20} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
                         ) : (
                             <div className="h-full flex items-center justify-center text-slate-400 text-sm">No financial data for this period</div>
                         )}

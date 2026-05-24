@@ -144,8 +144,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                                 <AlertCircle size={12}/>
                                 <span>Database Empty</span>
                             </div>
+                        </div>
+                    )}
+                    {!isSyncing && (
+                        <div className="mt-3 flex flex-col items-center gap-2">
                             <span className="text-xs text-slate-400 font-medium tracking-wide">
-                                Use <b>admin</b> / <b>setup123</b> to initialize
+                                Emergency bypass / Setup: <b>admin</b> / <b>setup123</b>
                             </span>
                         </div>
                     )}
