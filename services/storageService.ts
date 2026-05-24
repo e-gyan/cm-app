@@ -149,7 +149,6 @@ export const initializeRepository = async () => {
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db, auth } from "./firebase";
 import { handleFirestoreError, OperationType } from "./firebaseErrors";
-import { isValidSchema } from "./securityService";
 // DEBOUNCE TIMER
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 

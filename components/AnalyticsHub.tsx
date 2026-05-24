@@ -38,9 +38,27 @@ const calculateAge = (birthDateString?: string) => {
 
 const DemographicsChart = ({ members, effectiveChurch }: { members: Member[], effectiveChurch: string }) => {
     const svgRef = React.useRef<SVGSVGElement>(null);
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    const [dimensions, setDimensions] = useState({ width: 0, height: 250 });
 
     useEffect(() => {
-        if (!svgRef.current) return;
+        const observeTarget = containerRef.current;
+        if (!observeTarget) return;
+        const resizeObserver = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (entry) {
+                setDimensions({ 
+                    width: entry.contentRect.width, 
+                    height: entry.contentRect.height > 0 ? entry.contentRect.height : 250 
+                });
+            }
+        });
+        resizeObserver.observe(observeTarget);
+        return () => resizeObserver.disconnect();
+    }, []);
+
+    useEffect(() => {
+        if (!svgRef.current || dimensions.width === 0) return;
 
         const filtered = members.filter(m => effectiveChurch === 'All' ? true : m.assignedChurch === effectiveChurch);
         
@@ -66,15 +84,15 @@ const DemographicsChart = ({ members, effectiveChurch }: { members: Member[], ef
         });
 
         const margin = {top: 20, right: 20, bottom: 40, left: 40};
-        const width = 600 - margin.left - margin.right;
-        const height = 300 - margin.top - margin.bottom;
+        const width = dimensions.width - margin.left - margin.right;
+        const height = dimensions.height - margin.top - margin.bottom;
 
         const selection = d3.select(svgRef.current);
         selection.selectAll("*").remove();
 
         // preserve aspect ratio and enable scaling
         selection
-            .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+            .attr("viewBox", `0 0 ${dimensions.width} ${dimensions.height}`)
             .attr("preserveAspectRatio", "xMidYMid meet");
 
         const svg = selection.append("g")
@@ -148,10 +166,10 @@ const DemographicsChart = ({ members, effectiveChurch }: { members: Member[], ef
         return () => {
              d3.select(svgRef.current?.parentNode as any).selectAll("div").remove();
         }
-    }, [members, effectiveChurch]);
+    }, [members, effectiveChurch, dimensions]);
 
     return (
-        <div className="w-full h-full relative flex items-center justify-center min-w-[500px]">
+        <div ref={containerRef} className="w-full h-full relative flex items-center justify-center">
             <svg ref={svgRef} className="w-full h-full" style={{ maxHeight: '250px' }}></svg>
         </div>
     );
@@ -710,7 +728,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
                 <div className="mb-6 flex justify-between items-center">
                     <h3 className="font-bold text-slate-800">Age Demographics</h3>
                 </div>
-                <div className="flex-1 min-h-[250px] overflow-x-auto scrollbar-hide">
+                <div className="flex-1 min-h-[250px]">
                     <DemographicsChart members={data.members} effectiveChurch={effectiveChurch} />
                 </div>
             </div>
