@@ -1,5 +1,6 @@
 {
   "name": "Children's Ministry Attendance",
   "description": "A seamless attendance tracking application for church growth, featuring WhatsApp export and scheduling.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

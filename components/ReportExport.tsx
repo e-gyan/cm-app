@@ -3,7 +3,6 @@ import { AppData, MemberType, Church, Member, MemberStatus, ServiceType } from '
 import { Copy, FileText, CheckCircle, Database, Download, Upload, AlertCircle, RefreshCw, Cloud, Lock, Code, MessageCircle, BookOpen, Compass, GitBranch, ArrowRight, ChevronDown, Calendar, Target, TrendingUp, Save, Briefcase, Sparkles, Edit3 } from 'lucide-react';
 import { getSundaysInYear } from '../constants';
 import { importData, syncFromCloud, updateTargets } from '../services/storageService';
-import { GoogleGenAI } from "@google/genai";
 
 interface ReportExportProps {
   data: AppData;
@@ -168,17 +167,32 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
             Tone: Professional, encouraging, data-driven, yet simple to understand. Avoid jargon.
           `;
 
-          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: prompt,
+          const res = await fetch('/api/generate-executive-report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt })
           });
 
-          setExecReportContent(response.text || "Failed to generate report.");
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            let errorMsg = errorData.error || `HTTP error ${res.status}`;
+            if (typeof errorMsg === 'object') errorMsg = JSON.stringify(errorMsg);
+            throw new Error(errorMsg);
+          }
 
-      } catch (e) {
+          const responseData = await res.json();
+          setExecReportContent(responseData.text || "Failed to generate report.");
+
+      } catch (e: any) {
           console.error("AI Report Gen Error", e);
-          setExecReportContent("Error generating report. Please try again.");
+          let cleanMsg = e.message || "Error generating report. Please try again.";
+          try {
+              const parsed = JSON.parse(e.message);
+              if (parsed.error && parsed.error.message) {
+                  cleanMsg = parsed.error.message;
+              }
+          } catch(err) {}
+          setExecReportContent(`Could not generate report: ${cleanMsg}`);
       } finally {
           setIsGeneratingExec(false);
       }
@@ -609,48 +623,49 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
             
             {/* 1. WHATSAPP REPORT */}
             {activeTab === 'WHATSAPP' && (
-                <div className="animate-in fade-in slide-in-from-bottom-2">
-                    <div className="mb-6">
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Select Report Date</label>
-                        <div className="relative">
-                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
-                            <select 
-                                value={selectedDate} 
-                                onChange={(e) => setSelectedDate(e.target.value)}
-                                className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 appearance-none focus:ring-2 focus:ring-indigo-500 outline-none"
-                            >
-                                {availableDates.map(d => {
-                                    const record = data.attendance.find(r => r.date === d && r.churchId === activeChurch);
-                                    const label = record?.eventName ? `${formatDateDDMMYYYY(d)} - ${record.eventName}` : formatDateDDMMYYYY(d);
-                                    return (
-                                        <option key={d} value={d}>
-                                            {label}
-                                        </option>
-                                    );
-                                })}
-                            </select>
-                            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18}/>
-                        </div>
-                    </div>
-
-                    <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 font-mono text-xs text-slate-700 whitespace-pre-wrap max-h-96 overflow-y-auto mb-6 shadow-inner">
+                <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2">
+                    <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 font-mono text-xs text-slate-700 whitespace-pre-wrap h-64 sm:h-96 overflow-y-auto shadow-inner">
                         {generateReport()}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <button 
-                            onClick={handleCopyReport}
-                            className={`flex items-center justify-center gap-2 py-3 rounded-xl font-bold transition-all ${copiedReport ? 'bg-green-600 text-white shadow-lg shadow-green-200' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}
-                        >
-                            {copiedReport ? <CheckCircle size={18}/> : <Copy size={18}/>}
-                            {copiedReport ? 'Copied!' : 'Copy Text'}
-                        </button>
-                        <button 
-                            onClick={handleOpenWhatsApp}
-                            className="flex items-center justify-center gap-2 py-3 bg-[#25D366] text-white rounded-xl font-bold hover:bg-[#20bd5a] shadow-lg shadow-green-100 transition-all active:scale-95"
-                        >
-                            <MessageCircle size={18}/> WhatsApp
-                        </button>
+                    <div className="flex flex-col gap-3">
+                        <div className="w-full">
+                            <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+                                <select 
+                                    value={selectedDate} 
+                                    onChange={(e) => setSelectedDate(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 appearance-none focus:ring-2 focus:ring-indigo-500 outline-none"
+                                >
+                                    {availableDates.map(d => {
+                                        const record = data.attendance.find(r => r.date === d && r.churchId === activeChurch);
+                                        const label = record?.eventName ? `${formatDateDDMMYYYY(d)} - ${record.eventName}` : formatDateDDMMYYYY(d);
+                                        return (
+                                            <option key={d} value={d}>
+                                                {label}
+                                            </option>
+                                        );
+                                    })}
+                                </select>
+                                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18}/>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={handleCopyReport}
+                                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold transition-all ${copiedReport ? 'bg-green-600 text-white shadow-lg shadow-green-200' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+                            >
+                                {copiedReport ? <CheckCircle size={18}/> : <Copy size={18}/>}
+                                <span className="text-sm">{copiedReport ? 'Copied!' : 'Copy'}</span>
+                            </button>
+                            <button 
+                                onClick={handleOpenWhatsApp}
+                                className="flex-1 flex items-center justify-center gap-2 py-3 bg-[#25D366] text-white rounded-xl font-bold hover:bg-[#20bd5a] shadow-lg shadow-green-100 transition-all active:scale-95"
+                            >
+                                <MessageCircle size={18}/> <span className="text-sm">WhatsApp</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

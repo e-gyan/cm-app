@@ -4,7 +4,6 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell
 } from 'recharts';
 import { Calendar, ChevronDown, TrendingUp, TrendingDown, Users, Target, Activity, MessageCircle, Share2, MapPin, Heart, HeartHandshake, Sparkles, Loader2, RefreshCw, Wallet, X, User } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
 import { motion } from "motion/react";
 import * as d3 from "d3";
 
@@ -326,7 +325,6 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
       }
 
       setIsGenerating(true);
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `
         Act as a senior data analyst for a children's ministry.
         Analyze this attendance data for the period "${timeRange}":
@@ -349,12 +347,21 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
 
       while (retryCount < maxRetries) {
         try {
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview', 
-                contents: prompt,
+            const res = await fetch('/api/generate-insight', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt })
             });
-            
-            setAiInsight(response.text || "Could not generate insight.");
+
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                let errorMsg = errorData.error || `HTTP error ${res.status}`;
+                if (typeof errorMsg === 'object') errorMsg = JSON.stringify(errorMsg);
+                throw new Error(errorMsg);
+            }
+
+            const responseData = await res.json();
+            setAiInsight(responseData.text || "Could not generate insight.");
             break; // Success, exit loop
         } catch (e: any) {
             console.error(`AI Gen Attempt ${retryCount + 1} Error:`, e);
@@ -363,6 +370,14 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
             // Check for 503 or 429 errors (High Demand / Rate Limit)
             const isOverloaded = e.status === 503 || e.message?.includes('503') || e.status === 429 || e.message?.includes('429');
             
+            // Avoid retrying for 400 Bad Request (like missing API Keys)
+            const isBadRequest = e.message?.includes('400') || e.message?.includes('API key is not configured');
+
+            if (isBadRequest) {
+                setAiInsight(e.message);
+                break;
+            }
+
             if (isOverloaded && retryCount < maxRetries) {
                 // Exponential backoff: 1s, 2s...
                 await new Promise(res => setTimeout(res, 1000 * retryCount));
@@ -373,7 +388,14 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
                  if (isOverloaded) {
                      setAiInsight("System is currently experiencing high traffic. Please try again in a minute.");
                  } else {
-                     setAiInsight("AI Analysis unavailable at the moment.");
+                     let cleanMsg = e.message;
+                     try {
+                         const parsed = JSON.parse(e.message);
+                         if (parsed.error && parsed.error.message) {
+                             cleanMsg = parsed.error.message;
+                         }
+                     } catch(err) {}
+                     setAiInsight(`Could not generate insight: ${cleanMsg}`);
                  }
             }
         }

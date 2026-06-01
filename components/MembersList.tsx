@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppData, Member, MemberType, MemberStatus, Church, Role, PromotionRecord } from '../types';
-import { User, Users, Edit2, Archive, X, Save, GraduationCap, Undo2, HelpCircle, AlertCircle, Activity, Briefcase, ChevronDown, ChevronUp, Plus, Lock, Key, Heart, Hand, Trash2, Building2, Filter, Sun, Zap, LineChart } from 'lucide-react';
+import { User, Users, Edit2, Archive, X, Save, GraduationCap, Undo2, HelpCircle, AlertCircle, Activity, Briefcase, ChevronDown, ChevronUp, Plus, Lock, Key, Heart, Hand, Trash2, Building2, Filter, Sun, Zap, LineChart, ArrowRightLeft } from 'lucide-react';
 import { updateMember, bulkArchiveMembers, addMember, deleteMember } from '../services/storageService';
 import { sanitizeInput } from '../services/securityService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -40,6 +40,10 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
   // MODAL STATES
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [memberToArchive, setMemberToArchive] = useState<Member | null>(null);
+  const [isBulkArchiveConfirming, setIsBulkArchiveConfirming] = useState(false);
+  const [transferMember, setTransferMember] = useState<Member | null>(null);
+  const [transferTarget, setTransferTarget] = useState<Church | ''>('');
   
   // HISTORY MODAL STATE
   const [historyMemberId, setHistoryMemberId] = useState<string | null>(null);
@@ -151,10 +155,42 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
     onUpdate();
   };
 
-  const archiveMember = async (member: Member) => {
-    if (window.confirm(`Are you sure you want to archive ${member.name}?`)) {
-      await updateMember({ ...member, status: MemberStatus.ARCHIVED });
+  const archiveMember = (member: Member) => {
+    setMemberToArchive(member);
+  };
+
+  const confirmArchiveSingle = async () => {
+    if (memberToArchive) {
+      await updateMember({ ...memberToArchive, status: MemberStatus.ARCHIVED });
+      setMemberToArchive(null);
       onUpdate();
+    }
+  };
+
+  const openTransferModal = (member: Member) => {
+    setTransferMember(member);
+    setTransferTarget(member.assignedChurch);
+  };
+
+  const confirmTransfer = async () => {
+    if (transferMember && transferTarget && transferTarget !== transferMember.assignedChurch) {
+        const promotion: PromotionRecord = {
+            date: new Date().toISOString(),
+            fromChurch: transferMember.assignedChurch,
+            toChurch: transferTarget as Church
+        };
+        const updatedMember = {
+            ...transferMember,
+            assignedChurch: transferTarget,
+            promotionHistory: [...(transferMember.promotionHistory || []), promotion]
+        };
+        await updateMember(updatedMember as Member);
+        setTransferMember(null);
+        setTransferTarget('');
+        onUpdate();
+    } else {
+        setTransferMember(null);
+        setTransferTarget('');
     }
   };
 
@@ -188,9 +224,14 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
 
   const handleBulkArchive = () => {
     if (selectedIds.size === 0) return;
-    if (window.confirm(`Are you sure you want to archive ${selectedIds.size} selected members?`)) {
-      bulkArchiveMembers(Array.from(selectedIds));
+    setIsBulkArchiveConfirming(true);
+  };
+
+  const confirmBulkArchive = async () => {
+    if (selectedIds.size > 0) {
+      await bulkArchiveMembers(Array.from(selectedIds));
       setSelectedIds(new Set());
+      setIsBulkArchiveConfirming(false);
       onUpdate();
     }
   };
@@ -411,6 +452,9 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                                         <LineChart size={16} />
                                     </button>
                                 )}
+                                <button onClick={() => openTransferModal(member)} className="p-2 text-fuchsia-600 hover:bg-fuchsia-50 rounded-lg transition-colors" title="Transfer">
+                                    <ArrowRightLeft size={16} />
+                                </button>
                                 <button onClick={() => openEditModal(member)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Edit">
                                     <Edit2 size={16} />
                                 </button>
@@ -469,6 +513,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                                 {!isTeacherSection && (
                                     <button onClick={() => setHistoryMemberId(member.id)} className="p-2 text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors shadow-sm" title="History"><LineChart size={18} /></button>
                                 )}
+                                <button onClick={() => openTransferModal(member)} className="p-2 text-fuchsia-600 bg-fuchsia-50 rounded-xl hover:bg-fuchsia-100 transition-colors shadow-sm" title="Transfer"><ArrowRightLeft size={18} /></button>
                                 <button onClick={() => openEditModal(member)} className="p-2 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors shadow-sm"><Edit2 size={18} /></button>
                                 {member.status === MemberStatus.ARCHIVED ? (
                                     <>
@@ -966,6 +1011,82 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                   </div>
               </div>
           </div>
+      )}
+
+      {/* CONFIRMATION DIALOG - ARCHIVE */}
+      {(memberToArchive || isBulkArchiveConfirming) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
+               <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-100 text-red-600 mb-4 mx-auto">
+                   <AlertCircle size={24} />
+               </div>
+               <h3 className="text-lg font-bold text-gray-800 text-center mb-2">Confirm Action</h3>
+               <p className="text-gray-500 text-center text-sm mb-6">
+                   {memberToArchive 
+                       ? `Are you sure you want to archive ${memberToArchive.name}? This will move them to the archived list.`
+                       : `Are you sure you want to archive ${selectedIds.size} selected members?`}
+               </p>
+               <div className="flex gap-3">
+                   <button 
+                       onClick={() => { setMemberToArchive(null); setIsBulkArchiveConfirming(false); }}
+                       className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
+                   >
+                       Cancel
+                   </button>
+                   <button 
+                       onClick={memberToArchive ? confirmArchiveSingle : confirmBulkArchive}
+                       className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-200"
+                   >
+                       Archive
+                   </button>
+               </div>
+           </div>
+        </div>
+      )}
+
+      {/* TRANSFER MODAL */}
+      {transferMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
+               <div className="flex items-center justify-center w-12 h-12 rounded-full bg-fuchsia-100 text-fuchsia-600 mb-4 mx-auto">
+                   <ArrowRightLeft size={24} />
+               </div>
+               <h3 className="text-lg font-bold text-gray-800 text-center mb-2">Transfer Member</h3>
+               <p className="text-gray-500 text-center text-sm mb-4">
+                   Move {transferMember.name} to a different church branch.
+               </p>
+               <div className="mb-6">
+                   <label className="block text-sm font-bold text-gray-700 mb-1">Target Church</label>
+                   <select 
+                       className="w-full p-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                       value={transferTarget}
+                       onChange={e => setTransferTarget(e.target.value as Church)}
+                   >
+                       <option value="">Select a branch</option>
+                       {availableChurches.map(c => (
+                           <option key={c} value={c} disabled={c === transferMember.assignedChurch}>
+                               {c} {c === transferMember.assignedChurch ? '(Current)' : ''}
+                           </option>
+                       ))}
+                   </select>
+               </div>
+               <div className="flex gap-3">
+                   <button 
+                       onClick={() => { setTransferMember(null); setTransferTarget(''); }}
+                       className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
+                   >
+                       Cancel
+                   </button>
+                   <button 
+                       onClick={confirmTransfer}
+                       disabled={!transferTarget || transferTarget === transferMember.assignedChurch}
+                       className="flex-1 py-3 bg-fuchsia-600 text-white font-bold rounded-xl hover:bg-fuchsia-700 transition-colors shadow-lg shadow-fuchsia-200 disabled:opacity-50 disabled:pointer-events-none"
+                   >
+                       Transfer
+                   </button>
+               </div>
+           </div>
+        </div>
       )}
 
     </div>

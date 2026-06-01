@@ -22,6 +22,7 @@ import {
   Zap,
   Filter,
 } from "lucide-react";
+import { motion } from "motion/react";
 import {
   addMember,
   saveAttendance,
@@ -506,11 +507,13 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       ? membersToList.filter((m) => serviceMap[m.id] === "JOY").length
       : 0;
 
-  const displayCount = filteredMembers.filter((m) =>
-    presentIds.has(m.id),
-  ).length;
   // Total present in state (including hidden)
   const totalSavedInState = presentIds.size;
+  
+  // Total punctual for current service
+  const punctualForCurrentService = [...punctualIds].filter(
+    (pid) => (serviceMap[pid] || "JOY") === currentService
+  ).length;
 
   // Leaderboard Calc
   const leaderboardData = useMemo(() => {
@@ -672,6 +675,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               )}
             </div>
 
+            {enablePunctuality && (
+              <div className="flex items-center gap-1.5 px-3 py-3 bg-amber-50 text-amber-700 rounded-xl border border-amber-200 shrink-0 font-bold text-sm" title="Punctual for current service">
+                 <Trophy size={16} className="text-amber-500" />
+                 <span>{punctualForCurrentService}</span>
+                 <span className="hidden sm:inline text-xs font-medium text-amber-600">Punctual</span>
+              </div>
+            )}
+            
             <button
               onClick={handleSave}
               className="flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95 shrink-0"
@@ -953,10 +964,15 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                             : "bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-500 disabled:opacity-30 disabled:cursor-not-allowed"
                       }`}
                     >
-                      <Trophy
-                        size={16}
-                        fill={isPunctual ? "currentColor" : "none"}
-                      />
+                      <motion.div
+                        animate={isPunctual ? { scale: [1, 1.4, 1] } : { scale: 1 }}
+                        transition={{ duration: 0.3, ease: "easeInOut" }}
+                      >
+                        <Trophy
+                          size={16}
+                          fill={isPunctual ? "currentColor" : "none"}
+                        />
+                      </motion.div>
                     </button>
                   )}
                   {isGraduating && (
