@@ -146,13 +146,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                             </div>
                         </div>
                     )}
-                    {!isSyncing && (
-                        <div className="mt-3 flex flex-col items-center gap-2">
-                            <span className="text-xs text-slate-400 font-medium tracking-wide">
-                                Emergency bypass / Setup: <b>admin</b> / <b>setup123</b>
-                            </span>
-                        </div>
-                    )}
                     {isSyncing && (
                         <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-100">
                             <RefreshCw size={12} className="animate-spin"/>
