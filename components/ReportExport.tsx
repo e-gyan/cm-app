@@ -19,11 +19,23 @@ const formatDateDDMMYYYY = (dateStr: string) => {
 const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurch, currentUser }) => {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [copiedReport, setCopiedReport] = useState(false);
-  const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'KPI' | 'DATA' | 'EXECUTIVE'>('WHATSAPP');
+  const [activeTab, setActiveTab] = useState<'WHATSAPP' | 'KPI' | 'DATA' | 'EXECUTIVE'>(() => {
+    return (localStorage.getItem('reports_activeTab') as 'WHATSAPP' | 'KPI' | 'DATA' | 'EXECUTIVE') || 'WHATSAPP';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('reports_activeTab', activeTab);
+  }, [activeTab]);
   const [importMsg, setImportMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);
   
   // Executive Report State
-  const [execTimeframe, setExecTimeframe] = useState<'1M' | '3M' | '1Y'>('1M');
+  const [execTimeframe, setExecTimeframe] = useState<'1M' | '3M' | '1Y'>(
+      () => (localStorage.getItem('reports_execTimeframe') as '1M' | '3M' | '1Y') || '1M'
+  );
+
+  useEffect(() => {
+      localStorage.setItem('reports_execTimeframe', execTimeframe);
+  }, [execTimeframe]);
   const [execReportContent, setExecReportContent] = useState('');
   const [isGeneratingExec, setIsGeneratingExec] = useState(false);
   

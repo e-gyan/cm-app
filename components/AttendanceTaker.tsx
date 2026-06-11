@@ -65,7 +65,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const [showEventModal, setShowEventModal] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterType, setFilterType] = useState<string>("All");
+  const [filterType, setFilterType] = useState<string>(
+    () => (localStorage.getItem("attendance_filterType") as string) || "All",
+  );
 
   // Internal Church Filter for Admins when activeChurch is 'CM'
   const [internalChurchFilter, setInternalChurchFilter] = useState<
@@ -88,6 +90,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   );
 
   // Persist State
+  useEffect(() => {
+    localStorage.setItem("attendance_filterType", filterType);
+  }, [filterType]);
   useEffect(() => {
     localStorage.setItem("attendance_mode", attendanceMode);
   }, [attendanceMode]);
@@ -461,7 +466,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       (m) =>
         m.status === MemberStatus.ACTIVE &&
         targetChurches.includes(m.assignedChurch) &&
-        ["Teacher", "Helper", "Volunteer"].includes(m.type),
+        ["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+        !(currentUser.role === 'CM' && (m.role === 'ADMIN' || m.role === 'SUPER_ADMIN' || m.name.toLowerCase().includes('admin')))
     );
   } else {
     membersToList = data.members.filter(

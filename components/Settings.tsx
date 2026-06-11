@@ -11,8 +11,14 @@ interface SettingsProps {
 }
 
 const Settings: React.FC<SettingsProps> = ({ data, onUpdate, currentUser }) => {
-  const isAdmin = currentUser.role === 'ADMIN';
-  const [activeTab, setActiveTab] = useState<'GENERAL' | 'CHURCHES' | 'CLOUD'>('GENERAL');
+  const isAdmin = currentUser.role === 'ADMIN' || currentUser.role === 'SUPER_ADMIN';
+  const [activeTab, setActiveTab] = useState<'GENERAL' | 'CHURCHES' | 'ORGANIZATION' | 'CLOUD'>(() => {
+    return (localStorage.getItem('settings_activeTab') as 'GENERAL' | 'CHURCHES' | 'ORGANIZATION' | 'CLOUD') || 'GENERAL';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('settings_activeTab', activeTab);
+  }, [activeTab]);
   
   // Local state for editing
   const [localSettings, setLocalSettings] = useState<AppSettings>(data.settings);
@@ -122,6 +128,9 @@ const Settings: React.FC<SettingsProps> = ({ data, onUpdate, currentUser }) => {
                 <button onClick={() => setActiveTab('CHURCHES')} className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'CHURCHES' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
                     Church Branches
                 </button>
+                <button onClick={() => setActiveTab('ORGANIZATION')} className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'ORGANIZATION' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                    Organization Structure
+                </button>
                 <button onClick={() => setActiveTab('CLOUD')} className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'CLOUD' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
                     Cloud Sync
                 </button>
@@ -186,6 +195,47 @@ const Settings: React.FC<SettingsProps> = ({ data, onUpdate, currentUser }) => {
                                     <button onClick={() => handleRemoveChurch(church)} className="text-slate-400 hover:text-red-500 transition-colors"><AlertCircle size={18}/></button>
                                 </div>
                             ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* ORGANIZATION TAB */}
+                {activeTab === 'ORGANIZATION' && (
+                    <div className="space-y-6">
+                        <div className="flex justify-between items-center">
+                            <h3 className="font-bold text-lg text-slate-800">Organization Hierarchy Configuration</h3>
+                        </div>
+                        <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl text-indigo-800 text-sm">
+                            <p>Configure your multi-tenant hierarchy mapping here. This mapping informs the system which churches fall under which Zones and Branches.</p>
+                        </div>
+                        
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">JSON Tree Configuration <span className="text-xs text-red-500 font-normal">(Advanced Only)</span></label>
+                            <textarea 
+                                className="w-full p-4 font-mono text-xs bg-slate-900 text-green-400 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                                rows={15}
+                                value={localSettings.organization ? JSON.stringify(localSettings.organization, null, 2) : JSON.stringify({
+                                    directorate: "Central Directorate",
+                                    zones: [
+                                        {
+                                            name: "Zone 1",
+                                            branches: [
+                                                { name: "Branch A", churches: ["I", "K"] },
+                                                { name: "Branch B", churches: ["LJ", "UJ"] }
+                                            ]
+                                        }
+                                    ]
+                                }, null, 2)}
+                                onChange={(e) => {
+                                    try {
+                                        const parsed = JSON.parse(e.target.value);
+                                        setLocalSettings({...localSettings, organization: parsed});
+                                    } catch (err) {
+                                        // Ignore parse errors until valid
+                                    }
+                                }}
+                            />
+                            <p className="mt-2 text-xs text-slate-500">Paste valid JSON describing your directorate, zones, branches, and the churches associated with them.</p>
                         </div>
                     </div>
                 )}

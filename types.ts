@@ -19,7 +19,7 @@ export enum MemberStatus {
 
 export type Church = string; // Changed from union type to string to allow dynamic configuration
 
-export type Role = 'ADMIN' | 'TEACHER' | 'NONE';
+export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'DIRECTORATE_HEAD' | 'ZONAL_HEAD' | 'CM' | 'TEACHER' | 'FINANCE' | 'NONE';
 
 export type ServiceType = 'JOY' | 'ENLARGEMENT' | 'SPECIAL';
 
@@ -108,7 +108,17 @@ export interface PrayerSlot {
 }
 
 export interface AppSettings {
-  churches: string[]; // Dynamic list of active branches
+  churches: string[]; // Dynamic list of active branches (used as flat list)
+  organization?: {
+    directorate: string; // e.g. "Main CM Directorate"
+    zones: {
+      name: string; // e.g. "Zone A"
+      branches: {
+        name: string; // e.g. "Branch 1"
+        churches: string[]; // e.g. ['I', 'K', 'LJ', 'UJ']
+      }[];
+    }[];
+  };
   cloudConfig: {
     enabled: boolean;
     apiKey: string;

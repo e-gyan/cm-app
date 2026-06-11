@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppData, Member, MemberType, MemberStatus, Church, Role, PromotionRecord } from '../types';
-import { User, Users, Edit2, Archive, X, Save, GraduationCap, Undo2, HelpCircle, AlertCircle, Activity, Briefcase, ChevronDown, ChevronUp, Plus, Lock, Key, Heart, Hand, Trash2, Building2, Filter, Sun, Zap, LineChart, ArrowRightLeft } from 'lucide-react';
+import { User, Users, Edit2, Archive, X, Save, GraduationCap, Undo2, HelpCircle, AlertCircle, Activity, Briefcase, ChevronDown, ChevronUp, Plus, Lock, Key, Heart, Hand, Trash2, Building2, Filter, Sun, Zap, LineChart, ArrowRightLeft, PartyPopper } from 'lucide-react';
 import { updateMember, bulkArchiveMembers, addMember, deleteMember } from '../services/storageService';
 import { sanitizeInput } from '../services/securityService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -28,11 +28,13 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
   
   // Church Filter for Admins
   const [churchFilter, setChurchFilter] = useState<Church | 'All'>(() => (localStorage.getItem('members_churchFilter') as Church | 'All') || 'All');
+  const [sortOrder, setSortOrder] = useState<'A-Z' | 'ATTENDANCE_HIGH' | 'ATTENDANCE_LOW'>(() => (localStorage.getItem('members_sortOrder') as any) || 'A-Z');
   
   // Persist state changes
   React.useEffect(() => { localStorage.setItem('members_hubTab', hubTab); }, [hubTab]);
   React.useEffect(() => { localStorage.setItem('members_filter', filter); }, [filter]);
   React.useEffect(() => { localStorage.setItem('members_churchFilter', churchFilter); }, [churchFilter]);
+  React.useEffect(() => { localStorage.setItem('members_sortOrder', sortOrder); }, [sortOrder]);
   
   // SELECTION STATE
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -278,6 +280,58 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
       return d.toLocaleDateString('en-GB');
   };
 
+  const isBirthdayThisWeek = (birthDateString?: string) => {
+      if (!birthDateString) return false;
+      const parts = birthDateString.includes('-') ? birthDateString.split('-') : birthDateString.split('/');
+      let month, day;
+      if (birthDateString.includes('-')) {
+          month = parseInt(parts[1], 10);
+          day = parseInt(parts[2], 10);
+      } else {
+           day = parseInt(parts[0], 10);
+           month = parseInt(parts[1], 10);
+      }
+      
+      if (isNaN(day) || isNaN(month)) return false;
+
+      const today = new Date();
+      const currentYear = today.getFullYear();
+      const bdayThisYear = new Date(currentYear, month - 1, day);
+      
+      const startOfWeek = new Date(today);
+      startOfWeek.setDate(today.getDate() - today.getDay());
+      startOfWeek.setHours(0,0,0,0);
+      
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      endOfWeek.setHours(23,59,59,999);
+      
+      return bdayThisYear >= startOfWeek && bdayThisYear <= endOfWeek;
+  };
+
+  const getMemberAttendanceCount = (member: Member) => {
+      const latestPromotion = member.promotionHistory
+          ?.filter(p => p.toChurch === member.assignedChurch)
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
+      let startDate = new Date(member.joinedDate);
+      if (latestPromotion && new Date(latestPromotion.date) > startDate) {
+          startDate = new Date(latestPromotion.date);
+      }
+      if (member.lastActivationDate && new Date(member.lastActivationDate) > startDate) {
+          startDate = new Date(member.lastActivationDate);
+      }
+      startDate.setHours(0,0,0,0);
+
+      const churchAttendance = data.attendance.filter(r => {
+          const recordDate = new Date(r.date);
+          recordDate.setHours(0,0,0,0);
+          return r.churchId === member.assignedChurch && recordDate.getTime() >= startDate.getTime();
+      });
+
+      return churchAttendance.filter(r => r.presentMemberIds.includes(member.id)).length;
+  };
+
   const AttendanceBadge = ({ member }: { member: Member }) => {
       // Calculate attendance stats
       // Filter sessions based on promotion history
@@ -384,6 +438,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                   {members.map((member: Member) => {
                     const isSelected = selectedIds.has(member.id);
                     const teenStatus = getTeenStatus(member.birthDate);
+                    const bdayWeek = isBirthdayThisWeek(member.birthDate);
                     
                     return (
                       <tr key={member.id} className={`hover:bg-gray-50/80 transition-colors ${isSelected ? 'bg-indigo-50/30' : ''}`}>
@@ -396,7 +451,14 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                         <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
                                 <div className={`p-2 rounded-full ${badgeClass}`}><Icon size={16} /></div>
-                                <div className="font-semibold text-gray-900">{member.name}</div>
+                                <div>
+                                    <div className="font-semibold text-gray-900">{member.name}</div>
+                                    {bdayWeek && (
+                                        <div className="flex items-center gap-1 text-[10px] uppercase font-bold text-pink-600 mt-0.5 animate-pulse">
+                                            <PartyPopper size={12} /> Birthday Week!
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </td>
 
@@ -486,13 +548,21 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
             <div className="md:hidden p-2 space-y-3">
               {members.map((member: Member) => {
                  const teenStatus = getTeenStatus(member.birthDate);
+                 const bdayWeek = isBirthdayThisWeek(member.birthDate);
                  return (
                    <div key={member.id} className="p-4 rounded-2xl border shadow-sm bg-white border-gray-100">
                       <div className="flex justify-between items-start">
                          <div className="flex items-start gap-3 flex-1">
                             <div className={`mt-1 p-2 rounded-full shrink-0 ${badgeClass}`}><Icon size={20} /></div>
                             <div>
-                                <h4 className="font-bold text-gray-900 text-lg">{member.name}</h4>
+                                <h4 className="font-bold text-gray-900 text-lg flex flex-wrap gap-2 items-center">
+                                    {member.name}
+                                    {bdayWeek && (
+                                        <span className="flex items-center gap-1 text-[10px] uppercase font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded-full border border-pink-100 animate-pulse">
+                                            <PartyPopper size={10} /> Bday Week
+                                        </span>
+                                    )}
+                                </h4>
                                 <div className="flex flex-wrap gap-2 mt-2">
                                     <span className={`text-xs px-2 py-1 rounded-md font-medium ${getStatusBadgeColor(member.status)}`}>{member.status}</span>
                                     <span className="text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-600 border border-gray-200 font-medium">{member.assignedChurch}</span>
@@ -537,8 +607,26 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
   };
 
   const getFilteredContent = () => {
-    // Sort members alphabetically (A-Z) before filtering
-    let baseList = [...data.members].sort((a, b) => a.name.localeCompare(b.name));
+    // Determine sorting
+    let baseList = [...data.members];
+    
+    if (sortOrder === 'A-Z') {
+        baseList.sort((a, b) => a.name.localeCompare(b.name));
+    } else {
+        // Pre-calculate attendance to avoid redundant iteration
+        const attendanceMap = new Map<string, number>();
+        baseList.forEach(m => attendanceMap.set(m.id, getMemberAttendanceCount(m)));
+        
+        baseList.sort((a, b) => {
+            const countA = attendanceMap.get(a.id) || 0;
+            const countB = attendanceMap.get(b.id) || 0;
+            if (sortOrder === 'ATTENDANCE_HIGH') {
+                return countB - countA;
+            } else {
+                return countA - countB;
+            }
+        });
+    }
 
     const teacherTypes = [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER];
 
@@ -790,6 +878,20 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                     ))}
                     <option value="ARCHIVED">Archived</option>
                  </select>
+            </div>
+
+            {/* Sort Order */}
+            <div className="w-full md:w-auto relative">
+                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500"><ChevronDown size={16} /></div>
+                <select
+                    value={sortOrder}
+                    onChange={(e) => setSortOrder(e.target.value as any)}
+                    className="w-full md:w-48 appearance-none bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-bold rounded-xl p-3 md:py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                >
+                    <option value="A-Z">Sort: A-Z</option>
+                    <option value="ATTENDANCE_HIGH">Sort: Attendance (High-Low)</option>
+                    <option value="ATTENDANCE_LOW">Sort: Attendance (Low-High)</option>
+                </select>
             </div>
         </div>
       </div>

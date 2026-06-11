@@ -174,8 +174,136 @@ const DemographicsChart = ({ members, effectiveChurch }: { members: Member[], ef
     );
 }
 
+const AttendanceHeatmap = ({ year, attendance, effectiveChurch }: { year: number, attendance: any[], effectiveChurch: string }) => {
+    const records = effectiveChurch === 'All' ? attendance : attendance.filter(a => a.churchId === effectiveChurch);
+    
+    const attendanceMap = new Map<string, { count: number }>();
+    
+    records.forEach(r => {
+        const d = new Date(r.date);
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const count = r.presentMemberIds?.length || 0;
+        
+        if (attendanceMap.has(dateStr)) {
+            attendanceMap.get(dateStr)!.count += count;
+        } else {
+            attendanceMap.set(dateStr, { count });
+        }
+    });
+    
+    const startDate = new Date(year, 0, 1);
+    const endDate = new Date(year, 11, 31);
+    
+    const days = [];
+    let current = new Date(startDate);
+    while (current <= endDate) {
+        const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+        days.push({
+            date: new Date(current),
+            dateStr,
+            attendance: attendanceMap.get(dateStr)
+        });
+        current.setDate(current.getDate() + 1);
+    }
+    
+    const values = Array.from(attendanceMap.values()).map(v => v.count).filter(c => c > 0);
+    const maxVal = values.length > 0 ? Math.max(...values) : 1;
+    const minVal = values.length > 0 ? Math.min(...values) : 1;
+    
+    const getColor = (count?: number) => {
+        if (count === undefined) return 'bg-slate-100';
+        if (count === 0) return 'bg-slate-100'; // Or another color if zero is considered an event
+        
+        const ratio = (count - minVal) / (maxVal - minVal || 1);
+        if (ratio < 0.2) return 'bg-indigo-300';
+        if (ratio < 0.5) return 'bg-indigo-400';
+        if (ratio < 0.8) return 'bg-indigo-500';
+        return 'bg-indigo-700';
+    };
+
+    const startWeekDay = startDate.getDay();
+    const weeks: any[][] = [];
+    let currentWeek: any[] = [];
+    
+    for (let i = 0; i < startWeekDay; i++) {
+        currentWeek.push(null);
+    }
+    
+    days.forEach(day => {
+        currentWeek.push(day);
+        if (currentWeek.length === 7) {
+            weeks.push(currentWeek);
+            currentWeek = [];
+        }
+    });
+    if (currentWeek.length > 0) {
+        while(currentWeek.length < 7) currentWeek.push(null);
+        weeks.push(currentWeek);
+    }
+    
+    return (
+        <div className="overflow-x-auto no-scrollbar py-2">
+            <div className="min-w-fit flex">
+                <div className="flex flex-col text-[10px] text-slate-400 font-medium justify-between pr-2 py-1 select-none h-32">
+                    <span className="h-4 flex items-center">Sun</span>
+                    <span className="h-4 flex items-center">Mon</span>
+                    <span className="h-4 flex items-center">Tue</span>
+                    <span className="h-4 flex items-center">Wed</span>
+                    <span className="h-4 flex items-center">Thu</span>
+                    <span className="h-4 flex items-center">Fri</span>
+                    <span className="h-4 flex items-center">Sat</span>
+                </div>
+                
+                <div className="flex gap-1 relative h-32">
+                    {weeks.map((week, i) => (
+                        <div key={i} className="flex flex-col gap-1">
+                            {week.map((day, j) => {
+                                if (!day) return <div key={j} className="w-4 h-4 rounded-sm bg-transparent"></div>;
+                                const isLow = day.attendance && day.attendance.count < maxVal * 0.25; 
+                                
+                                return (
+                                    <div 
+                                        key={j} 
+                                        className={`w-4 h-4 rounded-sm ${getColor(day.attendance?.count)} 
+                                            ${isLow ? 'ring-2 ring-red-400 ring-offset-1' : ''} 
+                                            hover:ring-2 hover:ring-indigo-500 transition-all group relative cursor-pointer`}
+                                    >
+                                        <div className="hidden group-hover:block absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded-md whitespace-nowrap z-50">
+                                            <div className="font-bold">{day.date.toDateString()}</div>
+                                            {day.attendance ? <div>{day.attendance.count} members</div> : <div>No Records</div>}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ))}
+                </div>
+            </div>
+            
+            <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+                <div className="flex items-center gap-2">
+                    <span>Less</span>
+                    <div className="flex gap-1">
+                        <div className="w-4 h-4 rounded-sm bg-slate-100"></div>
+                        <div className="w-4 h-4 rounded-sm bg-indigo-300"></div>
+                        <div className="w-4 h-4 rounded-sm bg-indigo-400"></div>
+                        <div className="w-4 h-4 rounded-sm bg-indigo-500"></div>
+                        <div className="w-4 h-4 rounded-sm bg-indigo-700"></div>
+                    </div>
+                    <span>More</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="flex items-center gap-1"><div className="w-3 h-3 border-2 border-red-400 rounded-sm"></div> Lowest 25% Participation</span>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, currentUser }) => {
-  const isAdmin = currentUser.role === 'ADMIN';
+  const hasManagementView = ['SUPER_ADMIN', 'ADMIN', 'DIRECTORATE_HEAD', 'ZONAL_HEAD', 'CM'].includes(currentUser.role || '');
+  const isAdmin = currentUser.role === 'ADMIN' || currentUser.role === 'SUPER_ADMIN';
+  const isCM = currentUser.role === 'CM';
   const isUJTeacher = currentUser.role === 'TEACHER' && activeChurch === 'UJ';
   
   // Use dynamic list from settings
@@ -200,7 +328,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
   const [selectedChartDate, setSelectedChartDate] = useState<{date: string, presentIds: string[]} | null>(null);
 
   // --- HELPERS ---
-  const effectiveChurch = isAdmin ? adminFilterChurch : activeChurch;
+  const effectiveChurch = hasManagementView ? adminFilterChurch : activeChurch;
 
   const getAvailableYears = () => {
       const years = new Set<number>();
@@ -316,6 +444,46 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
 
       return { avg, growth, retention, newFaces };
   }, [chartData]);
+
+  // 6. Management Overview
+  const managementOverview = useMemo(() => {
+      if (!hasManagementView) return null;
+      const { start, end } = getDateRange();
+      const churchStats: Record<string, { totalKids: number, services: Record<string, { teachersCount: number, kidsCount: number }> }> = {};
+      
+      availableChurches.forEach(c => {
+          churchStats[c] = { totalKids: 0, services: {} };
+      });
+
+      const records = data.attendance.filter(r => {
+          const d = new Date(r.date);
+          return d >= start && d <= end && availableChurches.includes(r.churchId);
+      });
+
+      records.forEach(record => {
+          if (!churchStats[record.churchId]) return;
+          const map = record.serviceMap || {};
+          
+          record.presentMemberIds.forEach(id => {
+              const m = data.members.find(mem => mem.id === id);
+              if (!m) return;
+              const isStaff = ["Teacher", "Helper", "Volunteer"].includes(m.type);
+              const service = map[id] || 'JOY';
+              
+              if (!churchStats[record.churchId].services[service]) {
+                  churchStats[record.churchId].services[service] = { teachersCount: 0, kidsCount: 0 };
+              }
+              
+              if (isStaff) {
+                  churchStats[record.churchId].services[service].teachersCount++;
+              } else if (['Active', 'Not Active'].includes(m.status)) {
+                  churchStats[record.churchId].services[service].kidsCount++;
+                  churchStats[record.churchId].totalKids++;
+              }
+          });
+      });
+      return churchStats;
+  }, [data, timeRange, selectedYear, hasManagementView, availableChurches]);
 
   // --- AI GENERATION ---
   const generateInsight = async () => {
@@ -540,8 +708,8 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
             </div>
 
             <div className="flex flex-wrap gap-2 justify-center md:justify-end w-full md:w-auto">
-                {/* Church Filter (Admin Only) */}
-                {isAdmin && (
+                {/* Church Filter (Management Only) */}
+                {hasManagementView && (
                     <div className="relative">
                         <select 
                             className="appearance-none bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs py-2 pl-3 pr-8 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -744,6 +912,65 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
                     </div>
                 </div>
             </div>
+
+            {/* Attendance Heatmap */}
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-3 flex flex-col">
+                <div className="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                    <h3 className="font-bold text-slate-800">Participation Heatmap</h3>
+                    <div className="text-xs text-slate-400">Events and participation density for the selected year</div>
+                </div>
+                <div className="w-full relative mt-2 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+                    <AttendanceHeatmap year={selectedYear} attendance={data.attendance} effectiveChurch={effectiveChurch} />
+                </div>
+            </div>
+
+            {hasManagementView && managementOverview && (
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-3 flex flex-col overflow-hidden">
+                    <div className="mb-6 flex justify-between items-center">
+                        <h3 className="font-bold text-slate-800">Management Overview: Service Breakdown</h3>
+                        <div className="text-xs text-slate-400">Total Kids Aggregated over Period</div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[600px]">
+                            <thead>
+                                <tr className="border-b border-slate-100 bg-slate-50/50">
+                                    <th className="px-4 py-3 font-bold text-xs text-slate-500 uppercase">Church/Branch</th>
+                                    <th className="px-4 py-3 font-bold text-xs text-slate-500 uppercase text-center">Total Attendance</th>
+                                    <th className="px-4 py-3 font-bold text-xs text-slate-500 uppercase">Enlargement Service</th>
+                                    <th className="px-4 py-3 font-bold text-xs text-slate-500 uppercase">Joy Service</th>
+                                    <th className="px-4 py-3 font-bold text-xs text-slate-500 uppercase">Special Service</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                                {Object.entries(managementOverview).map(([churchId, stats]) => (
+                                    <tr key={churchId} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-4 py-4"><span className="font-bold text-slate-700">{churchId}</span></td>
+                                        <td className="px-4 py-4 text-center"><span className="font-extrabold text-indigo-600">{stats.totalKids}</span></td>
+                                        <td className="px-4 py-4">
+                                            <div className="flex flex-col gap-1 text-xs">
+                                                <span className="text-slate-600 font-medium">{stats.services['ENLARGEMENT']?.kidsCount || 0} Kids</span>
+                                                <span className="text-indigo-600 font-bold">{stats.services['ENLARGEMENT']?.teachersCount || 0} Teachers</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-4">
+                                            <div className="flex flex-col gap-1 text-xs">
+                                                <span className="text-slate-600 font-medium">{stats.services['JOY']?.kidsCount || 0} Kids</span>
+                                                <span className="text-indigo-600 font-bold">{stats.services['JOY']?.teachersCount || 0} Teachers</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-4">
+                                            <div className="flex flex-col gap-1 text-xs">
+                                                <span className="text-slate-600 font-medium">{stats.services['SPECIAL']?.kidsCount || 0} Kids</span>
+                                                <span className="text-indigo-600 font-bold">{stats.services['SPECIAL']?.teachersCount || 0} Teachers</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
 
             {/* Demographics D3 Chart */}
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-3 flex flex-col">
