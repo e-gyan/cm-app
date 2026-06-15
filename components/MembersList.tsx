@@ -483,7 +483,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                                 <div className="flex items-center gap-2">
                                     {member.role !== 'NONE' && member.isAccessActive ? (
                                         <span className="flex items-center gap-1 text-xs bg-green-50 text-green-700 px-2 py-1 rounded border border-green-100 font-medium">
-                                            <Key size={12}/> {member.role === 'ADMIN' ? 'Admin' : 'Staff'}
+                                            <Key size={12}/> {member.role === 'ADMIN' ? 'Admin' : 'Teacher'}
                                         </span>
                                     ) : (
                                         <span className="flex items-center gap-1 text-xs bg-gray-50 text-gray-400 px-2 py-1 rounded border border-gray-100">
@@ -638,7 +638,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
     
     // Filter by Church: if activeChurch is CM (Admin), show everything unless filtered, otherwise filter by assignment
     if (activeChurch !== 'CM') {
-        baseList = baseList.filter(m => m.assignedChurch === activeChurch || (m.assignedChurch === 'CM' && isAdmin && hubTab === 'TEACHERS'));
+        baseList = baseList.filter(m => m.assignedChurch === activeChurch || (m.assignedChurch === 'All' && isAdmin && hubTab === 'TEACHERS'));
     } else {
         // Admin (CM) View: Filter by selected church from toolbar
         if (churchFilter !== 'All') {
@@ -778,7 +778,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                         <div className="flex-1">
                             <label className="block text-xs font-bold text-gray-500 mb-1">System Role</label>
                             <select className="w-full p-2 border rounded-lg bg-white" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value as Role})}>
-                                <option value="TEACHER">Staff</option>
+                                <option value="TEACHER">Teacher</option>
                                 <option value="ADMIN">Admin</option>
                                 <option value="NONE">None</option>
                             </select>
@@ -805,7 +805,7 @@ const MembersList: React.FC<MembersListProps> = ({ data, onUpdate, activeChurch,
                 <span className="flex items-center gap-2"><User size={16}/> Members</span>
             </button>
             <button onClick={() => setHubTab('TEACHERS')} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${hubTab === 'TEACHERS' ? 'bg-white shadow-sm text-purple-600' : 'text-gray-500'}`}>
-                <span className="flex items-center gap-2"><Briefcase size={16}/> Staff</span>
+                <span className="flex items-center gap-2"><Briefcase size={16}/> Teachers</span>
             </button>
          </div>
       </div>

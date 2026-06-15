@@ -332,7 +332,6 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
 
         if (specialAttendees.length > 0) {
             if (joyAttendees.length > 0 || enlargementAttendees.length > 0) section += `\n`; // Spacer
-            section += `_Special Event:_\n`;
             specialAttendees.forEach((m, i) => section += `${i + 1}. ${m.name}\n`);
         }
         
@@ -344,94 +343,39 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
          // Check for special event name across records
          const eventName = data.attendance.find(r => r.date === selectedDate && r.eventName)?.eventName;
          let report = `*CM ATTENDANCE SUMMARY*\n${formattedDate}\n`;
-         if (eventName) report += `*Event: ${eventName}*\n`;
-         report += `----------------------------\n`;
+         if (eventName) report += `*${eventName}*\n`;
+         report += `----------------------------\n\n`;
 
-         // Use dynamic church list + CM for summary
-         const branches = [...availableChurches, 'CM'];
-         let ministryTotal = 0;
-         let totalTeachers = 0;
+         const branches = [...availableChurches];
+         let grandTotal = 0;
 
          branches.forEach(branch => {
              const record = data.attendance.find(r => r.date === selectedDate && r.churchId === branch);
-             if (!record) {
-                 return;
-             }
+             if (!record) return;
 
-             // Filter members present in this record
              const presentMembers = data.members.filter(m => record.presentMemberIds.includes(m.id));
-             presentMembers.sort((a, b) => a.name.localeCompare(b.name));
              
-             // Split Categories
-             const staff = presentMembers.filter(m => ['Teacher','Helper','Volunteer'].includes(m.type));
-             const children = presentMembers.filter(m => !['Teacher','Helper','Volunteer'].includes(m.type));
+             const staff = presentMembers.filter(m => ['Teacher','Helper','Volunteer'].includes(m.type) || m.type === MemberType.TEACHER);
+             const children = presentMembers.filter(m => !['Teacher','Helper','Volunteer'].includes(m.type) && m.type !== MemberType.TEACHER);
 
-             const staffCount = staff.length;
-             totalTeachers += staffCount;
+             const teachersCount = staff.length;
+             const membersCount = children.length;
+             const branchTotal = membersCount + teachersCount;
 
-             const membersCount = children.filter(m => m.type === MemberType.MEMBER).length;
-             const fnfCount = children.filter(m => m.type === MemberType.FNF).length;
-             const visitorCount = children.filter(m => m.type === MemberType.VISITOR).length;
-             const inconsistentCount = children.filter(m => m.type === MemberType.INCONSISTENT).length;
-             const notMemberCount = children.filter(m => m.type === MemberType.NOT_MEMBER).length;
-
-             const branchTotal = children.length;
-             ministryTotal += branchTotal;
-
-             if (branchTotal > 0 || staffCount > 0) {
-                 report += `\n*${branch} CHURCH* (${branchTotal})\n`;
+             if (branchTotal > 0) {
+                 report += `*${branch} Church*\n`;
+                 report += `Members : ${membersCount}\n`;
+                 report += `Teachers : ${teachersCount}\n`;
+                 report += `Total : ${branchTotal}\n\n`;
                  
-                 if (branch === 'CM') {
-                     report += `Staff Present: ${staffCount}\n`;
-                     if (staffCount > 0) {
-                         staff.forEach((m, i) => report += `${i + 1}. ${m.name}\n`);
-                     }
-                 } else {
-                     const getService = (id: string) => record?.serviceMap?.[id] || 'JOY';
-                     const totalJoy = children.filter(m => getService(m.id) === 'JOY').length;
-                     const totalEnlargement = children.filter(m => getService(m.id) === 'ENLARGEMENT').length;
-                     const totalSpecial = children.filter(m => getService(m.id) === 'SPECIAL').length;
-                     
-                     const splits = [];
-                     if (totalJoy > 0) splits.push(`Joy: ${totalJoy}`);
-                     if (totalEnlargement > 0) splits.push(`Enlargement: ${totalEnlargement}`);
-                     if (totalSpecial > 0) splits.push(`Special: ${totalSpecial}`);
-                     
-                     if (splits.length > 0) {
-                         report += `(${splits.join(' | ')})\n\n`;
-                     } else {
-                         report += `\n`;
-                     }
-
-                     // Render lists
-                     const members = children.filter(m => m.type === MemberType.MEMBER);
-                     const fnfs = children.filter(m => m.type === MemberType.FNF);
-                     const visitors = children.filter(m => m.type === MemberType.VISITOR);
-                     const inconsistent = children.filter(m => m.type === MemberType.INCONSISTENT);
-                     const notMembers = children.filter(m => m.type === MemberType.NOT_MEMBER);
-
-                     if (members.length > 0) report += renderListWithServices(members, 'MEMBERS', record);
-                     else report += `*MEMBERS (0)*\n_None_\n\n`;
-
-                     if (fnfs.length > 0) report += renderListWithServices(fnfs, 'FNF', record);
-                     if (visitors.length > 0) report += renderListWithServices(visitors, 'VISITORS', record);
-                     if (inconsistent.length > 0) report += renderListWithServices(inconsistent, 'INCONSISTENT', record);
-                     if (notMembers.length > 0) report += renderListWithServices(notMembers, 'NOT A MEMBER', record);
-                     
-                     if (staffCount > 0) {
-                         report += `*STAFF (${staffCount})*\n`;
-                         staff.forEach((m, i) => report += `${i + 1}. ${m.name}\n`);
-                         report += `\n`;
-                     }
-                 }
+                 grandTotal += branchTotal;
              }
          });
 
-         report += `\n----------------------------\n`;
-         report += `*TOTAL: ${ministryTotal}*\n`;
-         //report += `*TOTAL TEACHERS: ${totalTeachers}*\n`;
+         report += `----------------------------\n`;
+         report += `*OVERALL TOTAL: ${grandTotal}*\n`;
          
-         if (ministryTotal === 0 && totalTeachers === 0) {
+         if (grandTotal === 0) {
              report += `\n_No attendance data recorded yet for this date._`;
          }
 
@@ -447,7 +391,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     // Sort alphabetically
     presentMembers.sort((a, b) => a.name.localeCompare(b.name));
 
-    const teachers = presentMembers.filter(m => m.type === MemberType.TEACHER);
+    const teachers = presentMembers.filter(m => ['Teacher', 'Helper', 'Volunteer'].includes(m.type) || m.type === MemberType.TEACHER);
     
     // Helper to get service
     const getService = (id: string) => record?.serviceMap?.[id] || 'JOY'; // Default to Joy if legacy
@@ -457,9 +401,9 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     const joyPunctual = punctualIds.filter(id => getService(id) === 'JOY').map(id => data.members.find(m => m.id === id)).filter(Boolean);
     const enlargePunctual = punctualIds.filter(id => getService(id) === 'ENLARGEMENT').map(id => data.members.find(m => m.id === id)).filter(Boolean);
 
-    // Accounting count: Everyone excluding teachers
-    const allChildren = presentMembers.filter(m => !['Teacher', 'Helper', 'Volunteer'].includes(m.type));
-    const totalCount = allChildren.length;
+    // Accounting count: Everyone including teachers
+    const allChildren = presentMembers.filter(m => !['Teacher', 'Helper', 'Volunteer'].includes(m.type) && m.type !== MemberType.TEACHER);
+    const totalCount = presentMembers.length;
     
     // Calculate Split
     const totalJoy = allChildren.filter(m => getService(m.id) === 'JOY').length;
@@ -467,7 +411,9 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     const totalSpecial = allChildren.filter(m => getService(m.id) === 'SPECIAL').length;
 
     let report = `*${activeChurch} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
-    if (record.eventName) report += `*Event: ${record.eventName}*\n`;
+    const globalEventName = data.attendance.find(r => r.date === selectedDate && r.eventName)?.eventName;
+    const eventNameToUse = record.eventName || globalEventName;
+    if (eventNameToUse) report += `*${eventNameToUse}*\n`;
     report += `------------------\n`;
     report += `*TOTAL PRESENT: ${totalCount}*\n`;
     
@@ -475,6 +421,7 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     if (totalJoy > 0) splits.push(`Joy: ${totalJoy}`);
     if (totalEnlargement > 0) splits.push(`Enlargement: ${totalEnlargement}`);
     if (totalSpecial > 0) splits.push(`Special: ${totalSpecial}`);
+    if (teachers.length > 0) splits.push(`Teachers: ${teachers.length}`);
     
     if (splits.length > 0) {
         report += `(${splits.join(' | ')})\n\n`;
@@ -496,6 +443,12 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
     if (visitors.length > 0) report += renderListWithServices(visitors, 'VISITORS', record);
     if (inconsistent.length > 0) report += renderListWithServices(inconsistent, 'INCONSISTENT', record);
     if (notMembers.length > 0) report += renderListWithServices(notMembers, 'NOT A MEMBER', record);
+
+    if (teachers.length > 0) {
+        report += `*TEACHERS (${teachers.length})*\n`;
+        teachers.forEach((m, i) => report += `${i + 1}. ${m.name}\n`);
+        report += `\n`;
+    }
 
     return report;
   };
@@ -650,8 +603,8 @@ const ReportExport: React.FC<ReportExportProps> = ({ data, onUpdate, activeChurc
                                     className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 appearance-none focus:ring-2 focus:ring-indigo-500 outline-none"
                                 >
                                     {availableDates.map(d => {
-                                        const record = data.attendance.find(r => r.date === d && r.churchId === activeChurch);
-                                        const label = record?.eventName ? `${formatDateDDMMYYYY(d)} - ${record.eventName}` : formatDateDDMMYYYY(d);
+                                        const globalEventName = data.attendance.find(r => r.date === d && r.eventName)?.eventName;
+                                        const label = globalEventName ? `${formatDateDDMMYYYY(d)} - ${globalEventName}` : formatDateDDMMYYYY(d);
                                         return (
                                             <option key={d} value={d}>
                                                 {label}

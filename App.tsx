@@ -199,9 +199,14 @@ const App: React.FC = () => {
     return <Login onLogin={handleLogin} />;
   }
 
-  const isAdmin = currentUser.role === 'ADMIN';
-  const showOutreach = currentUser.role === 'TEACHER' && currentUser.assignedChurch === 'UJ';
-  const showFinances = isAdmin || (currentUser.role === 'TEACHER' && currentUser.assignedChurch === 'UJ');
+  const normalizedName = currentUser.name.toLowerCase().trim();
+  const isSuperAdminUser = normalizedName === 'emmanuel gyan' || normalizedName === 'admin' || normalizedName === 'main admin';
+  const isAdmin = currentUser.role === 'ADMIN' || isSuperAdminUser;
+  
+  const showOutreach = isSuperAdminUser;
+  const showFinances = isSuperAdminUser;
+  const showAnalytics = isSuperAdminUser;
+  const showSettings = isSuperAdminUser;
 
   const NavItem = ({ view, icon: Icon }: { view: View; icon: React.ElementType }) => (
     <button
@@ -311,11 +316,11 @@ const App: React.FC = () => {
             <NavItem view={View.DASHBOARD} icon={LayoutDashboard} />
             <NavItem view={View.ATTENDANCE} icon={CalendarCheck} />
             <NavItem view={View.MEMBERS} icon={Users} />
-            <NavItem view={View.ANALYTICS} icon={PieChart} />
+            {showAnalytics && <NavItem view={View.ANALYTICS} icon={PieChart} />}
             {showOutreach && <NavItem view={View.OUTREACH} icon={HeartHandshake} />}
             {showFinances && <NavItem view={View.FINANCES} icon={Building2} />}
             <NavItem view={View.EXPORT} icon={Share2} />
-            {isAdmin && <div className="pt-4 mt-4 border-t border-slate-100"><NavItem view={View.SETTINGS} icon={SettingsIcon} /></div>}
+            {showSettings && <div className="pt-4 mt-4 border-t border-slate-100"><NavItem view={View.SETTINGS} icon={SettingsIcon} /></div>}
           </nav>
 
           {/* Sync Status */}
@@ -469,9 +474,11 @@ const App: React.FC = () => {
                 <div style={{ display: currentView === View.MEMBERS ? 'block' : 'none' }}>
                     <MembersList data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />
                 </div>
-                <div style={{ display: currentView === View.ANALYTICS ? 'block' : 'none' }}>
-                    <AnalyticsHub data={data} activeChurch={activeChurch} currentUser={currentUser} />
-                </div>
+                {showAnalytics && (
+                    <div style={{ display: currentView === View.ANALYTICS ? 'block' : 'none' }}>
+                        <AnalyticsHub data={data} activeChurch={activeChurch} currentUser={currentUser} />
+                    </div>
+                )}
                 {showOutreach && (
                     <div style={{ display: currentView === View.OUTREACH ? 'block' : 'none' }}>
                         <OutreachHub data={data} onUpdate={refreshData} currentUser={currentUser} />
@@ -485,7 +492,7 @@ const App: React.FC = () => {
                 <div style={{ display: currentView === View.EXPORT ? 'block' : 'none' }}>
                     <ReportExport data={data} onUpdate={refreshData} activeChurch={activeChurch} currentUser={currentUser} />
                 </div>
-                {isAdmin && (
+                {showSettings && (
                     <div style={{ display: currentView === View.SETTINGS ? 'block' : 'none' }}>
                         <Settings data={data} onUpdate={refreshData} currentUser={currentUser} />
                     </div>
@@ -499,11 +506,11 @@ const App: React.FC = () => {
             <MobileNavItem view={View.DASHBOARD} icon={LayoutDashboard} label="Home" />
             <MobileNavItem view={View.ATTENDANCE} icon={CalendarCheck} label="Attend" />
             <MobileNavItem view={View.MEMBERS} icon={Users} label="People" />
-            <MobileNavItem view={View.ANALYTICS} icon={PieChart} label="Stats" />
+            {showAnalytics && <MobileNavItem view={View.ANALYTICS} icon={PieChart} label="Stats" />}
             {showOutreach && <MobileNavItem view={View.OUTREACH} icon={HeartHandshake} label="Outreach" />}
             {showFinances && <MobileNavItem view={View.FINANCES} icon={Building2} label="Finances" />}
             <MobileNavItem view={View.EXPORT} icon={Share2} label="Reports" />
-            {isAdmin && <MobileNavItem view={View.SETTINGS} icon={SettingsIcon} label="Config" />}
+            {showSettings && <MobileNavItem view={View.SETTINGS} icon={SettingsIcon} label="Config" />}
         </nav>
       </main>
     </div>

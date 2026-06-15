@@ -87,21 +87,46 @@ const loadData = (): AppData => {
           m.assignedChurch = "CM";
         }
       }
+
+      // User requested explicit branch allocations for these specific users
+      const n = m.name?.toLowerCase() || "";
+      if (n.includes("faith") && m.role === "ADMIN") {
+        m.assignedChurch = "UJ";
+        m.type = MemberType.TEACHER;
+      }
+      if (n.includes("nana esi") && m.role === "ADMIN") {
+        m.assignedChurch = "I";
+        m.type = MemberType.TEACHER;
+      }
     });
 
-    if (!adminExists) {
-      parsed.members.push({
-        id: "auto-admin",
-        name: "Main Admin",
-        type: MemberType.TEACHER,
-        joinedDate: new Date().toISOString(),
-        status: MemberStatus.ACTIVE,
-        assignedChurch: "CM",
-        role: "ADMIN",
-        passcode: "2026", // Plaintext initially, will be hashed on auth or next save cycle logic
-        isAccessActive: true,
-      });
-    }
+    // Check for required admins and add them if they don't exist
+    const ensureAdmin = (id: string, name: string, church: string) => {
+      const exists = parsed.members.some(
+        (m: any) => m.id === id || m.name.toLowerCase() === name.toLowerCase(),
+      );
+      if (!exists) {
+        parsed.members.push({
+          id: id,
+          name: name,
+          type: MemberType.TEACHER,
+          joinedDate: new Date().toISOString(),
+          status: MemberStatus.ACTIVE,
+          assignedChurch: church,
+          role: "ADMIN",
+          passcode: "2026", // Plaintext initially, will be hashed on auth
+          isAccessActive: true,
+        });
+        adminExists = true; // Make sure we note that an admin was created/exists
+      } else {
+        adminExists = true;
+      }
+    };
+
+    ensureAdmin("auto-admin", "Main Admin", "CM");
+    ensureAdmin("super-admin-2", "Emmanuel Gyan", "CM");
+    ensureAdmin("admin-faith", "Faith Afriyie", "UJ");
+    ensureAdmin("admin-nana", "Nana Esi", "I");
 
     // Async Migration Trigger (Fire and forget, will persist on next save)
     (async () => {
@@ -114,6 +139,9 @@ const loadData = (): AppData => {
         }
       }
       if (hasUpdates) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+      } else {
+        // Force save anyway to ensure branch allocations persist locally
         localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
       }
     })();
@@ -173,7 +201,11 @@ export const syncToCloud = async (immediate = false): Promise<void> => {
   if (immediate) {
     return performSync();
   } else {
-    syncTimer = setTimeout(() => performSync().catch(e => console.warn("Background sync failed", e)), 2000);
+    syncTimer = setTimeout(
+      () =>
+        performSync().catch((e) => console.warn("Background sync failed", e)),
+      2000,
+    );
     return Promise.resolve();
   }
 };
@@ -186,15 +218,21 @@ export const syncFromCloud = async (
     const docSnap = await getDoc(docRef);
 
     if (!docSnap.exists()) {
-       return { success: true, message: "No cloud data found. Ready to push." };
+      return { success: true, message: "No cloud data found. Ready to push." };
     }
 
     const cloudData: AppData = docSnap.data() as AppData;
 
     console.log("--- FIRESTORE RAW DATA FETCHED ---");
     console.log("Keys available:", cloudData ? Object.keys(cloudData) : "null");
-    console.log("Members present?", cloudData?.members ? `Array(${cloudData.members.length})` : "false");
-    console.log("Attendance present?", cloudData?.attendance ? `Array(${cloudData.attendance.length})` : "false");
+    console.log(
+      "Members present?",
+      cloudData?.members ? `Array(${cloudData.members.length})` : "false",
+    );
+    console.log(
+      "Attendance present?",
+      cloudData?.attendance ? `Array(${cloudData.attendance.length})` : "false",
+    );
     console.log("Settings present?", !!cloudData?.settings);
     console.log("Last Updated:", cloudData?.lastUpdated);
     console.log("----------------------------------");
@@ -224,8 +262,14 @@ export const syncFromCloud = async (
     }
   } catch (e: any) {
     console.warn(`Failed to pull from Firebase: ${e.message}`);
-    if (e.message && e.message.includes('missing or insufficient permissions') || e.code === 'permission-denied') {
-        console.error("Firestore Error: missing or insufficient permissions for appData/main");
+    if (
+      (e.message &&
+        e.message.includes("missing or insufficient permissions")) ||
+      e.code === "permission-denied"
+    ) {
+      console.error(
+        "Firestore Error: missing or insufficient permissions for appData/main",
+      );
     }
     return {
       success: false,
@@ -307,7 +351,7 @@ export const logoutUser = () => {
 export const authenticateUser = async (
   name: string,
   passcode: string,
-  skipFailureRecord: boolean = false
+  skipFailureRecord: boolean = false,
 ): Promise<{ success: boolean; member?: Member; message?: string }> => {
   const attempts = getLoginAttempts();
   const now = Date.now();
@@ -330,7 +374,9 @@ export const authenticateUser = async (
       m.name.toLowerCase().trim() === cleanName.toLowerCase().trim(),
   );
   if (!user) {
-    return skipFailureRecord ? { success: false, message: "Invalid credentials." } : recordFailedAttempt(attempts);
+    return skipFailureRecord
+      ? { success: false, message: "Invalid credentials." }
+      : recordFailedAttempt(attempts);
   }
   if (!user.isAccessActive) {
     return { success: false, message: "Access deactivated. Contact Admin." };
@@ -362,7 +408,9 @@ export const authenticateUser = async (
     syncFromCloud(true);
     return { success: true, member: user };
   }
-  return skipFailureRecord ? { success: false, message: "Invalid credentials." } : recordFailedAttempt(attempts);
+  return skipFailureRecord
+    ? { success: false, message: "Invalid credentials." }
+    : recordFailedAttempt(attempts);
 };
 const recordFailedAttempt = (attempts: LoginAttempt) => {
   const now = Date.now();
@@ -582,7 +630,10 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
     // 1. ACTIVATION / REACTIVATION
     if (member.status === MemberStatus.NOT_ACTIVE) {
       // VISITOR/FNF Specific Activation: 3 Consecutive
-      if (member.type === MemberType.VISITOR || member.type === MemberType.FNF) {
+      if (
+        member.type === MemberType.VISITOR ||
+        member.type === MemberType.FNF
+      ) {
         if (sortedAttendance.length >= 3) {
           const last3 = sortedAttendance.slice(0, 3);
           const presentInAll3 = last3.every((r) =>
@@ -591,7 +642,8 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
 
           if (presentInAll3) {
             member.status = MemberStatus.ACTIVE;
-            if (member.type === MemberType.VISITOR) member.type = MemberType.FNF;
+            if (member.type === MemberType.VISITOR)
+              member.type = MemberType.FNF;
             addNotification(
               "STATUS_CHANGE",
               `${member.name} marked active FNF! (3 consecutive visits)`,

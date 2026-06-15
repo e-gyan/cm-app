@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppData, Member, AppSettings } from '../types';
 import { updateSettings, syncFromCloud } from '../services/storageService';
 import { Settings as SettingsIcon, Cloud, List, Save, RefreshCw, AlertCircle, CheckCircle, Database, Terminal } from 'lucide-react';

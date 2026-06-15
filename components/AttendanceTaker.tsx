@@ -81,7 +81,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const [isAddingFNF, setIsAddingFNF] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboardTimeframe, setLeaderboardTimeframe] = useState<
-    "MONTH" | "CM"
+    "2_WEEKS" | "MONTH" | "QUARTER" | "ALL_TIME" | "CM"
   >("MONTH");
   const [successMsg, setSuccessMsg] = useState("");
 
@@ -120,9 +120,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     mode: "MEMBERS" | "STAFF",
   ): Church[] => {
     if (churchFilter !== "COMBINED") return [churchFilter];
-    return mode === "STAFF"
-      ? [...availableChurches, "CM", "All"]
-      : [...availableChurches];
+    return [...availableChurches, "CM", "All"];
   };
 
   useEffect(() => {
@@ -147,6 +145,31 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     }
   }, [sundays2026]);
 
+  const getDraftKey = () =>
+    `attendance_draft_${effectiveChurch}_${attendanceMode}_${selectedDate}`;
+
+  const saveDraft = (
+    present: Set<string>,
+    punctual: Set<string>,
+    sMap: Record<string, ServiceType>,
+  ) => {
+    if (!selectedDate) return;
+    localStorage.setItem(
+      getDraftKey(),
+      JSON.stringify({
+        presentIds: Array.from(present),
+        punctualIds: Array.from(punctual),
+        serviceMap: sMap,
+        timestamp: Date.now(),
+      }),
+    );
+  };
+
+  const clearDraft = () => {
+    if (!selectedDate) return;
+    localStorage.removeItem(getDraftKey());
+  };
+
   // Load attendance data when context changes
   useEffect(() => {
     if (selectedDate) {
@@ -159,6 +182,13 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       const combinedPunctual = new Set<string>();
       const combinedServices: Record<string, ServiceType> = {};
       let loadedEventName = "";
+
+      const globalEventRecord = data.attendance.find(
+        (r) => r.date === selectedDate && !!r.eventName,
+      );
+      if (globalEventRecord) {
+        loadedEventName = globalEventRecord.eventName!;
+      }
 
       branchesToLoad.forEach((churchId) => {
         const record = data.attendance.find(
@@ -196,10 +226,28 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         }
       });
 
-      setPresentIds(combinedPresent);
-      setPunctualIds(combinedPunctual);
-      setServiceMap(combinedServices);
-      setSpecialEventName(loadedEventName);
+      let loadedFromDraft = false;
+      try {
+        const key = `attendance_draft_${effectiveChurch}_${attendanceMode}_${selectedDate}`;
+        const draftData = localStorage.getItem(key);
+        if (draftData) {
+          const parsed = JSON.parse(draftData);
+          setPresentIds(new Set(parsed.presentIds));
+          setPunctualIds(new Set(parsed.punctualIds));
+          setServiceMap(parsed.serviceMap);
+          setSpecialEventName(loadedEventName);
+          loadedFromDraft = true;
+        }
+      } catch (e) {
+        console.error("Failed to parse attendance draft", e);
+      }
+
+      if (!loadedFromDraft) {
+        setPresentIds(combinedPresent);
+        setPunctualIds(combinedPunctual);
+        setServiceMap(combinedServices);
+        setSpecialEventName(loadedEventName);
+      }
     }
   }, [
     selectedDate,
@@ -213,6 +261,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const handleToggle = (id: string) => {
     const newPresent = new Set(presentIds);
     const newServiceMap = { ...serviceMap };
+    let nextPunctual = punctualIds;
 
     // If not currently present, mark present with CURRENT selected service
     if (!newPresent.has(id)) {
@@ -232,6 +281,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           const newPunctual = new Set(punctualIds);
           newPunctual.delete(id);
           setPunctualIds(newPunctual);
+          nextPunctual = newPunctual;
         }
       } else {
         // If assigned service DIFFERENT from current selection, SWITCH service
@@ -242,12 +292,15 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
     setPresentIds(newPresent);
     setServiceMap(newServiceMap);
+    saveDraft(newPresent, nextPunctual, newServiceMap);
   };
 
   const handlePunctualToggle = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (!enablePunctuality) return;
     const newPunctual = new Set(punctualIds);
+    let nextPresent = presentIds;
+    let nextServiceMap = serviceMap;
 
     // Determine the service of the target member (or default to current selected service)
     const targetService = serviceMap[id] || currentService;
@@ -276,11 +329,15 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         const newPresent = new Set(presentIds);
         newPresent.add(id);
         setPresentIds(newPresent);
+        nextPresent = newPresent;
+
         const newServices = { ...serviceMap, [id]: currentService };
         setServiceMap(newServices);
+        nextServiceMap = newServices;
       }
     }
     setPunctualIds(newPunctual);
+    saveDraft(nextPresent, newPunctual, nextServiceMap);
   };
 
   const handleSave = async () => {
@@ -310,13 +367,17 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
       const currentBranchPresentIds: string[] = [...presentIds].filter((id) => {
         const m = data.members.find((mem) => mem.id === id);
-        return m && m.assignedChurch === churchId;
+        if (!m) return false;
+        if (isCombinedView) return m.assignedChurch === churchId;
+        return churchId === effectiveChurch;
       });
 
       const currentBranchPunctualIds: string[] = [...punctualIds].filter(
         (id) => {
           const m = data.members.find((mem) => mem.id === id);
-          return m && m.assignedChurch === churchId;
+          if (!m) return false;
+          if (isCombinedView) return m.assignedChurch === churchId;
+          return churchId === effectiveChurch;
         },
       );
 
@@ -422,12 +483,13 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
     setSuccessMsg(hasActualChanges ? `Changes saved` : `No changes saved`);
     setShowEventModal(false);
+    clearDraft();
     onUpdate();
     setTimeout(() => setSuccessMsg(""), 2000);
-    
+
     // Explicitly push to cloud in background without blocking UI
     if (hasActualChanges) {
-      import("../services/storageService").then(mod => mod.syncToCloud(true));
+      import("../services/storageService").then((mod) => mod.syncToCloud(true));
     }
   };
 
@@ -450,7 +512,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     setPresentIds(newSet);
 
     // Add to current service map
-    setServiceMap((prev) => ({ ...prev, [newMember.id]: currentService }));
+    const newSMap = { ...serviceMap, [newMember.id]: currentService };
+    setServiceMap(newSMap);
+
+    saveDraft(newSet, punctualIds, newSMap);
 
     setNewMemberName("");
     setIsAddingFNF(false);
@@ -466,8 +531,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       (m) =>
         m.status === MemberStatus.ACTIVE &&
         targetChurches.includes(m.assignedChurch) &&
-        ["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-        !(currentUser.role === 'CM' && (m.role === 'ADMIN' || m.role === 'SUPER_ADMIN' || m.name.toLowerCase().includes('admin')))
+        ["Teacher", "Helper", "Volunteer"].includes(m.type),
     );
   } else {
     membersToList = data.members.filter(
@@ -502,7 +566,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     if (a.transferPendingDate && !b.transferPendingDate) return -1;
     if (!a.transferPendingDate && b.transferPendingDate) return 1;
 
-    // We no longer sort by present/punctual status dynamically to prevent the 
+    // We no longer sort by present/punctual status dynamically to prevent the
     // UI from jumping around and losing scroll position while taking attendance.
     return a.name.localeCompare(b.name);
   });
@@ -515,10 +579,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
   // Total present in state (including hidden)
   const totalSavedInState = presentIds.size;
-  
+
   // Total punctual for current service
   const punctualForCurrentService = [...punctualIds].filter(
-    (pid) => (serviceMap[pid] || "JOY") === currentService
+    (pid) => (serviceMap[pid] || "JOY") === currentService,
   ).length;
 
   // Leaderboard Calc
@@ -529,14 +593,33 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
     let relevantRecords = data.attendance.filter((r) => {
       const rDate = new Date(r.date);
-      const isMonthMatch =
-        leaderboardTimeframe === "CM" ||
-        (rDate.getMonth() === currentMonth &&
-          rDate.getFullYear() === currentYear);
+
+      let isTimeMatch = false;
+      if (
+        leaderboardTimeframe === "ALL_TIME" ||
+        leaderboardTimeframe === "CM"
+      ) {
+        isTimeMatch = true;
+      } else if (leaderboardTimeframe === "2_WEEKS") {
+        const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+        isTimeMatch =
+          rDate.getTime() >= twoWeeksAgo.getTime() &&
+          rDate.getTime() <= now.getTime();
+      } else if (leaderboardTimeframe === "MONTH") {
+        isTimeMatch =
+          rDate.getMonth() === currentMonth &&
+          rDate.getFullYear() === currentYear;
+      } else if (leaderboardTimeframe === "QUARTER") {
+        const currentQuarter = Math.floor(currentMonth / 3);
+        const rQuarter = Math.floor(rDate.getMonth() / 3);
+        isTimeMatch =
+          rQuarter === currentQuarter && rDate.getFullYear() === currentYear;
+      }
+
       const isChurchMatch = isCombinedView
         ? true
         : r.churchId === effectiveChurch;
-      return isChurchMatch && isMonthMatch;
+      return isChurchMatch && isTimeMatch;
     });
 
     const scores: Record<string, number> = {};
@@ -682,13 +765,18 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             </div>
 
             {enablePunctuality && (
-              <div className="flex items-center gap-1.5 px-3 py-3 bg-amber-50 text-amber-700 rounded-xl border border-amber-200 shrink-0 font-bold text-sm" title="Punctual for current service">
-                 <Trophy size={16} className="text-amber-500" />
-                 <span>{punctualForCurrentService}</span>
-                 <span className="hidden sm:inline text-xs font-medium text-amber-600">Punctual</span>
+              <div
+                className="flex items-center gap-1.5 px-3 py-3 bg-amber-50 text-amber-700 rounded-xl border border-amber-200 shrink-0 font-bold text-sm"
+                title="Punctual for current service"
+              >
+                <Trophy size={16} className="text-amber-500" />
+                <span>{punctualForCurrentService}</span>
+                <span className="hidden sm:inline text-xs font-medium text-amber-600">
+                  Punctual
+                </span>
               </div>
             )}
-            
+
             <button
               onClick={handleSave}
               className="flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95 shrink-0"
@@ -702,28 +790,26 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           </div>
 
           <div className="hidden md:flex items-center gap-2 w-full md:w-auto">
-            {isAdmin && (
-              <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
-                <button
-                  onClick={() => {
-                    setAttendanceMode("MEMBERS");
-                    setFilterType("All");
-                  }}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${attendanceMode === "MEMBERS" ? "bg-white shadow-sm text-indigo-700" : "text-slate-500"}`}
-                >
-                  Members
-                </button>
-                <button
-                  onClick={() => {
-                    setAttendanceMode("STAFF");
-                    setFilterType("All");
-                  }}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${attendanceMode === "STAFF" ? "bg-white shadow-sm text-purple-700" : "text-slate-500"}`}
-                >
-                  Staff
-                </button>
-              </div>
-            )}
+            <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
+              <button
+                onClick={() => {
+                  setAttendanceMode("MEMBERS");
+                  setFilterType("All");
+                }}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${attendanceMode === "MEMBERS" ? "bg-white shadow-sm text-indigo-700" : "text-slate-500"}`}
+              >
+                Members
+              </button>
+              <button
+                onClick={() => {
+                  setAttendanceMode("STAFF");
+                  setFilterType("All");
+                }}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${attendanceMode === "STAFF" ? "bg-white shadow-sm text-purple-700" : "text-slate-500"}`}
+              >
+                Teachers
+              </button>
+            </div>
             {enablePunctuality && (
               <button
                 onClick={() => setShowLeaderboard(true)}
@@ -790,7 +876,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               </button>
               {(attendanceMode === "STAFF"
                 ? [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER]
-                : [MemberType.MEMBER, MemberType.FNF, MemberType.VISITOR, MemberType.INCONSISTENT]
+                : [
+                    MemberType.MEMBER,
+                    MemberType.FNF,
+                    MemberType.VISITOR,
+                    MemberType.INCONSISTENT,
+                  ]
               ).map((type) => (
                 <button
                   key={type}
@@ -802,18 +893,16 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               ))}
 
               <div className="md:hidden flex items-center gap-1 border-l pl-2 ml-1">
-                {isAdmin && (
-                  <button
-                    onClick={() => {
-                      setAttendanceMode(
-                        attendanceMode === "MEMBERS" ? "STAFF" : "MEMBERS",
-                      );
-                    }}
-                    className={`px-2 py-1 text-[10px] font-bold rounded border ${attendanceMode === "STAFF" ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-white text-slate-500"}`}
-                  >
-                    {attendanceMode === "MEMBERS" ? "Staff?" : "Mems?"}
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    setAttendanceMode(
+                      attendanceMode === "MEMBERS" ? "STAFF" : "MEMBERS",
+                    );
+                  }}
+                  className={`px-2 py-1 text-[10px] font-bold rounded border ${attendanceMode === "STAFF" ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-white text-slate-500"}`}
+                >
+                  {attendanceMode === "MEMBERS" ? "Teachers?" : "Mems?"}
+                </button>
               </div>
             </div>
           </div>
@@ -971,7 +1060,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                       }`}
                     >
                       <motion.div
-                        animate={isPunctual ? { scale: [1, 1.4, 1] } : { scale: 1 }}
+                        animate={
+                          isPunctual ? { scale: [1, 1.4, 1] } : { scale: 1 }
+                        }
                         transition={{ duration: 0.3, ease: "easeInOut" }}
                       >
                         <Trophy
@@ -1060,16 +1151,35 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               </div>
             </div>
 
-            <div className="p-2 flex gap-2 bg-slate-50 border-b border-slate-100">
-              {(["MONTH", "CM"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setLeaderboardTimeframe(t)}
-                  className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${leaderboardTimeframe === t ? "bg-white shadow-sm text-amber-600" : "text-slate-400 hover:bg-white"}`}
-                >
-                  {t === "MONTH" ? "This Month" : "All Time"}
-                </button>
-              ))}
+            <div className="p-2 flex gap-2 bg-slate-50 border-b border-slate-100 overflow-x-auto no-scrollbar">
+              {(() => {
+                const options = isAdmin
+                  ? [
+                      { v: "2_WEEKS", l: "2 Weeks" },
+                      { v: "MONTH", l: "This Month" },
+                      { v: "QUARTER", l: "Quarter" },
+                      { v: "ALL_TIME", l: "All Time" },
+                    ]
+                  : [
+                      { v: "MONTH", l: "This Month" },
+                      { v: "ALL_TIME", l: "All Time" },
+                    ];
+
+                return options.map(({ v, l }) => {
+                  const isActive =
+                    leaderboardTimeframe === v ||
+                    (v === "ALL_TIME" && leaderboardTimeframe === "CM");
+                  return (
+                    <button
+                      key={v}
+                      onClick={() => setLeaderboardTimeframe(v as any)}
+                      className={`flex-1 shrink-0 px-3 py-2 text-xs font-bold rounded-xl transition-all ${isActive ? "bg-white shadow-sm text-amber-600" : "text-slate-400 hover:bg-white border border-transparent hover:border-slate-200"}`}
+                    >
+                      {l}
+                    </button>
+                  );
+                });
+              })()}
             </div>
 
             <div className="overflow-y-auto p-4 space-y-3 flex-1">

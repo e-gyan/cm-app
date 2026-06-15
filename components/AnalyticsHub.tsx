@@ -402,13 +402,14 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
           
           const entry = groupedByDate.get(dateKey)!;
           
-          // Count attendees excluding staff
+          // Count all attendees including teachers
           r.presentMemberIds.forEach(id => {
               const m = data.members.find(mem => mem.id === id);
-              if (m && !['Teacher','Helper','Volunteer'].includes(m.type)) {
+              if (m) {
                   entry.Total++;
                   entry.presentIds.push(id);
-                  if (m.type === MemberType.MEMBER) entry.Member++;
+                  const isTeacher = ['Teacher','Helper','Volunteer'].includes(m.type) || m.type === MemberType.TEACHER;
+                  if (m.type === MemberType.MEMBER || isTeacher) entry.Member++;
                   else if (m.type === MemberType.FNF || m.type === MemberType.VISITOR) entry.FNF++;
                   else entry.Inconsistent++;
               }
@@ -476,6 +477,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
               
               if (isStaff) {
                   churchStats[record.churchId].services[service].teachersCount++;
+                  churchStats[record.churchId].totalKids++;
               } else if (['Active', 'Not Active'].includes(m.status)) {
                   churchStats[record.churchId].services[service].kidsCount++;
                   churchStats[record.churchId].totalKids++;
@@ -572,11 +574,12 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
   };
 
   // Debounced Effect to trigger AI when stats change
+  // We removed the auto-trigger to save API quotas
   useEffect(() => {
-      const timer = setTimeout(() => {
-          generateInsight();
-      }, 800); // 800ms debounce to prevent call spam while switching tabs
-      return () => clearTimeout(timer);
+      // Clear the insight when data changes to let the user generate a new one manually
+      if (aiInsight && !aiInsight.includes("Traffic")) {
+          setAiInsight("");
+      }
   }, [stats, timeRange, effectiveChurch]);
 
 
@@ -879,7 +882,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
                             <AreaChart 
                                 data={chartData} 
                                 margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                                onClick={(e) => {
+                                onClick={(e: any) => {
                                     if (e && e.activePayload && e.activePayload.length > 0) {
                                         const payload = e.activePayload[0].payload;
                                         setSelectedChartDate({ date: payload.date, presentIds: payload.presentIds });
@@ -942,7 +945,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
-                                {Object.entries(managementOverview).map(([churchId, stats]) => (
+                                {Object.entries(managementOverview || {}).map(([churchId, stats]: [string, any]) => (
                                     <tr key={churchId} className="hover:bg-slate-50/50 transition-colors">
                                         <td className="px-4 py-4"><span className="font-bold text-slate-700">{churchId}</span></td>
                                         <td className="px-4 py-4 text-center"><span className="font-extrabold text-indigo-600">{stats.totalKids}</span></td>
@@ -1154,7 +1157,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({ data, activeChurch, current
                     <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50 rounded-t-3xl text-slate-800">
                         <div>
                             <h3 className="font-bold">Attendees on {selectedChartDate.date}</h3>
-                            <p className="text-xs text-slate-500 font-medium">{selectedChartDate.presentIds.length} present (excluding staff)</p>
+                            <p className="text-xs text-slate-500 font-medium">{selectedChartDate.presentIds.length} present (including teachers)</p>
                         </div>
                         <button onClick={() => setSelectedChartDate(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
                     </div>
