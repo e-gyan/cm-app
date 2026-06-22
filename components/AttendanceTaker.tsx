@@ -257,6 +257,30 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     data.members,
   ]);
 
+  // Auto-refresh listener triggered by real-time sync
+  useEffect(() => {
+    const handleDataUpdated = async () => {
+      // Re-fetch latest data explicitly
+      await syncFromCloud();
+      onUpdate();
+
+      // We do not want stale drafts to override incoming cloud data updates.
+      // So if a remote update happens, we clear the draft.
+      // This will allow the main attendance loader useEffect to re-run and
+      // pull in the genuine fresh remote state without seeing a local draft.
+      if (selectedDate) {
+        localStorage.removeItem(
+          `attendance_draft_${effectiveChurch}_${attendanceMode}_${selectedDate}`,
+        );
+      }
+    };
+
+    window.addEventListener("dataUpdated", handleDataUpdated);
+    return () => {
+      window.removeEventListener("dataUpdated", handleDataUpdated);
+    };
+  }, [selectedDate, effectiveChurch, attendanceMode, onUpdate]);
+
   // --- TOGGLE LOGIC ---
   const handleToggle = (id: string) => {
     const newPresent = new Set(presentIds);

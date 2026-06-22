@@ -318,6 +318,7 @@ export const initRealtimeSync = () => {
 
           // Notify app to re-render
           subscribers.forEach((cb) => cb());
+          window.dispatchEvent(new CustomEvent('dataUpdated'));
           console.log("Realtime sync updated local data");
         }
       }
