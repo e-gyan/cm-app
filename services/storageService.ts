@@ -174,7 +174,7 @@ export const initializeRepository = async () => {
 };
 
 // --- CLOUD SYNC SERVICE ---
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 import { db, auth } from "./firebase";
 import { handleFirestoreError, OperationType } from "./firebaseErrors";
 // DEBOUNCE TIMER
@@ -276,6 +276,56 @@ export const syncFromCloud = async (
       message: e.message || "Failed to connect to Firebase",
     };
   }
+};
+
+type DataChangeListener = () => void;
+const subscribers: Set<DataChangeListener> = new Set();
+
+export const subscribeToDataChanges = (callback: DataChangeListener) => {
+  subscribers.add(callback);
+  return () => {
+    subscribers.delete(callback);
+  };
+};
+
+export const initRealtimeSync = () => {
+  const docRef = doc(db, "appData", "main");
+  return onSnapshot(
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        const cloudData: AppData = docSnap.data() as AppData;
+        if (!isValidSchema(cloudData)) return;
+
+        const localTime = inMemoryData.lastUpdated || 0;
+        const cloudTime = cloudData.lastUpdated || 0;
+
+        // If cloud time is strictly greater, update local
+        if (cloudTime > localTime) {
+          cloudData.members.forEach((m) => (m.name = sanitizeInput(m.name)));
+          if (!cloudData.targets)
+            cloudData.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
+          if (!cloudData.notifications) cloudData.notifications = [];
+          if (!cloudData.outreachSessions) cloudData.outreachSessions = [];
+          if (!cloudData.prayerSchedule) cloudData.prayerSchedule = [];
+          if (!cloudData.settings) cloudData.settings = { ...DEFAULT_SETTINGS };
+
+          inMemoryData = cloudData;
+
+          // Persist locally for immediate loads without re-syncing to cloud
+          inMemoryData.lastUpdated = Date.now();
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(inMemoryData));
+
+          // Notify app to re-render
+          subscribers.forEach((cb) => cb());
+          console.log("Realtime sync updated local data");
+        }
+      }
+    },
+    (err) => {
+      console.warn("Realtime sync error:", err);
+    },
+  );
 };
 
 const persistData = (
