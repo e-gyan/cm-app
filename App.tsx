@@ -41,6 +41,8 @@ import {
   HeartHandshake,
   PieChart,
   Settings as SettingsIcon,
+  Maximize,
+  Minimize,
 } from "lucide-react";
 import { DEFAULT_SETTINGS } from "./constants";
 
@@ -89,6 +91,30 @@ const App: React.FC = () => {
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch((err) => {
+        console.error(`Error attempting to enable fullscreen: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen().catch((err) => {
+        console.error(`Error attempting to disable fullscreen: ${err.message}`);
+      });
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
 
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const savedState = localStorage.getItem("sidebarState");
@@ -593,6 +619,13 @@ const App: React.FC = () => {
 
           {/* Mobile Header Actions (Notification & Logout) */}
           <div className="flex items-center gap-1">
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-full transition-colors"
+              title="Toggle Fullscreen"
+            >
+              {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+            </button>
             {/* Notification Bell Mobile */}
             <div className="relative">
               <button
@@ -634,6 +667,14 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-4">
+                <button
+                  onClick={toggleFullscreen}
+                  className="p-2.5 rounded-xl border bg-white border-slate-200 text-slate-400 hover:text-indigo-600 hover:border-indigo-200 transition-all"
+                  title="Toggle Fullscreen"
+                >
+                  {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+                </button>
+
                 {/* Notification Bell Desktop */}
                 <div className="relative">
                   <button

@@ -1,6 +1,25 @@
 import React, { useMemo, useState } from "react";
+import { motion } from "motion/react";
 import { AppData, MemberType, MemberStatus, Church, Member } from "../types";
 import { updateTargets } from "../services/storageService";
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.1 },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 15 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { type: "spring", stiffness: 300, damping: 24 },
+  },
+};
+
 import {
   BarChart,
   Bar,
@@ -69,7 +88,10 @@ const StatCard: React.FC<{
   target,
   progressValue,
 }) => (
-  <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-300 group">
+  <motion.div
+    variants={itemVariants}
+    className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-300 group"
+  >
     <div className="flex justify-between items-start mb-4">
       <div
         className={`p-3.5 rounded-2xl ${colorClass} text-white shadow-md group-hover:scale-110 transition-transform duration-300`}
@@ -114,7 +136,7 @@ const StatCard: React.FC<{
         </div>
       )}
     </div>
-  </div>
+  </motion.div>
 );
 
 const CustomChartTooltip = ({ active, payload, label }: any) => {
@@ -360,8 +382,16 @@ const AdminDashboard: React.FC<{
   }, [data]);
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <motion.div
+      className="space-y-6"
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+    >
+      <motion.div
+        variants={itemVariants}
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+      >
         <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-3xl p-6 text-white shadow-xl shadow-indigo-200 lg:col-span-1 flex flex-col justify-center relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full translate-x-10 -translate-y-10 group-hover:scale-110 transition-transform duration-500"></div>
           <Users className="mb-4 text-indigo-200" size={32} />
@@ -483,10 +513,13 @@ const AdminDashboard: React.FC<{
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {globalOutreachStats && (
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+        <motion.div
+          variants={itemVariants}
+          className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100"
+        >
           <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
             <Heart size={20} className="text-pink-500" /> Outreach Impact (YTD)
           </h3>
@@ -542,10 +575,13 @@ const AdminDashboard: React.FC<{
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <motion.div
+        variants={itemVariants}
+        className="grid grid-cols-1 md:grid-cols-2 gap-4"
+      >
         {churchStats.map((stat) => (
           <div
             key={stat.church}
@@ -612,7 +648,7 @@ const AdminDashboard: React.FC<{
             </div>
           </div>
         ))}
-      </div>
+      </motion.div>
 
       {/* Target Modal code remains same... */}
       {isTargetModalOpen && (
@@ -678,7 +714,7 @@ const AdminDashboard: React.FC<{
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 };
 
@@ -833,7 +869,12 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
   }, [data, activeChurch]);
 
   return (
-    <div className="space-y-6">
+    <motion.div
+      className="space-y-6"
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+    >
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
         {/* Existing Stats Cards */}
         <StatCard
@@ -886,7 +927,10 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
 
       {/* Outreach Section */}
       {outreachStats && (
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+        <motion.div
+          variants={itemVariants}
+          className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100"
+        >
           <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
             <Heart size={20} className="text-pink-500" /> Outreach Impact (YTD)
           </h3>
@@ -942,10 +986,13 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+      <motion.div
+        variants={itemVariants}
+        className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full"
+      >
         {/* CHART */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-2">
           {/* ... Existing Chart Code ... */}
@@ -1040,8 +1087,8 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
             </li>
           </ul>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 };
 
