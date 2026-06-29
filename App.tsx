@@ -110,9 +110,22 @@ const App: React.FC = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
 
+    const enterFullscreen = () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+      document.removeEventListener("click", enterFullscreen);
+      document.removeEventListener("touchstart", enterFullscreen);
+    };
+
     document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("click", enterFullscreen);
+    document.addEventListener("touchstart", enterFullscreen);
+
     return () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("click", enterFullscreen);
+      document.removeEventListener("touchstart", enterFullscreen);
     };
   }, []);
 
@@ -309,7 +322,10 @@ const App: React.FC = () => {
     normalizedName === "main admin";
   const isAdmin = currentUser.role === "ADMIN" || isSuperAdminUser;
 
-  const showOutreach = isSuperAdminUser || normalizedName.includes("maxeen");
+  const showOutreach =
+    isSuperAdminUser ||
+    normalizedName.includes("maxeen") ||
+    ["I", "K", "LJ"].includes(currentUser.assignedChurch);
   const showFinances = isSuperAdminUser;
   const showAnalytics = isSuperAdminUser;
   const showSettings = isSuperAdminUser;
@@ -672,7 +688,11 @@ const App: React.FC = () => {
                   className="p-2.5 rounded-xl border bg-white border-slate-200 text-slate-400 hover:text-indigo-600 hover:border-indigo-200 transition-all"
                   title="Toggle Fullscreen"
                 >
-                  {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+                  {isFullscreen ? (
+                    <Minimize size={20} />
+                  ) : (
+                    <Maximize size={20} />
+                  )}
                 </button>
 
                 {/* Notification Bell Desktop */}
@@ -769,6 +789,7 @@ const App: React.FC = () => {
                     data={data}
                     onUpdate={refreshData}
                     currentUser={currentUser}
+                    activeChurch={activeChurch}
                   />
                 </div>
               )}

@@ -36,6 +36,12 @@ import {
   LineChart,
   ArrowRightLeft,
   PartyPopper,
+  Phone,
+  MapPin,
+  Calendar,
+  Smartphone,
+  UserCircle,
+  BadgeCheck,
 } from "lucide-react";
 import {
   updateMember,
@@ -1156,149 +1162,213 @@ const MembersList: React.FC<MembersListProps> = ({
   };
 
   const renderFormContent = () => (
-    <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
-      <div>
-        <label className="block text-sm font-bold text-gray-700 mb-1">
-          Full Name
-        </label>
-        <input
-          type="text"
-          className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-shadow"
-          placeholder="e.g., John Doe"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          autoFocus
-          autoComplete="off"
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">
-            Role Category
-          </label>
-          <select
-            className="w-full p-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-            value={formData.type}
-            onChange={(e) =>
-              setFormData({ ...formData, type: e.target.value as MemberType })
-            }
-          >
-            {getCreationRoleOptions().map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">
-            Assigned Church
-          </label>
-          <select
-            className="w-full p-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-            value={formData.assignedChurch}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                assignedChurch: e.target.value as Church,
-              })
-            }
-          >
-            {availableChurches.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-            {isAdmin && <option value="CM">CM (Admin)</option>}
-            {/* Added All option for staff assignment */}
-            {hubTab === "TEACHERS" && isAdmin && (
-              <option value="All">All Churches</option>
-            )}
-          </select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">
-            Date of Birth
-          </label>
-          <input
-            type="date"
-            className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-            value={formData.birthDate}
-            onChange={(e) =>
-              setFormData({ ...formData, birthDate: e.target.value })
-            }
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">
-            Status
-          </label>
-          <select
-            className="w-full p-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-            value={formData.status}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                status: e.target.value as MemberStatus,
-              })
-            }
-          >
-            {Object.values(MemberStatus).map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Contact Information (New Fields) */}
-      <div className="border-t pt-4">
-        <h4 className="font-bold text-gray-800 mb-3 text-sm uppercase">
-          Contact Details
+    <div className="space-y-6">
+      {/* Basic Info Section */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+        <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-2 text-sm uppercase tracking-wider">
+          <UserCircle size={16} className="text-indigo-500" /> Personal Info
         </h4>
-        <div className="grid grid-cols-2 gap-4 mb-3">
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1">
-              Phone
-            </label>
-            <input
-              type="tel"
-              className="w-full p-2 border rounded-lg"
-              value={formData.phone}
-              onChange={(e) =>
-                setFormData({ ...formData, phone: e.target.value })
-              }
-              placeholder="050..."
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1">
-              Parent Phone
-            </label>
-            <input
-              type="tel"
-              className="w-full p-2 border rounded-lg"
-              value={formData.parentPhone}
-              onChange={(e) =>
-                setFormData({ ...formData, parentPhone: e.target.value })
-              }
-              placeholder="Parent/Guardian"
-            />
-          </div>
-        </div>
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1">
-              Address / Landmark
-            </label>
+        <div>
+          <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+            Full Name <span className="text-red-500">*</span>
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <User size={18} className="text-gray-400" />
+            </div>
             <input
               type="text"
-              className="w-full p-2 border rounded-lg"
+              className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800"
+              placeholder="e.g., John Doe"
+              value={formData.name}
+              onChange={(e) =>
+                setFormData({ ...formData, name: e.target.value })
+              }
+              autoFocus
+              autoComplete="off"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+              Date of Birth
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Calendar size={18} className="text-gray-400" />
+              </div>
+              <input
+                type="date"
+                className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800"
+                value={formData.birthDate}
+                onChange={(e) =>
+                  setFormData({ ...formData, birthDate: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+              Status
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Activity size={18} className="text-gray-400" />
+              </div>
+              <select
+                className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800 appearance-none"
+                value={formData.status}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    status: e.target.value as MemberStatus,
+                  })
+                }
+              >
+                {Object.values(MemberStatus).map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                <ChevronDown size={16} className="text-gray-400" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Church & Role Section */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+        <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-2 text-sm uppercase tracking-wider">
+          <Building2 size={16} className="text-indigo-500" /> Church & Role
+        </h4>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+              Role Category
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <BadgeCheck size={18} className="text-gray-400" />
+              </div>
+              <select
+                className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800 appearance-none"
+                value={formData.type}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    type: e.target.value as MemberType,
+                  })
+                }
+              >
+                {getCreationRoleOptions().map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                <ChevronDown size={16} className="text-gray-400" />
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+              Assigned Church
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Building2 size={18} className="text-gray-400" />
+              </div>
+              <select
+                className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800 appearance-none"
+                value={formData.assignedChurch}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    assignedChurch: e.target.value as Church,
+                  })
+                }
+              >
+                {availableChurches.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+                {isAdmin && <option value="CM">CM (Admin)</option>}
+                {hubTab === "TEACHERS" && isAdmin && (
+                  <option value="All">All Churches</option>
+                )}
+              </select>
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                <ChevronDown size={16} className="text-gray-400" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Contact Section */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+        <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-2 text-sm uppercase tracking-wider">
+          <Phone size={16} className="text-indigo-500" /> Contact Details
+        </h4>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+              Personal Phone
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Smartphone size={18} className="text-gray-400" />
+              </div>
+              <input
+                type="tel"
+                className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800"
+                value={formData.phone}
+                onChange={(e) =>
+                  setFormData({ ...formData, phone: e.target.value })
+                }
+                placeholder="050..."
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+              Parent Phone
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Phone size={18} className="text-gray-400" />
+              </div>
+              <input
+                type="tel"
+                className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800"
+                value={formData.parentPhone}
+                onChange={(e) =>
+                  setFormData({ ...formData, parentPhone: e.target.value })
+                }
+                placeholder="Guardian..."
+              />
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+            Address / Landmark
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <MapPin size={18} className="text-gray-400" />
+            </div>
+            <input
+              type="text"
+              className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800"
               value={formData.address}
               onChange={(e) =>
                 setFormData({ ...formData, address: e.target.value })
@@ -1306,77 +1376,102 @@ const MembersList: React.FC<MembersListProps> = ({
               placeholder="House No, Street..."
             />
           </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1">
-              GPS (Lat, Lng)
-            </label>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+            GPS (Lat, Lng)
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <MapPin size={18} className="text-gray-400" />
+            </div>
             <input
               type="text"
-              className="w-full p-2 border rounded-lg"
+              className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800"
               value={formData.gpsCoordinates}
               onChange={(e) =>
                 setFormData({ ...formData, gpsCoordinates: e.target.value })
               }
               placeholder="e.g. 5.6037, -0.1870"
             />
-            <p className="text-[10px] text-gray-400 mt-1">
-              Copy coordinates from Google Maps for exact location.
-            </p>
           </div>
+          <p className="text-[10px] text-gray-400 mt-1 ml-1">
+            Copy coordinates from Google Maps for exact location.
+          </p>
         </div>
       </div>
 
       {/* Teacher specific system access fields */}
       {hubTab === "TEACHERS" && isAdmin && (
-        <div className="p-4 bg-gray-50 rounded-xl border border-indigo-100 mt-2">
-          <p className="text-xs font-bold text-indigo-600 mb-3 uppercase flex items-center gap-2">
-            <Key size={14} /> System Access
-          </p>
-          <div className="flex gap-3 mb-3">
-            <div className="w-24">
-              <label className="block text-xs font-bold text-gray-500 mb-1">
-                Passcode
+        <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 shadow-sm space-y-4">
+          <h4 className="font-bold text-indigo-700 flex items-center gap-2 mb-2 text-sm uppercase tracking-wider">
+            <Key size={16} /> System Access
+          </h4>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-indigo-700/70 mb-1.5 ml-1">
+                Passcode (PIN)
               </label>
-              <input
-                type="text"
-                placeholder="PIN"
-                className="w-full p-2 border rounded-lg text-center font-mono tracking-widest"
-                value={formData.passcode}
-                onChange={(e) =>
-                  setFormData({ ...formData, passcode: e.target.value })
-                }
-                maxLength={4}
-                autoComplete="off"
-              />
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock size={18} className="text-indigo-400" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="0000"
+                  className="w-full pl-10 p-3 bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all font-mono tracking-widest text-indigo-900 font-bold"
+                  value={formData.passcode}
+                  onChange={(e) =>
+                    setFormData({ ...formData, passcode: e.target.value })
+                  }
+                  maxLength={4}
+                  autoComplete="off"
+                />
+              </div>
             </div>
-            <div className="flex-1">
-              <label className="block text-xs font-bold text-gray-500 mb-1">
+            <div>
+              <label className="block text-xs font-bold text-indigo-700/70 mb-1.5 ml-1">
                 System Role
               </label>
-              <select
-                className="w-full p-2 border rounded-lg bg-white"
-                value={formData.role}
-                onChange={(e) =>
-                  setFormData({ ...formData, role: e.target.value as Role })
-                }
-              >
-                <option value="TEACHER">Teacher</option>
-                <option value="ADMIN">Admin</option>
-                <option value="NONE">None</option>
-              </select>
+              <div className="relative">
+                <select
+                  className="w-full p-3 bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all font-medium text-indigo-900 appearance-none"
+                  value={formData.role}
+                  onChange={(e) =>
+                    setFormData({ ...formData, role: e.target.value as Role })
+                  }
+                >
+                  <option value="TEACHER">Teacher</option>
+                  <option value="ADMIN">Admin</option>
+                  <option value="NONE">None</option>
+                </select>
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <ChevronDown size={16} className="text-indigo-400" />
+                </div>
+              </div>
             </div>
           </div>
-          <label className="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer">
-            <input
-              type="checkbox"
-              checked={formData.isAccessActive}
-              onChange={(e) =>
-                setFormData({ ...formData, isAccessActive: e.target.checked })
-              }
-              className="rounded text-indigo-600 w-4 h-4 focus:ring-indigo-500"
-            />
-            <span>Enable Login Access</span>
-          </label>
+          <div className="pt-2">
+            <label className="flex items-center gap-3 p-3 bg-white rounded-xl border border-indigo-200 cursor-pointer hover:bg-indigo-100/50 transition-colors">
+              <div className="relative flex items-center">
+                <input
+                  type="checkbox"
+                  checked={formData.isAccessActive}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      isAccessActive: e.target.checked,
+                    })
+                  }
+                  className="w-5 h-5 border-2 border-indigo-300 rounded text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0 transition-all cursor-pointer"
+                />
+              </div>
+              <span className="text-sm font-bold text-indigo-900">
+                Enable Login Access
+              </span>
+            </label>
+          </div>
         </div>
       )}
     </div>
@@ -1560,67 +1655,68 @@ const MembersList: React.FC<MembersListProps> = ({
         </button>
       )}
 
-      {/* CREATE MODAL */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-in zoom-in-95">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-gray-800">
-                New {hubTab === "TEACHERS" ? "Teacher" : "Member"}
-              </h3>
-              <button
-                onClick={() => setIsCreateModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100"
-              >
-                <X size={24} />
-              </button>
-            </div>
-            {renderFormContent()}
-            <button
-              onClick={handleSave}
-              disabled={!formData.name}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-xl font-bold mt-6 shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
-            >
-              Create Record
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT MODAL */}
-      {isEditModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-in zoom-in-95">
-            <div className="flex justify-between items-center mb-6 border-b pb-4">
-              <div>
-                <h3 className="text-xl font-bold text-gray-800">
-                  Edit {hubTab === "TEACHERS" ? "Teacher" : "Member"}
-                </h3>
-                <p className="text-sm text-gray-400 font-mono mt-1">
-                  {editingId?.substring(0, 8)}...
-                </p>
+      {/* UNIFIED SIDE DRAWER (CREATE & EDIT) */}
+      {(isCreateModalOpen || isEditModalOpen) && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-gray-50 w-full max-w-md h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300 ease-out border-l border-gray-200">
+            {/* Drawer Header */}
+            <div className="bg-white px-6 py-5 border-b border-gray-200 shrink-0 flex items-center justify-between sticky top-0 z-10">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`p-2.5 rounded-xl ${hubTab === "TEACHERS" ? "bg-purple-100 text-purple-600" : "bg-indigo-100 text-indigo-600"}`}
+                >
+                  {hubTab === "TEACHERS" ? (
+                    <Briefcase size={22} />
+                  ) : (
+                    <User size={22} />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-xl font-extrabold text-gray-900 tracking-tight">
+                    {isEditModalOpen ? "Edit" : "New"}{" "}
+                    {hubTab === "TEACHERS" ? "Teacher" : "Member"}
+                  </h3>
+                  {isEditModalOpen && (
+                    <p className="text-xs text-gray-400 font-mono font-bold uppercase mt-0.5 tracking-wider">
+                      ID: {editingId?.substring(0, 8)}
+                    </p>
+                  )}
+                </div>
               </div>
               <button
-                onClick={() => setIsEditModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100"
+                onClick={() => {
+                  setIsCreateModalOpen(false);
+                  setIsEditModalOpen(false);
+                }}
+                className="text-gray-400 hover:text-gray-900 p-2 rounded-full hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-200"
               >
                 <X size={24} />
               </button>
             </div>
-            {renderFormContent()}
-            <div className="flex gap-4 mt-6">
+
+            {/* Drawer Body (Scrollable) */}
+            <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
+              {renderFormContent()}
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="bg-white p-6 border-t border-gray-200 shrink-0 flex gap-4 sticky bottom-0 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
               <button
-                onClick={() => setIsEditModalOpen(false)}
-                className="flex-1 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 p-3 rounded-xl font-bold transition-all active:scale-95"
+                onClick={() => {
+                  setIsCreateModalOpen(false);
+                  setIsEditModalOpen(false);
+                }}
+                className="flex-1 bg-white border-2 border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 p-3.5 rounded-xl font-bold transition-all active:scale-[0.98]"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={!formData.name}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-xl font-bold shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                className="flex-[2] bg-indigo-600 hover:bg-indigo-700 text-white p-3.5 rounded-xl font-bold shadow-md shadow-indigo-200 transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
               >
-                Save Changes
+                <Save size={18} />
+                {isEditModalOpen ? "Save Changes" : "Create Record"}
               </button>
             </div>
           </div>

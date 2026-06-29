@@ -6,6 +6,7 @@ import {
   PrayerSlot,
   MemberType,
   MemberStatus,
+  Church,
 } from "../types";
 import {
   generateOutreachSchedule,
@@ -61,6 +62,7 @@ interface OutreachHubProps {
   data: AppData;
   onUpdate: () => void;
   currentUser: Member;
+  activeChurch: Church;
 }
 
 const GOOGLE_CALENDAR_ID =
@@ -163,6 +165,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   data,
   onUpdate,
   currentUser,
+  activeChurch,
 }) => {
   const [activeTab, setActiveTab] = useState<
     "VISIT" | "PRAYER" | "CONNECT" | "TRACK"
@@ -234,7 +237,35 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     );
 
     if (!hasSessionChanges && data.outreachSessions) {
-      setLocalSessions(JSON.parse(JSON.stringify(data.outreachSessions)));
+      let filteredSessions = data.outreachSessions;
+      if (activeChurch !== "CM" && activeChurch !== "All") {
+        filteredSessions = data.outreachSessions.filter((s) => {
+          // Check if assigned members belong to activeChurch
+          const hasAssigned = s.assignedMemberIds.some((id) => {
+            const m = data.members.find((mem) => mem.id === id);
+            return m && m.assignedChurch === activeChurch;
+          });
+          if (hasAssigned) return true;
+
+          // Check if completedBy belongs to activeChurch
+          if (s.completedBy) {
+            const m = data.members.find((mem) => mem.id === s.completedBy);
+            if (m && m.assignedChurch === activeChurch) return true;
+          }
+
+          // Check if visited members belong to activeChurch
+          if (s.visitedMemberIds) {
+            const hasVisited = s.visitedMemberIds.some((id) => {
+              const m = data.members.find((mem) => mem.id === id);
+              return m && m.assignedChurch === activeChurch;
+            });
+            if (hasVisited) return true;
+          }
+
+          return false;
+        });
+      }
+      setLocalSessions(JSON.parse(JSON.stringify(filteredSessions)));
     }
 
     // Sync prayer if not dirty
@@ -244,9 +275,29 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     );
 
     if (!hasPrayerChanges && data.prayerSchedule) {
-      setLocalPrayerSlots(JSON.parse(JSON.stringify(data.prayerSchedule)));
+      let filteredPrayer = data.prayerSchedule;
+      if (activeChurch !== "CM" && activeChurch !== "All") {
+        filteredPrayer = data.prayerSchedule.filter((s) => {
+          const hasAssigned = s.assignedMemberIds.some((id) => {
+            const m = data.members.find((mem) => mem.id === id);
+            return m && m.assignedChurch === activeChurch;
+          });
+          return hasAssigned;
+        });
+      }
+      setLocalPrayerSlots(JSON.parse(JSON.stringify(filteredPrayer)));
     }
-  }, [data.outreachSessions, data.prayerSchedule, unsavedChanges.size]);
+  }, [
+    data.outreachSessions,
+    data.prayerSchedule,
+    unsavedChanges.size,
+    activeChurch,
+  ]);
+
+  const isMemberInActiveChurch = (m: Member) => {
+    if (activeChurch === "CM" || activeChurch === "All") return true;
+    return m.assignedChurch === activeChurch;
+  };
 
   // --- AUTO GENERATION FOR CURRENT WEEK ---
   useEffect(() => {
@@ -270,13 +321,13 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       }
 
       if (!hasSlots) {
-        const ujMembers = data.members.filter(
+        const targetMembers = data.members.filter(
           (m) =>
-            m.assignedChurch === "UJ" &&
+            isMemberInActiveChurch(m) &&
             !["Teacher", "Helper", "Volunteer"].includes(m.type),
         );
-        if (ujMembers.length > 0) {
-          const res = generatePrayerSchedule(startOfCurrentWeek, ujMembers);
+        if (targetMembers.length > 0) {
+          const res = generatePrayerSchedule(startOfCurrentWeek, targetMembers);
           if (res.success) {
             if (res.data) {
               setLocalPrayerSlots(JSON.parse(JSON.stringify(res.data)));
@@ -503,7 +554,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
     const candidates = data.members.filter(
       (m) =>
-        m.assignedChurch === "UJ" &&
+        isMemberInActiveChurch(m) &&
         !currentMemberIds.includes(m.id) &&
         !recentlyVisited.has(m.id) &&
         !assignedInPending.has(m.id) &&
@@ -520,7 +571,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     if (!candidate && neededType !== "ANY") {
       const anyCandidates = data.members.filter(
         (m) =>
-          m.assignedChurch === "UJ" &&
+          isMemberInActiveChurch(m) &&
           !currentMemberIds.includes(m.id) &&
           !recentlyVisited.has(m.id) &&
           !assignedInPending.has(m.id) &&
@@ -562,12 +613,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   // --- PRAYER LOGIC ---
 
   const handleGeneratePrayer = () => {
-    const ujMembers = data.members.filter(
+    const targetMembers = data.members.filter(
       (m) =>
-        m.assignedChurch === "UJ" &&
+        isMemberInActiveChurch(m) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type),
     );
-    const res = generatePrayerSchedule(prayerWeek, ujMembers);
+    const res = generatePrayerSchedule(prayerWeek, targetMembers);
 
     if (res.success) {
       if (res.data) {
@@ -777,7 +828,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     return data.members
       .filter(
         (m) =>
-          m.assignedChurch === "UJ" &&
+          isMemberInActiveChurch(m) &&
           [
             MemberType.MEMBER,
             MemberType.FNF,
@@ -1281,7 +1332,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             { visits: number; calls: number }
           >();
 
-          data.members.forEach((m) => {
+          data.members.filter(isMemberInActiveChurch).forEach((m) => {
             if (m.assignedChurch) {
               if (!churchVisitMap.has(m.assignedChurch))
                 churchVisitMap.set(m.assignedChurch, 0);
@@ -1289,7 +1340,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 churchCallMap.set(m.assignedChurch, 0);
             }
 
-            const visits = (data.outreachSessions || []).filter(
+            const visits = localSessions.filter(
               (s) =>
                 s.status === "COMPLETED" &&
                 (s.sessionType === "VISIT" || !s.sessionType) &&
@@ -1300,7 +1351,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             if (visits === 1) exactlyOnceVisit++;
             else if (visits > 1) multipleTimesVisit++;
 
-            const calls = (data.outreachSessions || []).filter(
+            const calls = localSessions.filter(
               (s) =>
                 s.status === "COMPLETED" &&
                 s.sessionType === "CALL" &&
@@ -1313,7 +1364,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             else if (calls > 1) multipleTimesCall++;
           });
 
-          (data.outreachSessions || []).forEach((s) => {
+          localSessions.forEach((s) => {
             if (
               s.status === "COMPLETED" &&
               new Date(s.date).getFullYear() === currentYear
@@ -1781,6 +1832,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             localSessions.find((s) => s.id === addMemberModal.sessionId)
               ?.assignedMemberIds || []
           }
+          activeChurch={activeChurch}
         />
       )}
 
@@ -2704,6 +2756,7 @@ const AddMemberModal = ({
   onSelect,
   members,
   currentSessionMembers,
+  activeChurch,
 }: any) => {
   const [search, setSearch] = useState("");
   if (!isOpen) return null;
@@ -2712,7 +2765,9 @@ const AddMemberModal = ({
     .filter(
       (m: Member) =>
         !currentSessionMembers.includes(m.id) &&
-        m.assignedChurch === "UJ" &&
+        (activeChurch === "CM" ||
+          activeChurch === "All" ||
+          m.assignedChurch === activeChurch) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type),
     )
     .filter((m: Member) => m.name.toLowerCase().includes(search.toLowerCase()));
