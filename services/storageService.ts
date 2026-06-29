@@ -336,6 +336,16 @@ const persistData = (
     inMemoryData.lastUpdated = Date.now();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(inMemoryData));
 
+    // Notify local subscribers immediately of the data change
+    subscribers.forEach((cb) => {
+      try {
+        cb();
+      } catch (err) {
+        console.warn("Subscriber callback failed", err);
+      }
+    });
+    window.dispatchEvent(new CustomEvent("dataUpdated"));
+
     if (syncStrategy !== "NONE") {
       return syncToCloud(syncStrategy === "IMMEDIATE");
     }
@@ -705,13 +715,17 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
             return; // Move to next member
           }
         }
-        
+
         // Proactive: 2 Consecutive
         if (sortedAttendance.length >= 2) {
           const last2 = sortedAttendance.slice(0, 2);
           if (last2.every((r) => r.presentMemberIds.includes(member.id))) {
             const msg = `${member.name} is 1 visit away from becoming active FNF! (Streak started ${last2[1].date})`;
-            if (!inMemoryData.notifications.some((n) => n.relatedMemberId === member.id && n.message === msg)) {
+            if (
+              !inMemoryData.notifications.some(
+                (n) => n.relatedMemberId === member.id && n.message === msg,
+              )
+            ) {
               addNotification("STATUS_CHANGE", msg, churchId, member.id);
               isDirty = true;
             }
@@ -738,7 +752,7 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
           return;
         }
       }
-      
+
       if (
         member.type === MemberType.INCONSISTENT ||
         member.type === MemberType.MEMBER
@@ -748,7 +762,11 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
           const last3 = sortedAttendance.slice(0, 3);
           if (last3.every((r) => r.presentMemberIds.includes(member.id))) {
             const msg = `${member.name} is 1 visit away from reactivation! (Streak started ${last3[2].date})`;
-            if (!inMemoryData.notifications.some((n) => n.relatedMemberId === member.id && n.message === msg)) {
+            if (
+              !inMemoryData.notifications.some(
+                (n) => n.relatedMemberId === member.id && n.message === msg,
+              )
+            ) {
               addNotification("STATUS_CHANGE", msg, churchId, member.id);
               isDirty = true;
             }
@@ -780,13 +798,17 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
           return;
         }
       }
-      
+
       // Proactive Promotion: 6 Consecutive
       if (sortedAttendance.length >= 6) {
         const last6 = sortedAttendance.slice(0, 6);
         if (last6.every((r) => r.presentMemberIds.includes(member.id))) {
           const msg = `${member.name} is 1 visit away from Full Member promotion! (Streak started ${last6[5].date})`;
-          if (!inMemoryData.notifications.some((n) => n.relatedMemberId === member.id && n.message === msg)) {
+          if (
+            !inMemoryData.notifications.some(
+              (n) => n.relatedMemberId === member.id && n.message === msg,
+            )
+          ) {
             addNotification("PROMOTION", msg, churchId, member.id);
             isDirty = true;
           }
@@ -824,17 +846,21 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
           }
         }
       }
-      
+
       // Proactive Deactivation: 6 Consecutive Absences
       if (sortedAttendance.length >= 6) {
         const last6 = sortedAttendance.slice(0, 6);
         const joinedDate = new Date(member.joinedDate);
         const oldestInWindow = new Date(last6[last6.length - 1].date);
-        
+
         if (joinedDate <= oldestInWindow) {
           if (last6.every((r) => !r.presentMemberIds.includes(member.id))) {
             const msg = `${member.name} is at risk of being marked Not Active (6 consecutive absences since ${last6[5].date}).`;
-            if (!inMemoryData.notifications.some((n) => n.relatedMemberId === member.id && n.message === msg)) {
+            if (
+              !inMemoryData.notifications.some(
+                (n) => n.relatedMemberId === member.id && n.message === msg,
+              )
+            ) {
               addNotification("STATUS_CHANGE", msg, churchId, member.id);
               isDirty = true;
             }

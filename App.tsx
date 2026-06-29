@@ -248,7 +248,16 @@ const App: React.FC = () => {
   }, [currentUser]);
 
   const refreshData = () => {
-    setData({ ...getAppData() });
+    const raw = getAppData();
+    setData({
+      ...raw,
+      members: raw.members ? [...raw.members] : [],
+      attendance: raw.attendance ? [...raw.attendance] : [],
+      transactions: raw.transactions ? [...raw.transactions] : [],
+      notifications: raw.notifications ? [...raw.notifications] : [],
+      outreachSessions: raw.outreachSessions ? [...raw.outreachSessions] : [],
+      prayerSchedule: raw.prayerSchedule ? [...raw.prayerSchedule] : [],
+    });
   };
 
   const handleCloudSync = async () => {
