@@ -29,6 +29,7 @@ import {
   Heart,
   MapPin,
   Hourglass,
+  Phone,
 } from "lucide-react";
 
 interface DashboardProps {
@@ -288,6 +289,76 @@ const AdminDashboard: React.FC<{
         : 0
       : Math.round(((totalLastAtt - totalPrevAtt) / totalPrevAtt) * 100);
 
+  const globalOutreachStats = useMemo(() => {
+    if (!data.settings.features.outreach) return null;
+
+    const eligibleMembers = data.members.filter(
+      (m) =>
+        ["Member", "FNF", "Inconsistent"].includes(m.type) &&
+        m.status === "Active",
+    );
+    const eligibleKids = eligibleMembers.length;
+    const eligibleKidIds = new Set(eligibleMembers.map((m) => m.id));
+
+    const visitTarget = eligibleKids * 2;
+    const callTarget = eligibleKids * 4;
+    const prayerTargetMins = eligibleKids * 5 * 52 * 30;
+
+    const totalVisitsDone = (data.outreachSessions || [])
+      .filter(
+        (s) =>
+          s.status === "COMPLETED" &&
+          s.sessionType !== "CALL" &&
+          new Date(s.date).getFullYear() === new Date().getFullYear(),
+      )
+      .reduce((acc, s) => {
+        const validVisits = (s.visitedMemberIds || []).filter((id) =>
+          eligibleKidIds.has(id),
+        ).length;
+        return acc + validVisits;
+      }, 0);
+
+    const totalCallsDone = (data.outreachSessions || [])
+      .filter(
+        (s) =>
+          s.status === "COMPLETED" &&
+          s.sessionType === "CALL" &&
+          s.outcome === "REACHED" &&
+          new Date(s.date).getFullYear() === new Date().getFullYear(),
+      )
+      .reduce((acc, s) => {
+        const validCalls = (s.visitedMemberIds || []).filter((id) =>
+          eligibleKidIds.has(id),
+        ).length;
+        return acc + validCalls;
+      }, 0);
+
+    const totalPrayerMins = (data.prayerSchedule || [])
+      .filter(
+        (s) =>
+          s.isCompleted &&
+          new Date(s.date).getFullYear() === new Date().getFullYear(),
+      )
+      .reduce((acc, s) => {
+        const validPrayers = (s.assignedMemberIds || []).filter((id) =>
+          eligibleKidIds.has(id),
+        ).length;
+        return (
+          acc +
+          validPrayers * (s.durationMins !== undefined ? s.durationMins : 30)
+        );
+      }, 0);
+
+    return {
+      visitTarget,
+      totalVisitsDone,
+      callTarget,
+      totalCallsDone,
+      prayerTargetMins,
+      totalPrayerMins,
+    };
+  }, [data]);
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -413,6 +484,66 @@ const AdminDashboard: React.FC<{
           </div>
         </div>
       </div>
+
+      {globalOutreachStats && (
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+          <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <Heart size={20} className="text-pink-500" /> Outreach Impact (YTD)
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-blue-500 uppercase">
+                  Visits Done
+                </p>
+                <h4 className="text-2xl font-bold text-slate-800">
+                  {globalOutreachStats.totalVisitsDone}{" "}
+                  <span className="text-sm text-slate-400 font-medium">
+                    / {globalOutreachStats.visitTarget}
+                  </span>
+                </h4>
+              </div>
+              <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-blue-500 shadow-sm">
+                <MapPin size={20} />
+              </div>
+            </div>
+
+            <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-emerald-600 uppercase">
+                  Calls Reached
+                </p>
+                <h4 className="text-2xl font-bold text-slate-800">
+                  {globalOutreachStats.totalCallsDone}{" "}
+                  <span className="text-sm text-slate-400 font-medium">
+                    / {globalOutreachStats.callTarget}
+                  </span>
+                </h4>
+              </div>
+              <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-emerald-500 shadow-sm">
+                <Phone size={20} />
+              </div>
+            </div>
+
+            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-amber-600 uppercase">
+                  Prayer Time
+                </p>
+                <h4 className="text-2xl font-bold text-slate-800">
+                  {formatDuration(globalOutreachStats.totalPrayerMins)}{" "}
+                  <span className="text-sm text-slate-400 font-medium">
+                    / {formatDuration(globalOutreachStats.prayerTargetMins)}
+                  </span>
+                </h4>
+              </div>
+              <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-amber-500 shadow-sm">
+                <Hourglass size={20} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {churchStats.map((stat) => (
@@ -623,13 +754,13 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
     };
   }, [data, activeChurch]);
 
-  // UJ Specific Outreach Stats
+  // Active Church Specific Outreach Stats
   const outreachStats = useMemo(() => {
-    if (activeChurch !== "UJ" || !data.settings.features.outreach) return null;
+    if (!data.settings.features.outreach) return null;
 
     const eligibleMembers = data.members.filter(
       (m) =>
-        m.assignedChurch === "UJ" &&
+        m.assignedChurch === activeChurch &&
         ["Member", "FNF", "Inconsistent"].includes(m.type) &&
         m.status === "Active",
     );
@@ -637,6 +768,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
     const eligibleKidIds = new Set(eligibleMembers.map((m) => m.id));
 
     const visitTarget = eligibleKids * 2; // Annual Target: 2 visits per kid
+    const callTarget = eligibleKids * 4; // Annual Target: 4 calls per kid
 
     // Prayer Time Logic: Dynamic based on eligible kids
     // 5 days * 52 weeks * 30 mins = 7,800 mins per kid per year
@@ -647,6 +779,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
       .filter(
         (s) =>
           s.status === "COMPLETED" &&
+          s.sessionType !== "CALL" && // Explicitly excluding calls
           new Date(s.date).getFullYear() === new Date().getFullYear(),
       )
       .reduce((acc, s) => {
@@ -654,6 +787,22 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
           eligibleKidIds.has(id),
         ).length;
         return acc + validVisits;
+      }, 0);
+
+    // Actual Calls Count
+    const totalCallsDone = (data.outreachSessions || [])
+      .filter(
+        (s) =>
+          s.status === "COMPLETED" &&
+          s.sessionType === "CALL" &&
+          s.outcome === "REACHED" &&
+          new Date(s.date).getFullYear() === new Date().getFullYear(),
+      )
+      .reduce((acc, s) => {
+        const validCalls = (s.visitedMemberIds || []).filter((id) =>
+          eligibleKidIds.has(id),
+        ).length;
+        return acc + validCalls;
       }, 0);
 
     // Actual Prayer Time (Only counting prayer time for currently eligible kids)
@@ -667,10 +816,20 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
         const validPrayers = (s.assignedMemberIds || []).filter((id) =>
           eligibleKidIds.has(id),
         ).length;
-        return acc + validPrayers * (s.durationMins || 30);
+        return (
+          acc +
+          validPrayers * (s.durationMins !== undefined ? s.durationMins : 30)
+        );
       }, 0);
 
-    return { visitTarget, totalVisitsDone, prayerTargetMins, totalPrayerMins };
+    return {
+      visitTarget,
+      totalVisitsDone,
+      callTarget,
+      totalCallsDone,
+      prayerTargetMins,
+      totalPrayerMins,
+    };
   }, [data, activeChurch]);
 
   return (
@@ -725,17 +884,17 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
         />
       </div>
 
-      {/* UJ Outreach Section */}
-      {activeChurch === "UJ" && outreachStats && (
+      {/* Outreach Section */}
+      {outreachStats && (
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
           <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <Heart size={20} className="text-pink-500" /> Ministry Impact (YTD)
+            <Heart size={20} className="text-pink-500" /> Outreach Impact (YTD)
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold text-blue-500 uppercase">
-                  Total Visits Done
+                  Visits Done
                 </p>
                 <h4 className="text-2xl font-bold text-slate-800">
                   {outreachStats.totalVisitsDone}{" "}
@@ -748,10 +907,28 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
                 <MapPin size={20} />
               </div>
             </div>
+
+            <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-emerald-600 uppercase">
+                  Calls Reached
+                </p>
+                <h4 className="text-2xl font-bold text-slate-800">
+                  {outreachStats.totalCallsDone}{" "}
+                  <span className="text-sm text-slate-400 font-medium">
+                    / {outreachStats.callTarget}
+                  </span>
+                </h4>
+              </div>
+              <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-emerald-500 shadow-sm">
+                <Phone size={20} />
+              </div>
+            </div>
+
             <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold text-amber-600 uppercase">
-                  Total Prayer Time
+                  Prayer Time
                 </p>
                 <h4 className="text-2xl font-bold text-slate-800">
                   {formatDuration(outreachStats.totalPrayerMins)}{" "}

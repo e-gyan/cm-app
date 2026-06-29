@@ -1,27 +1,34 @@
-
 export enum MemberType {
-  TEACHER = 'Teacher',
-  HELPER = 'Helper',
-  VOLUNTEER = 'Volunteer',
-  MEMBER = 'Member',
-  FNF = 'FNF', // Friends and Family / New
-  VISITOR = 'Visitor',
-  NOT_MEMBER = 'Not a Member',
-  INCONSISTENT = 'Inconsistent'
+  TEACHER = "Teacher",
+  HELPER = "Helper",
+  VOLUNTEER = "Volunteer",
+  MEMBER = "Member",
+  FNF = "FNF", // Friends and Family / New
+  VISITOR = "Visitor",
+  NOT_MEMBER = "Not a Member",
+  INCONSISTENT = "Inconsistent",
 }
 
 export enum MemberStatus {
-  ACTIVE = 'Active',
-  NOT_ACTIVE = 'Not Active',
-  ARCHIVED = 'Archived',
-  TRANSFERRED = 'Transferred'
+  ACTIVE = "Active",
+  NOT_ACTIVE = "Not Active",
+  ARCHIVED = "Archived",
+  TRANSFERRED = "Transferred",
 }
 
 export type Church = string; // Changed from union type to string to allow dynamic configuration
 
-export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'DIRECTORATE_HEAD' | 'ZONAL_HEAD' | 'CM' | 'TEACHER' | 'FINANCE' | 'NONE';
+export type Role =
+  | "SUPER_ADMIN"
+  | "ADMIN"
+  | "DIRECTORATE_HEAD"
+  | "ZONAL_HEAD"
+  | "CM"
+  | "TEACHER"
+  | "FINANCE"
+  | "NONE";
 
-export type ServiceType = 'JOY' | 'ENLARGEMENT' | 'SPECIAL';
+export type ServiceType = "JOY" | "ENLARGEMENT" | "SPECIAL";
 
 export interface Member {
   id: string;
@@ -66,14 +73,15 @@ export interface Transaction {
   id: string;
   date: string;
   amount: number;
-  type: 'INCOME' | 'EXPENSE';
+  type: "INCOME" | "EXPENSE";
   category: string;
   description: string;
   churchId: Church;
   recordedBy?: string;
 }
 
-export type NotificationType = 'BIRTHDAY' | 'PROMOTION' | 'STATUS_CHANGE' | 'TEEN_ALERT';
+export type NotificationType =
+  "BIRTHDAY" | "PROMOTION" | "STATUS_CHANGE" | "TEEN_ALERT";
 
 export interface Notification {
   id: string;
@@ -88,12 +96,14 @@ export interface Notification {
 // --- NEW OUTREACH TYPES ---
 export interface OutreachSession {
   id: string;
+  sessionType?: "VISIT" | "CALL";
+  outcome?: "REACHED" | "UNREACHABLE" | "PENDING";
   date: string; // YYYY-MM-DD
   startTime: string; // "10:00"
   endTime: string; // "15:00"
   assignedMemberIds: string[]; // The group assigned
   visitedMemberIds?: string[]; // Track who was actually visited
-  status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  status: "PENDING" | "COMPLETED" | "CANCELLED";
   notes?: string;
   completedBy?: string;
 }
@@ -137,14 +147,14 @@ export interface AppData {
   notifications: Notification[];
   outreachSessions?: OutreachSession[];
   prayerSchedule?: PrayerSlot[];
-  targets?: Record<string, number>; 
+  targets?: Record<string, number>;
   settings: AppSettings; // Centralized Configuration
-  lastUpdated?: number; 
+  lastUpdated?: number;
 }
 
 export interface CloudConfig {
   enabled: boolean;
   apiKey: string;
   binId: string;
-  url: string; 
+  url: string;
 }

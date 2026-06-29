@@ -68,9 +68,21 @@ const App: React.FC = () => {
     return (saved as View) || View.DASHBOARD;
   });
 
+  useEffect(() => {
+    localStorage.setItem("currentView", currentView);
+  }, [currentView]);
+
   // GLOBAL CONTEXT STATE
   const [currentUser, setCurrentUser] = useState<Member | null>(null);
-  const [activeChurch, setActiveChurch] = useState<Church>("CM");
+  const [activeChurch, setActiveChurch] = useState<Church>(() => {
+    const saved = localStorage.getItem("activeChurch");
+    return (saved as Church) || "CM";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("activeChurch", activeChurch);
+  }, [activeChurch]);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -82,6 +94,10 @@ const App: React.FC = () => {
     const savedState = localStorage.getItem("sidebarState");
     return savedState !== null ? JSON.parse(savedState) : true;
   });
+
+  useEffect(() => {
+    localStorage.setItem("sidebarState", JSON.stringify(isSidebarCollapsed));
+  }, [isSidebarCollapsed]);
 
   // Initial load & Session Restore
   useEffect(() => {
@@ -267,7 +283,7 @@ const App: React.FC = () => {
     normalizedName === "main admin";
   const isAdmin = currentUser.role === "ADMIN" || isSuperAdminUser;
 
-  const showOutreach = isSuperAdminUser;
+  const showOutreach = isSuperAdminUser || normalizedName.includes("maxeen");
   const showFinances = isSuperAdminUser;
   const showAnalytics = isSuperAdminUser;
   const showSettings = isSuperAdminUser;

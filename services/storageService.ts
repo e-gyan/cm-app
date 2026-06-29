@@ -318,7 +318,7 @@ export const initRealtimeSync = () => {
 
           // Notify app to re-render
           subscribers.forEach((cb) => cb());
-          window.dispatchEvent(new CustomEvent('dataUpdated'));
+          window.dispatchEvent(new CustomEvent("dataUpdated"));
           console.log("Realtime sync updated local data");
         }
       }
@@ -705,6 +705,18 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
             return; // Move to next member
           }
         }
+        
+        // Proactive: 2 Consecutive
+        if (sortedAttendance.length >= 2) {
+          const last2 = sortedAttendance.slice(0, 2);
+          if (last2.every((r) => r.presentMemberIds.includes(member.id))) {
+            const msg = `${member.name} is 1 visit away from becoming active FNF! (Streak started ${last2[1].date})`;
+            if (!inMemoryData.notifications.some((n) => n.relatedMemberId === member.id && n.message === msg)) {
+              addNotification("STATUS_CHANGE", msg, churchId, member.id);
+              isDirty = true;
+            }
+          }
+        }
       }
       // Regular Member Reactivation: 4 Consecutive
       else if (sortedAttendance.length >= 4) {
@@ -724,6 +736,23 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
           );
           isDirty = true;
           return;
+        }
+      }
+      
+      if (
+        member.type === MemberType.INCONSISTENT ||
+        member.type === MemberType.MEMBER
+      ) {
+        // Proactive Reactivation: 3 Consecutive
+        if (sortedAttendance.length >= 3) {
+          const last3 = sortedAttendance.slice(0, 3);
+          if (last3.every((r) => r.presentMemberIds.includes(member.id))) {
+            const msg = `${member.name} is 1 visit away from reactivation! (Streak started ${last3[2].date})`;
+            if (!inMemoryData.notifications.some((n) => n.relatedMemberId === member.id && n.message === msg)) {
+              addNotification("STATUS_CHANGE", msg, churchId, member.id);
+              isDirty = true;
+            }
+          }
         }
       }
     }
@@ -749,6 +778,18 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
           );
           isDirty = true;
           return;
+        }
+      }
+      
+      // Proactive Promotion: 6 Consecutive
+      if (sortedAttendance.length >= 6) {
+        const last6 = sortedAttendance.slice(0, 6);
+        if (last6.every((r) => r.presentMemberIds.includes(member.id))) {
+          const msg = `${member.name} is 1 visit away from Full Member promotion! (Streak started ${last6[5].date})`;
+          if (!inMemoryData.notifications.some((n) => n.relatedMemberId === member.id && n.message === msg)) {
+            addNotification("PROMOTION", msg, churchId, member.id);
+            isDirty = true;
+          }
         }
       }
     }
@@ -779,6 +820,24 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
               member.id,
             );
             isDirty = true;
+            return;
+          }
+        }
+      }
+      
+      // Proactive Deactivation: 6 Consecutive Absences
+      if (sortedAttendance.length >= 6) {
+        const last6 = sortedAttendance.slice(0, 6);
+        const joinedDate = new Date(member.joinedDate);
+        const oldestInWindow = new Date(last6[last6.length - 1].date);
+        
+        if (joinedDate <= oldestInWindow) {
+          if (last6.every((r) => !r.presentMemberIds.includes(member.id))) {
+            const msg = `${member.name} is at risk of being marked Not Active (6 consecutive absences since ${last6[5].date}).`;
+            if (!inMemoryData.notifications.some((n) => n.relatedMemberId === member.id && n.message === msg)) {
+              addNotification("STATUS_CHANGE", msg, churchId, member.id);
+              isDirty = true;
+            }
           }
         }
       }
