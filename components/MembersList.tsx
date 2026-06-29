@@ -66,6 +66,7 @@ interface MembersListProps {
   onUpdate: () => void;
   activeChurch: Church;
   currentUser: Member;
+  activeBranchId: string;
 }
 
 const MembersList: React.FC<MembersListProps> = ({
@@ -73,8 +74,11 @@ const MembersList: React.FC<MembersListProps> = ({
   onUpdate,
   activeChurch,
   currentUser,
+  activeBranchId,
 }) => {
-  const isAdmin = currentUser.role === "ADMIN";
+  const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
+    currentUser.role || "",
+  );
   const isTeacher = currentUser.role === "TEACHER";
 
   // Teachers can edit if they are viewing their own church
@@ -147,6 +151,8 @@ const MembersList: React.FC<MembersListProps> = ({
     parentPhone: "",
     address: "",
     gpsCoordinates: "",
+    branchId: activeBranchId === "ALL" ? "" : activeBranchId,
+    zoneId: currentUser.zoneId || "",
   });
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -165,6 +171,8 @@ const MembersList: React.FC<MembersListProps> = ({
       parentPhone: member.parentPhone || "",
       address: member.address || "",
       gpsCoordinates: member.gpsCoordinates || "",
+      branchId: member.branchId || "",
+      zoneId: member.zoneId || "",
     });
     setIsEditModalOpen(true);
   };
@@ -184,6 +192,8 @@ const MembersList: React.FC<MembersListProps> = ({
       parentPhone: "",
       address: "",
       gpsCoordinates: "",
+      branchId: activeBranchId === "ALL" ? "" : activeBranchId,
+      zoneId: currentUser.zoneId || "",
     });
     setIsCreateModalOpen(true);
   };
@@ -1445,12 +1455,70 @@ const MembersList: React.FC<MembersListProps> = ({
                   <option value="TEACHER">Teacher</option>
                   <option value="ADMIN">Admin</option>
                   <option value="NONE">None</option>
+                  {currentUser.role === "SUPER_ADMIN" && (
+                    <>
+                      <option value="ZONAL_HEAD">Zone Head</option>
+                      <option value="SUPER_ADMIN">
+                        CMD Head (Super Admin)
+                      </option>
+                    </>
+                  )}
                 </select>
                 <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                   <ChevronDown size={16} className="text-indigo-400" />
                 </div>
               </div>
             </div>
+
+            {/* Conditional Branch/Zone selector */}
+            {(formData.role === "TEACHER" || formData.role === "ADMIN") &&
+              (currentUser.role === "SUPER_ADMIN" ||
+                currentUser.role === "ZONAL_HEAD") && (
+                <div className="mt-4">
+                  <label className="block text-xs font-bold text-indigo-700/70 mb-1.5 ml-1">
+                    Assign to Branch
+                  </label>
+                  <select
+                    className="w-full p-3 bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all font-medium text-indigo-900"
+                    value={formData.branchId || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, branchId: e.target.value })
+                    }
+                  >
+                    <option value="">Select Branch...</option>
+                    {data.settings.organization?.zones
+                      ?.flatMap((z) => z.branches || [])
+                      .map((b) => (
+                        <option key={b.id || b.name} value={b.id || b.name}>
+                          {b.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+            {formData.role === "ZONAL_HEAD" &&
+              currentUser.role === "SUPER_ADMIN" && (
+                <div className="mt-4">
+                  <label className="block text-xs font-bold text-indigo-700/70 mb-1.5 ml-1">
+                    Assign to Zone
+                  </label>
+                  <select
+                    className="w-full p-3 bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all font-medium text-indigo-900"
+                    value={formData.zoneId || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, zoneId: e.target.value })
+                    }
+                  >
+                    <option value="">Select Zone...</option>
+                    {data.settings.organization?.zones?.map((z) => (
+                      <option key={z.id || z.name} value={z.id || z.name}>
+                        {z.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
           </div>
           <div className="pt-2">
             <label className="flex items-center gap-3 p-3 bg-white rounded-xl border border-indigo-200 cursor-pointer hover:bg-indigo-100/50 transition-colors">

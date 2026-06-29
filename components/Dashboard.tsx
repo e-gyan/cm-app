@@ -1097,7 +1097,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   activeChurch,
   currentUser,
 }) => {
-  const isAdmin = currentUser.role === "ADMIN";
+  const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
+    currentUser.role || "",
+  );
   const showAdminView = isAdmin && activeChurch === "CM";
 
   return (

@@ -35,6 +35,12 @@ const SESSION_KEY = "UJ_CHURCH_SESSION_V1";
 const LOGIN_ATTEMPTS_KEY = "UJ_LOGIN_ATTEMPTS";
 const CLOUD_CONFIG_KEY = "UJ_CLOUD_CONFIG_V1";
 
+let currentBranchId: string | undefined = undefined;
+
+export const setStorageBranchId = (branchId: string) => {
+  currentBranchId = branchId;
+};
+
 // --- DATA LOADING & MIGRATION ---
 const loadData = (): AppData => {
   try {
@@ -534,6 +540,7 @@ export const addMember = (
     status,
     birthDate,
     assignedChurch,
+    branchId: currentBranchId && currentBranchId !== "ALL" ? currentBranchId : undefined,
     role: "NONE",
     isAccessActive: false,
   };
@@ -896,6 +903,7 @@ export const checkBirthdaysAndTeens = () => {
           message: `It's ${m.name}'s birthday today!`,
           createdAt: today.toISOString(),
           targetChurch: m.assignedChurch,
+          branchId: m.branchId,
           relatedMemberId: m.id,
           isRead: false,
         });
@@ -920,6 +928,7 @@ export const checkBirthdaysAndTeens = () => {
           message: `${m.name} is 13. Transition to Youth?`,
           createdAt: today.toISOString(),
           targetChurch: m.assignedChurch,
+          branchId: m.branchId,
           relatedMemberId: m.id,
           isRead: false,
         });
@@ -963,6 +972,7 @@ export const addTransaction = (txn: Partial<Transaction>) => {
     category: txn.category,
     description: txn.description || "",
     churchId: txn.churchId || "UJ",
+    branchId: currentBranchId && currentBranchId !== "ALL" ? currentBranchId : undefined,
     recordedBy: txn.recordedBy || "System",
   };
   if (!inMemoryData.transactions) inMemoryData.transactions = [];
@@ -1007,11 +1017,12 @@ export const saveAttendance = (
   eventName?: string,
 ) => {
   const existingIndex = inMemoryData.attendance.findIndex(
-    (r) => r.date === date && r.churchId === churchId,
+    (r) => r.date === date && r.churchId === churchId && r.branchId === (currentBranchId && currentBranchId !== "ALL" ? currentBranchId : undefined),
   );
   const record: AttendanceRecord = {
     date,
     churchId,
+    branchId: currentBranchId && currentBranchId !== "ALL" ? currentBranchId : undefined,
     presentMemberIds: presentIds,
     punctualMemberIds: punctualIds,
     serviceMap: serviceMap, // Persist the service map
@@ -1174,6 +1185,7 @@ export const generateOutreachSchedule = (
         assignedMemberIds: group,
         visitedMemberIds: [],
         status: "PENDING",
+        branchId: currentBranchId && currentBranchId !== "ALL" ? currentBranchId : undefined,
       });
     }
     dateIndex++;
@@ -1349,6 +1361,7 @@ export const generatePrayerSchedule = (
         assignedMemberIds: Array.from(dailyIds),
         isCompleted: false,
         durationMins: 30,
+        branchId: currentBranchId && currentBranchId !== "ALL" ? currentBranchId : undefined,
       });
       generatedCount++;
     }

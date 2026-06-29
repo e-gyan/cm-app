@@ -48,7 +48,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   activeChurch,
   currentUser,
 }) => {
-  const isAdmin = currentUser.role === "ADMIN";
+  const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
+    currentUser.role || "",
+  );
   const availableChurches = data.settings.churches;
 
   // State

@@ -9,6 +9,7 @@ import {
   clearAllNotifications,
   subscribeToDataChanges,
   initRealtimeSync,
+  setStorageBranchId,
 } from "./services/storageService";
 import { AppData, Church, Member, Role, Notification } from "./types";
 import Dashboard from "./components/Dashboard";
@@ -20,6 +21,7 @@ import OutreachHub from "./components/OutreachHub";
 import AnalyticsHub from "./components/AnalyticsHub";
 import Settings from "./components/Settings"; // New Import
 import Login from "./components/Login";
+import { applyTheme } from "./lib/theme";
 import {
   LayoutDashboard,
   CalendarCheck,
@@ -80,10 +82,18 @@ const App: React.FC = () => {
     const saved = localStorage.getItem("activeChurch");
     return (saved as Church) || "CM";
   });
+  const [activeBranchId, setActiveBranchId] = useState<string>(() => {
+    return localStorage.getItem("activeBranchId") || "";
+  });
 
   useEffect(() => {
     localStorage.setItem("activeChurch", activeChurch);
   }, [activeChurch]);
+
+  useEffect(() => {
+    localStorage.setItem("activeBranchId", activeBranchId);
+    setStorageBranchId(activeBranchId);
+  }, [activeBranchId]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -138,6 +148,11 @@ const App: React.FC = () => {
   });
 
   useEffect(() => {
+    const colorName = data.settings.themeColors?.[activeChurch] || "indigo";
+    applyTheme(colorName);
+  }, [activeChurch, data.settings.themeColors]);
+
+  useEffect(() => {
     localStorage.setItem("sidebarState", JSON.stringify(isSidebarCollapsed));
   }, [isSidebarCollapsed]);
 
@@ -153,6 +168,9 @@ const App: React.FC = () => {
       const savedUser = restoreSession();
       if (savedUser) {
         setCurrentUser(savedUser);
+        if (savedUser.branchId) {
+          setActiveBranchId(savedUser.branchId);
+        }
         if (savedUser.role === "TEACHER") {
           setActiveChurch(savedUser.assignedChurch);
         } else if (savedUser.role === "ADMIN") {
@@ -249,14 +267,31 @@ const App: React.FC = () => {
 
   const refreshData = () => {
     const raw = getAppData();
+
+    // Only admins or zone heads can see settings/users for all branches, but for standard operation
+    // we filter the application data to the currently active branch.
+    const branchFilter = (item: any) =>
+      !activeBranchId ||
+      activeBranchId === "ALL" ||
+      item.branchId === activeBranchId ||
+      !item.branchId;
+
     setData({
       ...raw,
-      members: raw.members ? [...raw.members] : [],
-      attendance: raw.attendance ? [...raw.attendance] : [],
-      transactions: raw.transactions ? [...raw.transactions] : [],
-      notifications: raw.notifications ? [...raw.notifications] : [],
-      outreachSessions: raw.outreachSessions ? [...raw.outreachSessions] : [],
-      prayerSchedule: raw.prayerSchedule ? [...raw.prayerSchedule] : [],
+      members: raw.members ? raw.members.filter(branchFilter) : [],
+      attendance: raw.attendance ? raw.attendance.filter(branchFilter) : [],
+      transactions: raw.transactions
+        ? raw.transactions.filter(branchFilter)
+        : [],
+      notifications: raw.notifications
+        ? raw.notifications.filter(branchFilter)
+        : [],
+      outreachSessions: raw.outreachSessions
+        ? raw.outreachSessions.filter(branchFilter)
+        : [],
+      prayerSchedule: raw.prayerSchedule
+        ? raw.prayerSchedule.filter(branchFilter)
+        : [],
     });
   };
 
@@ -278,6 +313,9 @@ const App: React.FC = () => {
 
   const handleLogin = (user: Member) => {
     setCurrentUser(user);
+    if (user.branchId) {
+      setActiveBranchId(user.branchId);
+    }
     if (user.role === "TEACHER") {
       setActiveChurch(user.assignedChurch);
     } else {
@@ -486,15 +524,7 @@ const App: React.FC = () => {
             <div
               className={`
                 w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shrink-0 shadow-md transition-colors duration-300
-                ${
-                  activeChurch === "UJ"
-                    ? "bg-indigo-600 shadow-indigo-200"
-                    : activeChurch === "I"
-                      ? "bg-emerald-500 shadow-emerald-200"
-                      : activeChurch === "K"
-                        ? "bg-rose-500 shadow-rose-200"
-                        : "bg-amber-500 shadow-amber-200"
-                }
+                bg-indigo-600 shadow-indigo-200
             `}
             >
               {activeChurch.substring(0, 2)}
@@ -627,15 +657,7 @@ const App: React.FC = () => {
             <div
               className={`
                     w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-sm
-                    ${
-                      activeChurch === "UJ"
-                        ? "bg-indigo-600"
-                        : activeChurch === "I"
-                          ? "bg-emerald-500"
-                          : activeChurch === "K"
-                            ? "bg-rose-500"
-                            : "bg-amber-500"
-                    }
+                    bg-indigo-600
                  `}
             >
               {activeChurch.substring(0, 2)}
@@ -687,8 +709,49 @@ const App: React.FC = () => {
             {/* Desktop Header */}
             <div className="hidden md:flex items-end justify-between pb-2">
               <div>
-                <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+                <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
                   {currentView}
+
+                  {/* Branch Switcher for Admins */}
+                  {(currentUser.role === "SUPER_ADMIN" ||
+                    currentUser.role === "ZONAL_HEAD" ||
+                    currentUser.role === "ADMIN") &&
+                    data.settings.organization?.zones && (
+                      <div className="ml-4 flex items-center">
+                        <select
+                          value={activeBranchId}
+                          onChange={(e) => setActiveBranchId(e.target.value)}
+                          className="text-sm font-bold bg-slate-100 border-none rounded-xl px-4 py-2 text-slate-700 outline-none hover:bg-slate-200 cursor-pointer"
+                        >
+                          {(currentUser.role === "SUPER_ADMIN" ||
+                            currentUser.role === "ZONAL_HEAD") && (
+                            <option value="ALL">All Branches</option>
+                          )}
+                          {data.settings.organization.zones
+                            .filter(
+                              (z) =>
+                                currentUser.role === "SUPER_ADMIN" ||
+                                !currentUser.zoneId ||
+                                z.id === currentUser.zoneId,
+                            )
+                            .flatMap((z) => z.branches || [])
+                            .filter(
+                              (b) =>
+                                currentUser.role !== "ADMIN" ||
+                                !currentUser.branchId ||
+                                b.id === currentUser.branchId,
+                            )
+                            .map((b) => (
+                              <option
+                                key={b.id || b.name}
+                                value={b.id || b.name}
+                              >
+                                {b.name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    )}
                 </h2>
                 <p className="text-slate-500 mt-1 font-medium">
                   Managing ministry activities for{" "}
@@ -781,6 +844,7 @@ const App: React.FC = () => {
                   onUpdate={refreshData}
                   activeChurch={activeChurch}
                   currentUser={currentUser}
+                  activeBranchId={activeBranchId}
                 />
               </div>
               {showAnalytics && (
@@ -846,6 +910,7 @@ const App: React.FC = () => {
                     data={data}
                     onUpdate={refreshData}
                     currentUser={currentUser}
+                    activeChurch={activeChurch}
                   />
                 </div>
               )}

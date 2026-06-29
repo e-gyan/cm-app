@@ -38,6 +38,8 @@ export interface Member {
   status: MemberStatus;
   birthDate?: string; // ISO Date string (DD/MM/YYYY)
   assignedChurch: Church;
+  branchId?: string;
+  zoneId?: string;
   // Auth Fields
   role?: Role;
   passcode?: string;
@@ -67,6 +69,7 @@ export interface AttendanceRecord {
   eventName?: string; // Name of the special event if serviceType is SPECIAL
   notes?: string;
   churchId: Church;
+  branchId?: string;
 }
 
 export interface Transaction {
@@ -77,6 +80,7 @@ export interface Transaction {
   category: string;
   description: string;
   churchId: Church;
+  branchId?: string;
   recordedBy?: string;
 }
 
@@ -89,6 +93,7 @@ export interface Notification {
   message: string;
   createdAt: string; // ISO Date
   targetChurch: Church; // The church staff who should see this
+  branchId?: string;
   relatedMemberId?: string;
   isRead: boolean;
 }
@@ -106,6 +111,7 @@ export interface OutreachSession {
   status: "PENDING" | "COMPLETED" | "CANCELLED";
   notes?: string;
   completedBy?: string;
+  branchId?: string;
 }
 
 export interface PrayerSlot {
@@ -115,15 +121,19 @@ export interface PrayerSlot {
   assignedMemberIds: string[]; // Who we are praying for
   isCompleted: boolean;
   durationMins: number; // Default 30
+  branchId?: string;
 }
 
 export interface AppSettings {
   churches: string[]; // Dynamic list of active branches (used as flat list)
+  themeColors?: Record<string, string>; // Map of church name to color name (e.g. 'UJ' -> 'indigo')
   organization?: {
     directorate: string; // e.g. "Main CM Directorate"
     zones: {
+      id: string;
       name: string; // e.g. "Zone A"
       branches: {
+        id: string;
         name: string; // e.g. "Branch 1"
         churches: string[]; // e.g. ['I', 'K', 'LJ', 'UJ']
       }[];
