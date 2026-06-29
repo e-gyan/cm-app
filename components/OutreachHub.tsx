@@ -2188,12 +2188,13 @@ const CollapsibleSection = ({
     indigo: "text-indigo-600 bg-indigo-50/50",
     amber: "text-amber-600 bg-amber-50/50",
     green: "text-green-600 bg-green-50/50",
+    teal: "text-teal-600 bg-teal-50/50",
   };
 
   return (
     <div className="border border-slate-100 rounded-2xl bg-white overflow-hidden shadow-sm">
       <div
-        className={`w-full flex items-center justify-between p-4 transition-colors ${isOpen ? colorClasses[color] : "bg-white hover:bg-slate-50"}`}
+        className={`w-full flex items-center justify-between p-4 transition-colors ${isOpen ? colorClasses[color] || "text-indigo-600 bg-indigo-50/50" : "bg-white hover:bg-slate-50"}`}
       >
         <div
           onClick={() => setIsOpen(!isOpen)}
@@ -2377,6 +2378,7 @@ const CollapsibleProgressSection = ({
     indigo: "text-indigo-600 bg-indigo-50 border-indigo-100",
     amber: "text-amber-600 bg-amber-50 border-amber-100",
     rose: "text-rose-600 bg-rose-50 border-rose-100",
+    teal: "text-teal-600 bg-teal-50 border-teal-100",
   };
 
   return (
@@ -2387,7 +2389,7 @@ const CollapsibleProgressSection = ({
       >
         <div className="flex items-center gap-3">
           <div
-            className={`p-2 rounded-xl ${colorClasses[color].replace("border-indigo-100", "")}`}
+            className={`p-2 rounded-xl ${(colorClasses[color] || "text-indigo-600 bg-indigo-50 border-indigo-100").replace("border-indigo-100", "")}`}
           >
             <Icon size={18} />
           </div>
@@ -2478,6 +2480,7 @@ const CollapsibleContactSection = ({
     indigo: "text-indigo-600 bg-indigo-50 border-indigo-100",
     amber: "text-amber-600 bg-amber-50 border-amber-100",
     rose: "text-rose-600 bg-rose-50 border-rose-100",
+    teal: "text-teal-600 bg-teal-50 border-teal-100",
   };
 
   return (

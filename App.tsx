@@ -95,10 +95,12 @@ const App: React.FC = () => {
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
+      sessionStorage.setItem("userExitedFullscreen", "false");
       document.documentElement.requestFullscreen().catch((err) => {
         console.error(`Error attempting to enable fullscreen: ${err.message}`);
       });
     } else {
+      sessionStorage.setItem("userExitedFullscreen", "true");
       document.exitFullscreen().catch((err) => {
         console.error(`Error attempting to disable fullscreen: ${err.message}`);
       });
@@ -111,11 +113,12 @@ const App: React.FC = () => {
     };
 
     const enterFullscreen = () => {
-      if (!document.fullscreenElement) {
+      if (
+        !document.fullscreenElement &&
+        sessionStorage.getItem("userExitedFullscreen") !== "true"
+      ) {
         document.documentElement.requestFullscreen().catch(() => {});
       }
-      document.removeEventListener("click", enterFullscreen);
-      document.removeEventListener("touchstart", enterFullscreen);
     };
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -143,27 +146,10 @@ const App: React.FC = () => {
     let unsubscribeRealtime: (() => void) | undefined;
 
     const init = async () => {
+      // 1. Load local cache immediately to avoid any startup delay
       await initializeRepository();
-
-      // Start streaming real-time updates
-      unsubscribeRealtime = initRealtimeSync();
-
-      try {
-        const result = await syncFromCloud();
-        if (!result.success) {
-          setSyncError("Cloud connection failed. Using local data.");
-          setSyncStatus("Offline Mode");
-        } else {
-          setLastSynced(new Date());
-          setSyncStatus("Cloud Synced");
-        }
-      } catch (e) {
-        console.warn("Initial cloud sync failed", e);
-        setSyncError("Network error. Using local data.");
-        setSyncStatus("Sync Error");
-      }
-
       refreshData();
+
       const savedUser = restoreSession();
       if (savedUser) {
         setCurrentUser(savedUser);
@@ -174,6 +160,28 @@ const App: React.FC = () => {
         }
       }
       setIsLoading(false);
+
+      // 2. Start streaming and background syncing in parallel
+      try {
+        unsubscribeRealtime = initRealtimeSync();
+      } catch (e) {
+        console.warn("Realtime sync listener failed to initialize", e);
+      }
+
+      syncFromCloud()
+        .then((result) => {
+          if (result && result.success) {
+            refreshData();
+            setLastSynced(new Date());
+            setSyncStatus("Cloud Synced");
+          } else {
+            setSyncStatus("Offline Mode");
+          }
+        })
+        .catch((e) => {
+          console.warn("Background initial cloud sync failed", e);
+          setSyncStatus("Sync Error");
+        });
     };
 
     init();
@@ -247,7 +255,7 @@ const App: React.FC = () => {
     setIsSyncing(true);
     setSyncError(null);
     setSyncStatus("Syncing...");
-    const result = await syncFromCloud();
+    const result = await syncFromCloud(true);
     if (result.success) {
       refreshData();
       setLastSynced(new Date());
