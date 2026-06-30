@@ -105,7 +105,7 @@ const loadData = (): AppData => {
         (m.role === "ADMIN" || m.role === "TEACHER" || m.role === "ZONAL_HEAD")
       ) {
         m.assignedChurch = "CM";
-        m.type = MemberType.STAFF;
+        m.type = MemberType.TEACHER;
         m.role = "ZONAL_HEAD";
         m.zoneId = "zone-thesaurus";
       }
@@ -115,9 +115,9 @@ const loadData = (): AppData => {
     const ensureAdmin = (
       id: string,
       name: string,
-      church: string,
-      role: string = "ADMIN",
-      type: string = MemberType.TEACHER,
+      church: Church,
+      role: Role = "ADMIN",
+      type: MemberType = MemberType.TEACHER,
       zoneId?: string,
     ) => {
       const exists = parsed.members.some(
@@ -147,14 +147,14 @@ const loadData = (): AppData => {
       "Main Admin",
       "CM",
       "SUPER_ADMIN",
-      MemberType.STAFF,
+      MemberType.TEACHER,
     );
     ensureAdmin(
       "super-admin-2",
       "Emmanuel Gyan",
       "CM",
       "SUPER_ADMIN",
-      MemberType.STAFF,
+      MemberType.TEACHER,
     );
     ensureAdmin("admin-faith", "Faith Afriyie", "UJ");
     ensureAdmin(
@@ -162,7 +162,7 @@ const loadData = (): AppData => {
       "Nana Esi",
       "CM",
       "ZONAL_HEAD",
-      MemberType.STAFF,
+      MemberType.TEACHER,
       "zone-thesaurus",
     );
 
@@ -223,7 +223,8 @@ export const syncToCloud = async (immediate = false): Promise<void> => {
     try {
       const docRef = doc(db, "appData", "main");
       // Use the monolithic appData block to replace the single JSONbin.
-      await setDoc(docRef, inMemoryData);
+      // Firebase setDoc does not support undefined values, so we stringify/parse to strip them.
+      await setDoc(docRef, JSON.parse(JSON.stringify(inMemoryData)));
       console.log("Data synced to Firebase successfully.");
     } catch (e: any) {
       console.warn(`Failed to sync to Firebase: ${e.message}`);
@@ -622,6 +623,15 @@ export const bulkArchiveMembers = (ids: string[]) => {
   if (hasChanges) {
     isDirty = true;
     persistData("DEBOUNCE");
+  }
+};
+
+export const bulkDeleteMembers = (ids: string[]) => {
+  const initialLength = inMemoryData.members.length;
+  inMemoryData.members = inMemoryData.members.filter((m) => !ids.includes(m.id));
+  if (inMemoryData.members.length !== initialLength) {
+    isDirty = true;
+    persistData("IMMEDIATE");
   }
 };
 const calculateAge = (birthDate: string) => {

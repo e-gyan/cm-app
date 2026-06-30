@@ -46,6 +46,7 @@ import {
 import {
   updateMember,
   bulkArchiveMembers,
+  bulkDeleteMembers,
   addMember,
   deleteMember,
 } from "../services/storageService";
@@ -130,12 +131,19 @@ const MembersList: React.FC<MembersListProps> = ({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [memberToArchive, setMemberToArchive] = useState<Member | null>(null);
+  const [memberToDelete, setMemberToDelete] = useState<Member | null>(null);
   const [isBulkArchiveConfirming, setIsBulkArchiveConfirming] = useState(false);
+  const [isBulkDeleteConfirming, setIsBulkDeleteConfirming] = useState(false);
   const [transferMember, setTransferMember] = useState<Member | null>(null);
   const [transferTarget, setTransferTarget] = useState<Church | "">("");
 
   // HISTORY MODAL STATE
   const [historyMemberId, setHistoryMemberId] = useState<string | null>(null);
+
+  // BULK ADD STATE
+  const [isBulkAddModalOpen, setIsBulkAddModalOpen] = useState(false);
+  const [bulkNames, setBulkNames] = useState("");
+  const [isBulkAdding, setIsBulkAdding] = useState(false);
 
   // FORM DATA
   const [formData, setFormData] = useState<Partial<Member>>({
@@ -196,6 +204,41 @@ const MembersList: React.FC<MembersListProps> = ({
       zoneId: currentUser.zoneId || "",
     });
     setIsCreateModalOpen(true);
+  };
+
+  const handleBulkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bulkNames.trim()) return;
+
+    setIsBulkAdding(true);
+    const names = bulkNames
+      .split(/\r?\n|,/)
+      .map((n) => n.trim())
+      .filter((n) => n.length > 0);
+
+    let addedCount = 0;
+    for (const name of names) {
+      const newMember = addMember(
+        name,
+        MemberType.MEMBER,
+        activeChurch === "CM" ? "UJ" : activeChurch,
+        "",
+        MemberStatus.ACTIVE,
+      );
+      // Ensure branch and zone are attached
+      await updateMember({
+        ...newMember,
+        branchId: activeBranchId === "ALL" ? "" : activeBranchId,
+        zoneId: currentUser.zoneId || "",
+      });
+      addedCount++;
+    }
+
+    setIsBulkAdding(false);
+    setBulkNames("");
+    setIsBulkAddModalOpen(false);
+    onUpdate();
+    alert(`Successfully added ${addedCount} members.`);
   };
 
   const handleSave = async () => {
@@ -313,12 +356,13 @@ const MembersList: React.FC<MembersListProps> = ({
   };
 
   const handleDeletePermanent = (member: Member) => {
-    if (
-      window.confirm(
-        `WARNING: This will PERMANENTLY delete ${member.name} from the database. This cannot be undone. Are you sure?`,
-      )
-    ) {
-      deleteMember(member.id);
+    setMemberToDelete(member);
+  };
+
+  const confirmDeleteSingle = () => {
+    if (memberToDelete) {
+      deleteMember(memberToDelete.id);
+      setMemberToDelete(null);
       onUpdate();
     }
   };
@@ -349,6 +393,20 @@ const MembersList: React.FC<MembersListProps> = ({
       await bulkArchiveMembers(Array.from(selectedIds));
       setSelectedIds(new Set());
       setIsBulkArchiveConfirming(false);
+      onUpdate();
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.size === 0) return;
+    setIsBulkDeleteConfirming(true);
+  };
+
+  const confirmBulkDelete = () => {
+    if (selectedIds.size > 0) {
+      bulkDeleteMembers(Array.from(selectedIds));
+      setSelectedIds(new Set());
+      setIsBulkDeleteConfirming(false);
       onUpdate();
     }
   };
@@ -1547,30 +1605,40 @@ const MembersList: React.FC<MembersListProps> = ({
 
   return (
     <div className="space-y-6 relative pb-20">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-800">
             People Hub: {activeChurch}
           </h2>
           <p className="text-sm text-gray-500">Manage teachers and members.</p>
         </div>
-        <div className="flex bg-gray-100 p-1 rounded-xl">
-          <button
-            onClick={() => setHubTab("MEMBERS")}
-            className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${hubTab === "MEMBERS" ? "bg-white shadow-sm text-indigo-600" : "text-gray-500"}`}
-          >
-            <span className="flex items-center gap-2">
-              <User size={16} /> Members
-            </span>
-          </button>
-          <button
-            onClick={() => setHubTab("TEACHERS")}
-            className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${hubTab === "TEACHERS" ? "bg-white shadow-sm text-purple-600" : "text-gray-500"}`}
-          >
-            <span className="flex items-center gap-2">
-              <Briefcase size={16} /> Teachers
-            </span>
-          </button>
+        <div className="flex items-center gap-3">
+          {isAdmin && hubTab === "MEMBERS" && (
+            <button
+              onClick={() => setIsBulkAddModalOpen(true)}
+              className="px-4 py-2 text-sm font-bold bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg transition-colors flex items-center gap-2"
+            >
+              <Users size={16} /> Bulk Add
+            </button>
+          )}
+          <div className="flex bg-gray-100 p-1 rounded-xl">
+            <button
+              onClick={() => setHubTab("MEMBERS")}
+              className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${hubTab === "MEMBERS" ? "bg-white shadow-sm text-indigo-600" : "text-gray-500"}`}
+            >
+              <span className="flex items-center gap-2">
+                <User size={16} /> Members
+              </span>
+            </button>
+            <button
+              onClick={() => setHubTab("TEACHERS")}
+              className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${hubTab === "TEACHERS" ? "bg-white shadow-sm text-purple-600" : "text-gray-500"}`}
+            >
+              <span className="flex items-center gap-2">
+                <Briefcase size={16} /> Teachers
+              </span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1690,18 +1758,27 @@ const MembersList: React.FC<MembersListProps> = ({
         </div>
       </div>
 
-      {selectedIds.size > 0 && filter !== "ARCHIVED" && canManage && (
+      {selectedIds.size > 0 && canManage && (
         <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-4 w-[90%] md:w-auto justify-between md:justify-start animate-in fade-in slide-in-from-bottom-4">
           <span className="font-bold whitespace-nowrap">
             {selectedIds.size} selected
           </span>
           <div className="h-4 w-px bg-gray-700 hidden md:block"></div>
-          <button
-            onClick={handleBulkArchive}
-            className="flex items-center gap-2 hover:text-red-300 transition-colors font-medium text-red-200 whitespace-nowrap"
-          >
-            <Archive size={18} /> Bulk Archive
-          </button>
+          {filter !== "ARCHIVED" ? (
+            <button
+              onClick={handleBulkArchive}
+              className="flex items-center gap-2 hover:text-red-300 transition-colors font-medium text-red-200 whitespace-nowrap"
+            >
+              <Archive size={18} /> Bulk Archive
+            </button>
+          ) : (
+            <button
+              onClick={handleBulkDelete}
+              className="flex items-center gap-2 hover:text-red-300 transition-colors font-medium text-red-200 whitespace-nowrap"
+            >
+              <Trash2 size={18} /> Bulk Delete
+            </button>
+          )}
           <button
             onClick={() => setSelectedIds(new Set())}
             className="ml-2 p-1 hover:bg-gray-700 rounded-full transition-colors"
@@ -2120,6 +2197,44 @@ const MembersList: React.FC<MembersListProps> = ({
         </div>
       )}
 
+      {/* CONFIRMATION DIALOG - DELETE */}
+      {(memberToDelete || isBulkDeleteConfirming) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-100 text-red-600 mb-4 mx-auto">
+              <AlertCircle size={24} />
+            </div>
+            <h3 className="text-lg font-bold text-gray-800 text-center mb-2">
+              Confirm Deletion
+            </h3>
+            <p className="text-gray-500 text-center text-sm mb-6">
+              {memberToDelete
+                ? `WARNING: This will PERMANENTLY delete ${memberToDelete.name} from the database. This cannot be undone. Are you sure?`
+                : `WARNING: This will PERMANENTLY delete ${selectedIds.size} selected members. This cannot be undone. Are you sure?`}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setMemberToDelete(null);
+                  setIsBulkDeleteConfirming(false);
+                }}
+                className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={
+                  memberToDelete ? confirmDeleteSingle : confirmBulkDelete
+                }
+                className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-200"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TRANSFER MODAL */}
       {transferMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
@@ -2175,6 +2290,76 @@ const MembersList: React.FC<MembersListProps> = ({
                 Transfer
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* BULK ADD MODAL */}
+      {isBulkAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-100 text-indigo-600">
+                  <Users size={20} />
+                </div>
+                <h3 className="text-xl font-bold text-gray-800">
+                  Bulk Add Members
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsBulkAddModalOpen(false)}
+                className="text-gray-400 hover:text-gray-900 p-2 rounded-full hover:bg-gray-100 transition-colors"
+                disabled={isBulkAdding}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p className="text-gray-500 text-sm mb-4">
+              Paste a list of member names to add them in bulk. You can separate
+              names by new lines or commas. They will be added as ACTIVE members
+              to {activeChurch === "CM" ? "UJ" : activeChurch}.
+            </p>
+
+            <form
+              onSubmit={handleBulkSubmit}
+              className="flex-1 flex flex-col overflow-hidden min-h-0"
+            >
+              <textarea
+                value={bulkNames}
+                onChange={(e) => setBulkNames(e.target.value)}
+                placeholder="John Doe&#10;Jane Smith&#10;Michael Johnson"
+                className="w-full flex-1 p-4 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none resize-none font-medium min-h-[200px]"
+                disabled={isBulkAdding}
+              />
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsBulkAddModalOpen(false)}
+                  className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
+                  disabled={isBulkAdding}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!bulkNames.trim() || isBulkAdding}
+                  className="flex-[2] py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
+                >
+                  {isBulkAdding ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Save size={18} /> Add Members
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

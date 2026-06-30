@@ -68,7 +68,7 @@ export const INITIAL_MEMBERS: Member[] = [
   {
     id: "nana-esi-admin",
     name: "Nana Esi",
-    type: MemberType.STAFF,
+    type: MemberType.TEACHER,
     joinedDate: new Date().toISOString(),
     status: MemberStatus.ACTIVE,
     assignedChurch: "CM",
