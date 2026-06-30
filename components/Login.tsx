@@ -113,9 +113,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               <Sparkles className="text-white" size={24} />
             </div>
             <h1 className="text-4xl font-bold mb-4 tracking-tight">
-              Children's Ministry
+              Children's Ministry Directorate
               <br />
-              Attendance
+              Platform
             </h1>
             <p className="text-indigo-100 text-lg leading-relaxed opacity-90 font-medium">
               Seamlessly track attendance, manage members, and generate insights
@@ -124,7 +124,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           </div>
           <div className="flex justify-between items-center text-sm text-indigo-200 opacity-60">
             <span>
-              © {new Date().getFullYear()} CM System v{APP_VERSION}
+              © {new Date().getFullYear()} CMD Platform v{APP_VERSION}
             </span>
             <span className="flex items-center gap-1">
               <Cloud size={12} /> Connected

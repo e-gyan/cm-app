@@ -114,7 +114,11 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     (attendanceMode === "MEMBERS" &&
       (effectiveChurch === "UJ" || isCombinedView)) ||
     attendanceMode === "STAFF";
-  const sundays2026 = useMemo(() => getSundaysInYear(2026), []);
+  const currentYear = new Date().getFullYear();
+  const sundaysCurrentYear = useMemo(
+    () => getSundaysInYear(currentYear),
+    [currentYear],
+  );
 
   // Helper to determine which branches are relevant based on mode and filter
   const getRelevantBranches = (
@@ -130,22 +134,22 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     setPunctualIds(new Set());
     setServiceMap({});
 
-    if (sundays2026.length > 0) {
+    if (sundaysCurrentYear.length > 0) {
       if (!selectedDate) {
         const today = new Date();
         const dayOfWeek = today.getDay();
         const currentSunday = new Date(today);
         currentSunday.setDate(today.getDate() - dayOfWeek);
         const currentSundayStr = currentSunday.toISOString().split("T")[0];
-        const exists = sundays2026.some(
+        const exists = sundaysCurrentYear.some(
           (d) => d.toISOString().split("T")[0] === currentSundayStr,
         );
 
         if (exists) setSelectedDate(currentSundayStr);
-        else setSelectedDate(sundays2026[0].toISOString().split("T")[0]);
+        else setSelectedDate(sundaysCurrentYear[0].toISOString().split("T")[0]);
       }
     }
-  }, [sundays2026]);
+  }, [sundaysCurrentYear]);
 
   const getDraftKey = () =>
     `attendance_draft_${effectiveChurch}_${attendanceMode}_${selectedDate}`;
@@ -775,7 +779,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   onChange={(e) => setSelectedDate(e.target.value)}
                   className="bg-slate-50 border border-slate-200 text-slate-800 text-xs md:text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-9 p-3 appearance-none cursor-pointer truncate"
                 >
-                  {sundays2026.map((d) => {
+                  {sundaysCurrentYear.map((d) => {
                     const strDate = d.toISOString().split("T")[0];
                     const isToday =
                       strDate === new Date().toISOString().split("T")[0];

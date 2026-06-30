@@ -535,7 +535,9 @@ const App: React.FC = () => {
                   {activeChurch} Church
                 </h1>
                 <span className="text-xs text-slate-400 font-medium">
-                  Ministry System
+                  {activeBranchId && activeBranchId !== "ALL" 
+                    ? data.settings.organization?.zones?.flatMap(z => z.branches || []).find(b => b.id === activeBranchId || b.name === activeBranchId)?.name || "CMD Platform"
+                    : "CMD Platform"}
                 </span>
               </div>
             )}
@@ -667,7 +669,9 @@ const App: React.FC = () => {
                 {activeChurch} Church
               </h1>
               <p className="text-[10px] text-slate-500 font-medium">
-                Ministry System
+                {activeBranchId && activeBranchId !== "ALL" 
+                  ? data.settings.organization?.zones?.flatMap(z => z.branches || []).find(b => b.id === activeBranchId || b.name === activeBranchId)?.name || "CMD Platform"
+                  : "CMD Platform"}
               </p>
             </div>
           </div>

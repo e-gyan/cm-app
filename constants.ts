@@ -1,28 +1,51 @@
+import {
+  Member,
+  AttendanceRecord,
+  MemberType,
+  MemberStatus,
+  AppSettings,
+} from "./types";
 
-import { Member, AttendanceRecord, MemberType, MemberStatus, AppSettings } from './types';
-
-export const APP_VERSION = '1.7';
+export const APP_VERSION = "1.7";
 
 // SECURITY UPDATE: Using Environment Variables is recommended over hardcoding.
-const ENV_API_KEY = (import.meta as any).env?.VITE_API_KEY || '';
-const ENV_BIN_ID = (import.meta as any).env?.VITE_BIN_ID || '';
+const ENV_API_KEY = (import.meta as any).env?.VITE_API_KEY || "";
+const ENV_BIN_ID = (import.meta as any).env?.VITE_BIN_ID || "";
 
 export const DEFAULT_CLOUD_CONFIG = {
-    apiKey: ENV_API_KEY || '$2a$10$K5M6PsdqUpAmMJHp06t1PeEK2tabwlgLoFMHLo/yEWV5ndxGCMcRu', 
-    binId: ENV_BIN_ID || '6968447b43b1c97be9314e21'   
+  apiKey:
+    ENV_API_KEY ||
+    "$2a$10$K5M6PsdqUpAmMJHp06t1PeEK2tabwlgLoFMHLo/yEWV5ndxGCMcRu",
+  binId: ENV_BIN_ID || "6968447b43b1c97be9314e21",
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  churches: ['I', 'K', 'LJ', 'UJ'],
+  churches: ["I", "K", "LJ", "UJ"],
+  organization: {
+    directorate: "Central Directorate",
+    zones: [
+      {
+        id: "zone-thesaurus",
+        name: "Thesaurus Zone",
+        branches: [
+          {
+            id: "branch-thesaurus-hq",
+            name: "Thesaurus HQ",
+            churches: ["I", "K", "LJ", "UJ"],
+          },
+        ],
+      },
+    ],
+  },
   cloudConfig: {
     enabled: !!(DEFAULT_CLOUD_CONFIG.apiKey && DEFAULT_CLOUD_CONFIG.binId),
     apiKey: DEFAULT_CLOUD_CONFIG.apiKey,
-    binId: DEFAULT_CLOUD_CONFIG.binId
+    binId: DEFAULT_CLOUD_CONFIG.binId,
   },
   features: {
     punctuality: true,
-    outreach: true
-  }
+    outreach: true,
+  },
 };
 
 export const getSundaysInYear = (year: number) => {
@@ -41,6 +64,19 @@ export const getSundaysInYear = (year: number) => {
   return sundays;
 };
 
-export const INITIAL_MEMBERS: Member[] = []; 
+export const INITIAL_MEMBERS: Member[] = [
+  {
+    id: "nana-esi-admin",
+    name: "Nana Esi",
+    type: MemberType.STAFF,
+    joinedDate: new Date().toISOString(),
+    status: MemberStatus.ACTIVE,
+    assignedChurch: "CM",
+    role: "ZONAL_HEAD",
+    zoneId: "zone-thesaurus",
+    isAccessActive: true,
+    passcode: "1234",
+  },
+];
 
 export const INITIAL_ATTENDANCE: AttendanceRecord[] = [];

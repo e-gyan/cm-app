@@ -100,14 +100,26 @@ const loadData = (): AppData => {
         m.assignedChurch = "UJ";
         m.type = MemberType.TEACHER;
       }
-      if (n.includes("nana esi") && m.role === "ADMIN") {
-        m.assignedChurch = "I";
-        m.type = MemberType.TEACHER;
+      if (
+        n.includes("nana esi") &&
+        (m.role === "ADMIN" || m.role === "TEACHER" || m.role === "ZONAL_HEAD")
+      ) {
+        m.assignedChurch = "CM";
+        m.type = MemberType.STAFF;
+        m.role = "ZONAL_HEAD";
+        m.zoneId = "zone-thesaurus";
       }
     });
 
     // Check for required admins and add them if they don't exist
-    const ensureAdmin = (id: string, name: string, church: string) => {
+    const ensureAdmin = (
+      id: string,
+      name: string,
+      church: string,
+      role: string = "ADMIN",
+      type: string = MemberType.TEACHER,
+      zoneId?: string,
+    ) => {
       const exists = parsed.members.some(
         (m: any) => m.id === id || m.name.toLowerCase() === name.toLowerCase(),
       );
@@ -115,11 +127,12 @@ const loadData = (): AppData => {
         parsed.members.push({
           id: id,
           name: name,
-          type: MemberType.TEACHER,
+          type: type,
           joinedDate: new Date().toISOString(),
           status: MemberStatus.ACTIVE,
           assignedChurch: church,
-          role: "ADMIN",
+          role: role,
+          zoneId: zoneId,
           passcode: "2026", // Plaintext initially, will be hashed on auth
           isAccessActive: true,
         });
@@ -129,10 +142,29 @@ const loadData = (): AppData => {
       }
     };
 
-    ensureAdmin("auto-admin", "Main Admin", "CM");
-    ensureAdmin("super-admin-2", "Emmanuel Gyan", "CM");
+    ensureAdmin(
+      "auto-admin",
+      "Main Admin",
+      "CM",
+      "SUPER_ADMIN",
+      MemberType.STAFF,
+    );
+    ensureAdmin(
+      "super-admin-2",
+      "Emmanuel Gyan",
+      "CM",
+      "SUPER_ADMIN",
+      MemberType.STAFF,
+    );
     ensureAdmin("admin-faith", "Faith Afriyie", "UJ");
-    ensureAdmin("admin-nana", "Nana Esi", "I");
+    ensureAdmin(
+      "admin-nana",
+      "Nana Esi",
+      "CM",
+      "ZONAL_HEAD",
+      MemberType.STAFF,
+      "zone-thesaurus",
+    );
 
     // Async Migration Trigger (Fire and forget, will persist on next save)
     (async () => {
@@ -437,8 +469,9 @@ export const authenticateUser = async (
   const cleanName = sanitizeInput(name);
   const user = inMemoryData.members.find(
     (m) =>
-      (m.role === "ADMIN" || m.role === "TEACHER") &&
-      m.name.toLowerCase().trim() === cleanName.toLowerCase().trim(),
+      ["ADMIN", "TEACHER", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
+        m.role || "",
+      ) && m.name.toLowerCase().trim() === cleanName.toLowerCase().trim(),
   );
   if (!user) {
     return skipFailureRecord
@@ -540,7 +573,10 @@ export const addMember = (
     status,
     birthDate,
     assignedChurch,
-    branchId: currentBranchId && currentBranchId !== "ALL" ? currentBranchId : undefined,
+    branchId:
+      currentBranchId && currentBranchId !== "ALL"
+        ? currentBranchId
+        : undefined,
     role: "NONE",
     isAccessActive: false,
   };
@@ -972,7 +1008,10 @@ export const addTransaction = (txn: Partial<Transaction>) => {
     category: txn.category,
     description: txn.description || "",
     churchId: txn.churchId || "UJ",
-    branchId: currentBranchId && currentBranchId !== "ALL" ? currentBranchId : undefined,
+    branchId:
+      currentBranchId && currentBranchId !== "ALL"
+        ? currentBranchId
+        : undefined,
     recordedBy: txn.recordedBy || "System",
   };
   if (!inMemoryData.transactions) inMemoryData.transactions = [];
@@ -1017,12 +1056,21 @@ export const saveAttendance = (
   eventName?: string,
 ) => {
   const existingIndex = inMemoryData.attendance.findIndex(
-    (r) => r.date === date && r.churchId === churchId && r.branchId === (currentBranchId && currentBranchId !== "ALL" ? currentBranchId : undefined),
+    (r) =>
+      r.date === date &&
+      r.churchId === churchId &&
+      r.branchId ===
+        (currentBranchId && currentBranchId !== "ALL"
+          ? currentBranchId
+          : undefined),
   );
   const record: AttendanceRecord = {
     date,
     churchId,
-    branchId: currentBranchId && currentBranchId !== "ALL" ? currentBranchId : undefined,
+    branchId:
+      currentBranchId && currentBranchId !== "ALL"
+        ? currentBranchId
+        : undefined,
     presentMemberIds: presentIds,
     punctualMemberIds: punctualIds,
     serviceMap: serviceMap, // Persist the service map
@@ -1185,7 +1233,10 @@ export const generateOutreachSchedule = (
         assignedMemberIds: group,
         visitedMemberIds: [],
         status: "PENDING",
-        branchId: currentBranchId && currentBranchId !== "ALL" ? currentBranchId : undefined,
+        branchId:
+          currentBranchId && currentBranchId !== "ALL"
+            ? currentBranchId
+            : undefined,
       });
     }
     dateIndex++;
@@ -1361,7 +1412,10 @@ export const generatePrayerSchedule = (
         assignedMemberIds: Array.from(dailyIds),
         isCompleted: false,
         durationMins: 30,
-        branchId: currentBranchId && currentBranchId !== "ALL" ? currentBranchId : undefined,
+        branchId:
+          currentBranchId && currentBranchId !== "ALL"
+            ? currentBranchId
+            : undefined,
       });
       generatedCount++;
     }

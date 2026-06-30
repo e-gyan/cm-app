@@ -103,7 +103,8 @@ const ReportExport: React.FC<ReportExportProps> = ({
   const availableChurches = data.settings.churches;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const sundays2026 = getSundaysInYear(2026);
+  const currentYear = new Date().getFullYear();
+  const sundaysCurrentYear = getSundaysInYear(currentYear);
   const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
     currentUser.role || "",
   );
@@ -111,12 +112,14 @@ const ReportExport: React.FC<ReportExportProps> = ({
   // Get all unique dates from attendance records + Sundays
   const availableDates = useMemo(() => {
     const recordedDates = data.attendance.map((r) => r.date);
-    const sundayDates = sundays2026.map((d) => d.toISOString().split("T")[0]);
+    const sundayDates = sundaysCurrentYear.map(
+      (d) => d.toISOString().split("T")[0],
+    );
     const allDates = Array.from(new Set([...recordedDates, ...sundayDates]));
     return allDates.sort(
       (a, b) => new Date(b).getTime() - new Date(a).getTime(),
     );
-  }, [data.attendance, sundays2026]);
+  }, [data.attendance, sundaysCurrentYear]);
 
   useEffect(() => {
     if (!selectedDate && availableDates.length > 0) {
