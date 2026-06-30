@@ -195,6 +195,28 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     }
   };
 
+  const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
+    currentUser.role || "",
+  );
+  
+  const [filterChurch, setFilterChurch] = useState<string>("ALL");
+
+  const isMemberInActiveChurch = (m: Member) => {
+    // App-level logic
+    let appAllowed = true;
+    if (activeChurch !== "CM" && activeChurch !== "All") {
+      appAllowed = m.assignedChurch === activeChurch;
+    }
+    
+    // Admin filtering
+    let adminAllowed = true;
+    if (isAdmin) {
+      if (filterChurch !== "ALL" && m.assignedChurch !== filterChurch) adminAllowed = false;
+    }
+
+    return appAllowed && adminAllowed;
+  };
+
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [genMsg, setGenMsg] = useState<{
@@ -258,33 +280,31 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
     if (!hasSessionChanges && data.outreachSessions) {
       let filteredSessions = data.outreachSessions;
-      if (activeChurch !== "CM" && activeChurch !== "All") {
-        filteredSessions = data.outreachSessions.filter((s) => {
-          // Check if assigned members belong to activeChurch
-          const hasAssigned = s.assignedMemberIds.some((id) => {
-            const m = data.members.find((mem) => mem.id === id);
-            return m && m.assignedChurch === activeChurch;
-          });
-          if (hasAssigned) return true;
-
-          // Check if completedBy belongs to activeChurch
-          if (s.completedBy) {
-            const m = data.members.find((mem) => mem.id === s.completedBy);
-            if (m && m.assignedChurch === activeChurch) return true;
-          }
-
-          // Check if visited members belong to activeChurch
-          if (s.visitedMemberIds) {
-            const hasVisited = s.visitedMemberIds.some((id) => {
-              const m = data.members.find((mem) => mem.id === id);
-              return m && m.assignedChurch === activeChurch;
-            });
-            if (hasVisited) return true;
-          }
-
-          return false;
+      filteredSessions = data.outreachSessions.filter((s) => {
+        // Check if assigned members belong to activeChurch
+        const hasAssigned = s.assignedMemberIds.some((id) => {
+          const m = data.members.find((mem) => mem.id === id);
+          return m && isMemberInActiveChurch(m);
         });
-      }
+        if (hasAssigned) return true;
+
+        // Check if completedBy belongs to activeChurch
+        if (s.completedBy) {
+          const m = data.members.find((mem) => mem.id === s.completedBy);
+          if (m && isMemberInActiveChurch(m)) return true;
+        }
+
+        // Check if visited members belong to activeChurch
+        if (s.visitedMemberIds) {
+          const hasVisited = s.visitedMemberIds.some((id) => {
+            const m = data.members.find((mem) => mem.id === id);
+            return m && isMemberInActiveChurch(m);
+          });
+          if (hasVisited) return true;
+        }
+
+        return false;
+      });
       setLocalSessions(JSON.parse(JSON.stringify(filteredSessions)));
     }
 
@@ -296,15 +316,13 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
     if (!hasPrayerChanges && data.prayerSchedule) {
       let filteredPrayer = data.prayerSchedule;
-      if (activeChurch !== "CM" && activeChurch !== "All") {
-        filteredPrayer = data.prayerSchedule.filter((s) => {
-          const hasAssigned = s.assignedMemberIds.some((id) => {
-            const m = data.members.find((mem) => mem.id === id);
-            return m && m.assignedChurch === activeChurch;
-          });
-          return hasAssigned;
+      filteredPrayer = data.prayerSchedule.filter((s) => {
+        const hasAssigned = s.assignedMemberIds.some((id) => {
+          const m = data.members.find((mem) => mem.id === id);
+          return m && isMemberInActiveChurch(m);
         });
-      }
+        return hasAssigned;
+      });
       setLocalPrayerSlots(JSON.parse(JSON.stringify(filteredPrayer)));
     }
   }, [
@@ -312,12 +330,9 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     data.prayerSchedule,
     unsavedChanges.size,
     activeChurch,
+    filterChurch,
+    isAdmin,
   ]);
-
-  const isMemberInActiveChurch = (m: Member) => {
-    if (activeChurch === "CM" || activeChurch === "All") return true;
-    return m.assignedChurch === activeChurch;
-  };
 
   // --- AUTO GENERATION FOR CURRENT WEEK ---
   useEffect(() => {
@@ -857,7 +872,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
           ].includes(m.type),
       )
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [data.members]);
+  }, [data.members, activeChurch, filterChurch, isAdmin]);
 
   const handleTrackCall = (member: Member, method: "Call" | "SMS") => {
     setCallModal({ show: true, member, method });
@@ -916,6 +931,28 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
           <BarChart2 size={16} /> Progress
         </button>
       </div>
+
+      {isAdmin && (
+        <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col sm:flex-row gap-3">
+          <div className="flex-1">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block pl-2">
+              Church
+            </label>
+            <select
+              value={filterChurch}
+              onChange={(e) => setFilterChurch(e.target.value)}
+              className="w-full text-sm font-bold bg-slate-50 border-none rounded-xl px-4 py-2.5 text-slate-700 outline-none hover:bg-slate-100 cursor-pointer transition-colors"
+            >
+              <option value="ALL">All Churches</option>
+              {data.settings.churches.map((church) => (
+                <option key={church} value={church}>
+                  {church}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* VISIT TAB */}
       {activeTab === "VISIT" && (
@@ -2442,7 +2479,6 @@ const CollapsibleProgressSection = ({
   color,
 }: CollapsibleProgressSectionProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  if (members.length === 0) return null;
 
   const colorClasses: Record<string, string> = {
     indigo: "text-indigo-600 bg-indigo-50 border-indigo-100",
@@ -2476,8 +2512,13 @@ const CollapsibleProgressSection = ({
 
       {isOpen && (
         <div className="divide-y divide-slate-50">
-          {members.map((m: Member) => {
-            const stats = getMemberStats(m.id, data);
+          {members.length === 0 ? (
+            <div className="p-4 text-center text-xs text-slate-400 font-medium">
+              No members found in this category.
+            </div>
+          ) : (
+            members.map((m: Member) => {
+              const stats = getMemberStats(m.id, data);
             return (
               <div
                 key={m.id}
@@ -2521,7 +2562,7 @@ const CollapsibleProgressSection = ({
                 </div>
               </div>
             );
-          })}
+          }))}
         </div>
       )}
     </div>
@@ -2546,7 +2587,6 @@ const CollapsibleContactSection = ({
   onMessageClick,
 }: CollapsibleContactSectionProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  if (members.length === 0) return null;
 
   const colorClasses: Record<string, string> = {
     indigo: "text-indigo-600 bg-indigo-50 border-indigo-100",
@@ -2580,8 +2620,13 @@ const CollapsibleContactSection = ({
 
       {isOpen && (
         <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50/50">
-          {members.map((member: Member) => {
-            const phone = member.phone || member.parentPhone;
+          {members.length === 0 ? (
+            <div className="col-span-full p-4 text-center text-xs text-slate-400 font-medium">
+              No members found in this category.
+            </div>
+          ) : (
+            members.map((member: Member) => {
+              const phone = member.phone || member.parentPhone;
             const hasPhone = !!phone;
             const gps = member.gpsCoordinates;
             const address = member.address;
@@ -2644,7 +2689,7 @@ const CollapsibleContactSection = ({
                 </div>
               </div>
             );
-          })}
+          }))}
         </div>
       )}
     </div>

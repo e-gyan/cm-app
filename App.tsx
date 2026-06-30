@@ -93,6 +93,8 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem("activeBranchId", activeBranchId);
     setStorageBranchId(activeBranchId);
+    // When branch changes, we must refresh the data to re-filter it
+    refreshData();
   }, [activeBranchId]);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -740,13 +742,58 @@ const App: React.FC = () => {
 
         <div className="flex-1 overflow-y-auto p-4 md:p-10 scroll-smooth pb-24 md:pb-10">
           <div className="max-w-7xl mx-auto space-y-8">
+            
+            {/* Branch Switcher for Mobile (Admins) */}
+            <div className="md:hidden">
+              {(currentUser.role === "SUPER_ADMIN" ||
+                currentUser.role === "ZONAL_HEAD" ||
+                currentUser.role === "ADMIN") &&
+                data.settings.organization?.zones && (
+                  <div className="flex items-center bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-2 mr-3">Branch</label>
+                    <select
+                      value={activeBranchId}
+                      onChange={(e) => setActiveBranchId(e.target.value)}
+                      className="flex-1 text-sm font-bold bg-slate-50 border-none rounded-xl px-4 py-2 text-slate-700 outline-none hover:bg-slate-100 cursor-pointer"
+                    >
+                      {(currentUser.role === "SUPER_ADMIN" ||
+                        currentUser.role === "ZONAL_HEAD") && (
+                        <option value="ALL">All Branches</option>
+                      )}
+                      {data.settings.organization.zones
+                        .filter(
+                          (z) =>
+                            currentUser.role === "SUPER_ADMIN" ||
+                            !currentUser.zoneId ||
+                            z.id === currentUser.zoneId,
+                        )
+                        .flatMap((z) => z.branches || [])
+                        .filter(
+                          (b) =>
+                            currentUser.role !== "ADMIN" ||
+                            !currentUser.branchId ||
+                            b.id === currentUser.branchId,
+                        )
+                        .map((b) => (
+                          <option
+                            key={b.id || b.name}
+                            value={b.id || b.name}
+                          >
+                            {b.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+              )}
+            </div>
+
             {/* Desktop Header */}
             <div className="hidden md:flex items-end justify-between pb-2">
               <div>
                 <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
                   {currentView}
 
-                  {/* Branch Switcher for Admins */}
+                  {/* Branch Switcher for Admins (Desktop) */}
                   {(currentUser.role === "SUPER_ADMIN" ||
                     currentUser.role === "ZONAL_HEAD" ||
                     currentUser.role === "ADMIN") &&
