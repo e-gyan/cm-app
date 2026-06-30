@@ -176,6 +176,25 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     localStorage.setItem("outreach_activeTab", activeTab);
   }, [activeTab]);
 
+  const [messageTarget, setMessageTarget] = useState<Member | null>(null);
+  const handleMessageClick = (member: Member) => {
+    setMessageTarget(member);
+  };
+  const confirmMessageMethod = (method: "sms" | "whatsapp") => {
+    if (!messageTarget) return;
+    const phone = messageTarget.phone || messageTarget.parentPhone;
+    if (!phone) return;
+
+    handleTrackCall(messageTarget, "SMS");
+    setMessageTarget(null);
+
+    if (method === "sms") {
+      window.location.href = `sms:${phone}`;
+    } else {
+      window.open(`https://wa.me/${phone.replace(/[^\d+]/g, "")}`, "_blank");
+    }
+  };
+
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [genMsg, setGenMsg] = useState<{
@@ -1289,6 +1308,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             color="indigo"
             icon={User}
             onTrackCall={handleTrackCall}
+            onMessageClick={handleMessageClick}
           />
           <CollapsibleContactSection
             title="Friends & Family (FNF)"
@@ -1296,6 +1316,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             color="amber"
             icon={User}
             onTrackCall={handleTrackCall}
+            onMessageClick={handleMessageClick}
           />
           <CollapsibleContactSection
             title="Visitors"
@@ -1303,6 +1324,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             color="teal"
             icon={User}
             onTrackCall={handleTrackCall}
+            onMessageClick={handleMessageClick}
           />
           <CollapsibleContactSection
             title="Inconsistent"
@@ -1312,6 +1334,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             color="rose"
             icon={AlertCircle}
             onTrackCall={handleTrackCall}
+            onMessageClick={handleMessageClick}
           />
         </div>
       )}
@@ -1896,6 +1919,52 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             </button>
           </div>
         )}
+
+      {/* MESSAGE OPTION MODAL */}
+      {messageTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col animate-in zoom-in-95">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-bold text-lg text-slate-800">
+                Message {messageTarget.name.split(" ")[0]}
+              </h3>
+              <button
+                onClick={() => setMessageTarget(null)}
+                className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <p className="text-slate-500 text-sm mb-6 text-center">
+              How would you like to reach out?
+              <br/>
+              <span className="font-bold text-slate-700">{messageTarget.phone || messageTarget.parentPhone}</span>
+            </p>
+
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => confirmMessageMethod("whatsapp")}
+                className="flex items-center justify-center gap-2 w-full p-4 bg-green-50 hover:bg-green-100 text-green-700 rounded-2xl transition-colors font-bold"
+              >
+                <MessageSquare size={18} /> WhatsApp
+              </button>
+              <button
+                onClick={() => confirmMessageMethod("sms")}
+                className="flex items-center justify-center gap-2 w-full p-4 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-2xl transition-colors font-bold"
+              >
+                <MessageSquare size={18} /> SMS
+              </button>
+              <button
+                onClick={() => setMessageTarget(null)}
+                className="mt-2 text-slate-500 text-sm font-medium hover:text-slate-700 py-2"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -2465,6 +2534,7 @@ interface CollapsibleContactSectionProps {
   icon: React.ElementType;
   color: string;
   onTrackCall?: (member: Member, method: "Call" | "SMS") => void;
+  onMessageClick?: (member: Member) => void;
 }
 
 const CollapsibleContactSection = ({
@@ -2473,6 +2543,7 @@ const CollapsibleContactSection = ({
   icon: Icon,
   color,
   onTrackCall,
+  onMessageClick,
 }: CollapsibleContactSectionProps) => {
   const [isOpen, setIsOpen] = useState(false);
   if (members.length === 0) return null;
@@ -2544,13 +2615,12 @@ const CollapsibleContactSection = ({
                       >
                         <Phone size={16} />
                       </a>
-                      <a
-                        href={`sms:${phone}`}
-                        onClick={() => onTrackCall?.(member, "SMS")}
+                      <button
+                        onClick={() => onMessageClick?.(member)}
                         className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
                       >
                         <MessageSquare size={16} />
-                      </a>
+                      </button>
                     </>
                   ) : (
                     <div className="p-2 bg-slate-50 text-slate-300 rounded-lg">

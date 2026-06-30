@@ -53,6 +53,7 @@ const Settings: React.FC<SettingsProps> = ({
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const [selectedChurchForTheme, setSelectedChurchForTheme] = useState(activeChurch);
   const [isSyncing, setIsSyncing] = useState(false);
   const [cloudLastUpdated, setCloudLastUpdated] = useState<number | null>(null);
 
@@ -543,17 +544,34 @@ const Settings: React.FC<SettingsProps> = ({
               </div>
               <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl text-indigo-800 text-sm">
                 <p>
-                  Select a primary brand color for the{" "}
-                  <strong>{activeChurch}</strong> church interface. This changes
+                  Select a primary brand color for the interface. This changes
                   the accent color dynamically.
                 </p>
               </div>
+              {isAdmin && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-bold text-slate-700">
+                    Select Church / Branch
+                  </label>
+                  <select
+                    value={selectedChurchForTheme}
+                    onChange={(e) => setSelectedChurchForTheme(e.target.value)}
+                    className="p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
+                  >
+                    {localSettings.churches.map((church) => (
+                      <option key={church} value={church}>
+                        {church}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 {Object.entries(themeColorPalettes).map(
                   ([colorName, palette]) => {
                     const currentThemeColors = localSettings.themeColors || {};
                     const isSelected =
-                      (currentThemeColors[activeChurch] || "indigo") ===
+                      (currentThemeColors[selectedChurchForTheme] || "indigo") ===
                       colorName;
                     return (
                       <button
@@ -561,7 +579,7 @@ const Settings: React.FC<SettingsProps> = ({
                         onClick={() => {
                           const newThemeColors = {
                             ...currentThemeColors,
-                            [activeChurch]: colorName,
+                            [selectedChurchForTheme]: colorName,
                           };
                           setLocalSettings({
                             ...localSettings,
