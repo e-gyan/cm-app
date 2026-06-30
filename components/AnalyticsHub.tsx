@@ -653,21 +653,22 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
     }
 
     setIsGenerating(true);
+    const { start, end } = getDateRange();
+    const dateRangeStr = `${start.toLocaleDateString()} to ${end.toLocaleDateString()}`;
+
     const prompt = `
-        Act as a senior data analyst for a children's ministry.
-        Analyze this attendance data for the period "${timeRange}":
+        Act as a helpful ministry assistant.
+        Analyze this attendance data for the period "${dateRangeStr}" (Filter: ${timeRange}):
         - Average Attendance: ${stats.avg}
         - Growth vs previous half of period: ${stats.growth}%
-        - Retention Rate (Regular Members / Total): ${stats.retention}%
-        - New Visitors (FNF) avg per week: ${stats.newFaces}
-        - Data Points (Chronological): ${JSON.stringify(chartData.map((d) => ({ date: d.date, total: d.Total })))}
+        - Retention Rate: ${stats.retention}%
+        - New Visitors avg: ${stats.newFaces}
+        - Data Points: ${JSON.stringify(chartData.map((d) => ({ date: d.date, total: d.Total })))}
 
         Instructions:
-        1. Provide a "Brutal and Honest" inference. Do not use corporate fluff.
-        2. If growth is negative, explicitly point it out as a problem.
-        3. If retention is low (<60%), warn about member bleed.
-        4. If new faces are low, warn about lack of outreach.
-        5. Keep it under 2 sentences. Be direct.
+        1. Provide a simple, down-to-earth insight about the attendance trends specifically for this date range.
+        2. Keep it encouraging but honest. Focus on what the data actually says.
+        3. Keep it under 2 sentences. Be direct and easy to understand.
       `;
 
     let retryCount = 0;
@@ -1129,84 +1130,90 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
 
           <div className="flex-1 min-h-[250px] overflow-x-auto scrollbar-hide">
             <div className="min-w-[600px] h-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={chartData}
-                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                  onClick={(e: any) => {
-                    if (e && e.activePayload && e.activePayload.length > 0) {
-                      const payload = e.activePayload[0].payload;
-                      setSelectedChartDate({
-                        date: payload.date,
-                        presentIds: payload.presentIds,
-                      });
-                    }
-                  }}
-                  className="cursor-pointer"
-                >
-                  <defs>
-                    <linearGradient id="colorMem" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="colorFnf" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke="#f1f5f9"
-                  />
-                  <XAxis
-                    dataKey="date"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: "#94a3b8", fontSize: 10 }}
-                    dy={10}
-                  />
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: "#94a3b8", fontSize: 10 }}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: "12px",
-                      border: "none",
-                      boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1)",
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={chartData}
+                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                    onClick={(e: any) => {
+                      if (e && e.activePayload && e.activePayload.length > 0) {
+                        const payload = e.activePayload[0].payload;
+                        setSelectedChartDate({
+                          date: payload.date,
+                          presentIds: payload.presentIds,
+                        });
+                      }
                     }}
-                    cursor={{
-                      stroke: "#cbd5e1",
-                      strokeWidth: 1,
-                      strokeDasharray: "4 4",
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="Member"
-                    stackId="1"
-                    stroke="#6366f1"
-                    fill="url(#colorMem)"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="FNF"
-                    stackId="1"
-                    stroke="#f59e0b"
-                    fill="url(#colorFnf)"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="Inconsistent"
-                    stackId="1"
-                    stroke="#f43f5e"
-                    fill="#f43f5e"
-                    fillOpacity={0.6}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+                    className="cursor-pointer"
+                  >
+                    <defs>
+                      <linearGradient id="colorMem" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="colorFnf" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="#f1f5f9"
+                    />
+                    <XAxis
+                      dataKey="date"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "#94a3b8", fontSize: 10 }}
+                      dy={10}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "#94a3b8", fontSize: 10 }}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        borderRadius: "12px",
+                        border: "none",
+                        boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1)",
+                      }}
+                      cursor={{
+                        stroke: "#cbd5e1",
+                        strokeWidth: 1,
+                        strokeDasharray: "4 4",
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="Member"
+                      stackId="1"
+                      stroke="#6366f1"
+                      fill="url(#colorMem)"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="FNF"
+                      stackId="1"
+                      stroke="#f59e0b"
+                      fill="url(#colorFnf)"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="Inconsistent"
+                      stackId="1"
+                      stroke="#f43f5e"
+                      fill="#f43f5e"
+                      fillOpacity={0.6}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-sm font-medium text-slate-400">
+                  No attendance records found for this period.
+                </div>
+              )}
             </div>
           </div>
         </div>

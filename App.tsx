@@ -660,10 +660,15 @@ const App: React.FC = () => {
               )}
             </button>
             {!isSidebarCollapsed && (
-              <div className="px-2 mt-2 flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                <div className="text-xs text-slate-400 font-medium truncate">
-                  {currentUser.name}
+              <div className="px-2 mt-2 flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                  <div className="text-xs text-slate-400 font-medium truncate">
+                    {currentUser.name}
+                  </div>
+                </div>
+                <div className="text-[10px] text-slate-300 font-medium pl-4">
+                  v1.1.0
                 </div>
               </div>
             )}
@@ -697,8 +702,8 @@ const App: React.FC = () => {
               {activeChurch.substring(0, 2)}
             </div>
             <div className="text-left">
-              <h1 className="font-bold text-slate-800 text-sm leading-tight">
-                {activeChurch} Church
+              <h1 className="font-bold text-slate-800 text-sm leading-tight flex items-baseline gap-2">
+                {activeChurch} Church <span className="text-[9px] font-normal text-slate-400">v1.1.0</span>
               </h1>
               <p className="text-[10px] text-slate-500 font-medium">
                 {activeBranchId && activeBranchId !== "ALL" 
