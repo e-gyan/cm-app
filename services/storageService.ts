@@ -688,7 +688,7 @@ const autoTransferMembersBasedOnAge = () => {
 };
 
 // --- HELPER: NOTIFICATIONS ---
-const addNotification = (
+export const addNotification = (
   type: NotificationType,
   message: string,
   churchId: Church,
@@ -1433,6 +1433,15 @@ export const generatePrayerSchedule = (
 
   isDirty = true;
   persistData("IMMEDIATE");
+
+  if (generatedCount > 0) {
+    addNotification(
+      "GENERAL_INFO",
+      `A new prayer schedule for ${generatedCount} days was generated!`,
+      "CM"
+    );
+  }
+
   return {
     success: true,
     message: `Generated ${generatedCount} days. ${missedIds.size > 0 ? `Inc. ${missedIds.size} missed prayers.` : ""}`,

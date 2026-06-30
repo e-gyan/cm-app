@@ -85,7 +85,11 @@ export interface Transaction {
 }
 
 export type NotificationType =
-  "BIRTHDAY" | "PROMOTION" | "STATUS_CHANGE" | "TEEN_ALERT";
+  | "BIRTHDAY"
+  | "PROMOTION"
+  | "STATUS_CHANGE"
+  | "TEEN_ALERT"
+  | "GENERAL_INFO";
 
 export interface Notification {
   id: string;

@@ -11,7 +11,7 @@ import {
   initRealtimeSync,
   setStorageBranchId,
 } from "./services/storageService";
-import { AppData, Church, Member, Role, Notification } from "./types";
+import { AppData, Church, Member, Role, Notification as AppNotification } from "./types";
 import Dashboard from "./components/Dashboard";
 import AttendanceTaker from "./components/AttendanceTaker";
 import ReportExport from "./components/ReportExport";
@@ -265,6 +265,8 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
+  const prevNotificationIds = React.useRef<Set<string>>(new Set());
+
   const refreshData = () => {
     const raw = getAppData();
 
@@ -276,6 +278,24 @@ const App: React.FC = () => {
       item.branchId === activeBranchId ||
       !item.branchId;
 
+    const newNotifications = raw.notifications ? raw.notifications.filter(branchFilter) : [];
+
+    // Check for new notifications to trigger system push notification
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+      newNotifications.forEach(notif => {
+        if (!prevNotificationIds.current.has(notif.id) && prevNotificationIds.current.size > 0) {
+          // Only trigger if we already had some loaded, to prevent spam on initial load
+          new Notification("People Hub Update", {
+            body: notif.message,
+            icon: "/favicon.ico",
+          });
+        }
+      });
+    }
+    
+    // Update ref
+    prevNotificationIds.current = new Set(newNotifications.map(n => n.id));
+
     setData({
       ...raw,
       members: raw.members ? raw.members.filter(branchFilter) : [],
@@ -283,9 +303,7 @@ const App: React.FC = () => {
       transactions: raw.transactions
         ? raw.transactions.filter(branchFilter)
         : [],
-      notifications: raw.notifications
-        ? raw.notifications.filter(branchFilter)
-        : [],
+      notifications: newNotifications,
       outreachSessions: raw.outreachSessions
         ? raw.outreachSessions.filter(branchFilter)
         : [],
@@ -328,6 +346,18 @@ const App: React.FC = () => {
     logoutUser();
     setCurrentUser(null);
     setCurrentView(View.DASHBOARD);
+  };
+
+  const toggleNotifications = () => {
+    setIsNotificationsOpen(!isNotificationsOpen);
+    if (
+      !isNotificationsOpen &&
+      typeof window !== "undefined" &&
+      "Notification" in window &&
+      Notification.permission === "default"
+    ) {
+      Notification.requestPermission();
+    }
   };
 
   const myNotifications = useMemo(() => {
@@ -688,7 +718,7 @@ const App: React.FC = () => {
             {/* Notification Bell Mobile */}
             <div className="relative">
               <button
-                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                onClick={toggleNotifications}
                 className={`p-2 rounded-full ${isNotificationsOpen ? "bg-slate-100 text-indigo-600" : "text-slate-400"}`}
               >
                 <Bell size={20} />
@@ -782,7 +812,7 @@ const App: React.FC = () => {
                 {/* Notification Bell Desktop */}
                 <div className="relative">
                   <button
-                    onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                    onClick={toggleNotifications}
                     className={`p-2.5 rounded-xl border transition-all ${isNotificationsOpen ? "bg-indigo-50 border-indigo-200 text-indigo-600" : "bg-white border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300"}`}
                   >
                     <Bell size={20} />
