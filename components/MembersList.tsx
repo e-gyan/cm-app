@@ -145,6 +145,14 @@ const MembersList: React.FC<MembersListProps> = ({
   const [bulkNames, setBulkNames] = useState("");
   const [isBulkAdding, setIsBulkAdding] = useState(false);
 
+  // BULK ASSIGN STATE
+  const [isBulkAssignModalOpen, setIsBulkAssignModalOpen] = useState(false);
+  const [bulkAssignData, setBulkAssignData] = useState<{ zoneId: string; branchId: string }>({
+    zoneId: "",
+    branchId: "",
+  });
+  const [isBulkAssigning, setIsBulkAssigning] = useState(false);
+
   // FORM DATA
   const [formData, setFormData] = useState<Partial<Member>>({
     name: "",
@@ -239,6 +247,32 @@ const MembersList: React.FC<MembersListProps> = ({
     setIsBulkAddModalOpen(false);
     onUpdate();
     alert(`Successfully added ${addedCount} members.`);
+  };
+
+  const handleBulkAssignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedIds.size === 0) return;
+
+    setIsBulkAssigning(true);
+    let updatedCount = 0;
+    
+    for (const id of selectedIds) {
+      const member = data.members.find((m) => m.id === id);
+      if (member) {
+        await updateMember({
+          ...member,
+          zoneId: bulkAssignData.zoneId,
+          branchId: bulkAssignData.branchId,
+        });
+        updatedCount++;
+      }
+    }
+
+    setIsBulkAssigning(false);
+    setIsBulkAssignModalOpen(false);
+    setSelectedIds(new Set());
+    onUpdate();
+    alert(`Successfully assigned ${updatedCount} members.`);
   };
 
   const handleSave = async () => {
@@ -753,6 +787,7 @@ const MembersList: React.FC<MembersListProps> = ({
                     )}
                     <th className="px-6 py-4 w-[250px]">Full Name</th>
                     <th className="px-6 py-4">Assigned Church</th>
+                    {isAdmin && <th className="px-6 py-4">Branch & Zone</th>}
                     <th className="px-6 py-4">Role</th>
                     <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4">Birth Date</th>
@@ -816,6 +851,26 @@ const MembersList: React.FC<MembersListProps> = ({
                             {member.assignedChurch}
                           </span>
                         </td>
+
+                        {isAdmin && (
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col gap-1">
+                              {member.branchId && (
+                                <span className="text-[10px] font-bold text-slate-500 truncate max-w-[120px]">
+                                  B: {member.branchId}
+                                </span>
+                              )}
+                              {member.zoneId && (
+                                <span className="text-[10px] font-bold text-slate-400 truncate max-w-[120px]">
+                                  Z: {member.zoneId}
+                                </span>
+                              )}
+                              {!member.branchId && !member.zoneId && (
+                                <span className="text-[10px] text-gray-300">-</span>
+                              )}
+                            </div>
+                          </td>
+                        )}
 
                         <td className="px-6 py-4">
                           <span
@@ -972,6 +1027,16 @@ const MembersList: React.FC<MembersListProps> = ({
                             <span className="text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-600 border border-gray-200 font-medium">
                               {member.assignedChurch}
                             </span>
+                            {isAdmin && member.branchId && (
+                              <span className="text-xs px-2 py-1 rounded-md bg-slate-100 text-slate-600 border border-slate-200 font-medium">
+                                {member.branchId}
+                              </span>
+                            )}
+                            {isAdmin && member.zoneId && (
+                              <span className="text-xs px-2 py-1 rounded-md bg-slate-100 text-slate-600 border border-slate-200 font-medium">
+                                {member.zoneId}
+                              </span>
+                            )}
                             {member.birthDate && (
                               <span className="text-xs px-2 py-1 rounded-md bg-blue-50 text-blue-600 border border-blue-100 font-medium">
                                 🎂 {formatDateDDMMYYYY(member.birthDate)}
@@ -1380,6 +1445,90 @@ const MembersList: React.FC<MembersListProps> = ({
         </div>
       </div>
 
+      {/* Organization Section */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+        <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-2 text-sm uppercase tracking-wider">
+          <MapPin size={16} className="text-indigo-500" /> Organization (Zone & Branch)
+        </h4>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+              Zone
+            </label>
+            <div className="relative">
+              <select
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800 appearance-none disabled:opacity-60 disabled:bg-gray-100"
+                value={formData.zoneId || ""}
+                disabled={!isAdmin}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    zoneId: e.target.value,
+                    branchId: "", // Reset branch when zone changes
+                  })
+                }
+              >
+                <option value="">Select Zone...</option>
+                {data.settings.organization?.zones?.map((z) => (
+                  <option key={z.id || z.name} value={z.id || z.name}>
+                    {z.name}
+                  </option>
+                ))}
+              </select>
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                <ChevronDown size={16} className="text-gray-400" />
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+              Branch
+            </label>
+            <div className="relative">
+              <select
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800 appearance-none"
+                value={formData.branchId || ""}
+                onChange={(e) => {
+                  const newBranchId = e.target.value;
+                  let newZoneId = formData.zoneId;
+                  
+                  // Auto-update zone if not admin, or if zone isn't selected
+                  if (!isAdmin || !newZoneId) {
+                    const matchedZone = data.settings.organization?.zones?.find(z => 
+                      z.branches?.some(b => (b.id || b.name) === newBranchId)
+                    );
+                    if (matchedZone) {
+                      newZoneId = matchedZone.id || matchedZone.name;
+                    }
+                  }
+
+                  setFormData({
+                    ...formData,
+                    branchId: newBranchId,
+                    zoneId: newZoneId,
+                  });
+                }}
+              >
+                <option value="">Select Branch...</option>
+                {(isAdmin && formData.zoneId
+                  ? data.settings.organization?.zones?.find(
+                      (z) => (z.id || z.name) === formData.zoneId
+                    )?.branches || []
+                  : data.settings.organization?.zones?.flatMap((z) => z.branches || []) || []
+                ).map((b) => (
+                  <option key={b.id || b.name} value={b.id || b.name}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                <ChevronDown size={16} className="text-gray-400" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Contact Section */}
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
         <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-2 text-sm uppercase tracking-wider">
@@ -1527,56 +1676,6 @@ const MembersList: React.FC<MembersListProps> = ({
                 </div>
               </div>
             </div>
-
-            {/* Conditional Branch/Zone selector */}
-            {(formData.role === "TEACHER" || formData.role === "ADMIN") &&
-              (currentUser.role === "SUPER_ADMIN" ||
-                currentUser.role === "ZONAL_HEAD") && (
-                <div className="mt-4">
-                  <label className="block text-xs font-bold text-indigo-700/70 mb-1.5 ml-1">
-                    Assign to Branch
-                  </label>
-                  <select
-                    className="w-full p-3 bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all font-medium text-indigo-900"
-                    value={formData.branchId || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, branchId: e.target.value })
-                    }
-                  >
-                    <option value="">Select Branch...</option>
-                    {data.settings.organization?.zones
-                      ?.flatMap((z) => z.branches || [])
-                      .map((b) => (
-                        <option key={b.id || b.name} value={b.id || b.name}>
-                          {b.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              )}
-
-            {formData.role === "ZONAL_HEAD" &&
-              currentUser.role === "SUPER_ADMIN" && (
-                <div className="mt-4">
-                  <label className="block text-xs font-bold text-indigo-700/70 mb-1.5 ml-1">
-                    Assign to Zone
-                  </label>
-                  <select
-                    className="w-full p-3 bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all font-medium text-indigo-900"
-                    value={formData.zoneId || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, zoneId: e.target.value })
-                    }
-                  >
-                    <option value="">Select Zone...</option>
-                    {data.settings.organization?.zones?.map((z) => (
-                      <option key={z.id || z.name} value={z.id || z.name}>
-                        {z.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
           </div>
           <div className="pt-2">
             <label className="flex items-center gap-3 p-3 bg-white rounded-xl border border-indigo-200 cursor-pointer hover:bg-indigo-100/50 transition-colors">
@@ -1764,6 +1863,20 @@ const MembersList: React.FC<MembersListProps> = ({
             {selectedIds.size} selected
           </span>
           <div className="h-4 w-px bg-gray-700 hidden md:block"></div>
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => {
+                  setBulkAssignData({ zoneId: "", branchId: "" });
+                  setIsBulkAssignModalOpen(true);
+                }}
+                className="flex items-center gap-2 hover:text-indigo-300 transition-colors font-medium text-indigo-200 whitespace-nowrap"
+              >
+                <MapPin size={18} /> Bulk Assign
+              </button>
+              <div className="h-4 w-px bg-gray-700 hidden md:block"></div>
+            </>
+          )}
           {filter !== "ARCHIVED" ? (
             <button
               onClick={handleBulkArchive}
@@ -2293,6 +2406,125 @@ const MembersList: React.FC<MembersListProps> = ({
           </div>
         </div>
       )}
+      {/* BULK ASSIGN MODAL */}
+      {isBulkAssignModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-indigo-100 text-indigo-600 mb-4 mx-auto">
+              <MapPin size={24} />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 text-center mb-2">
+              Assign {selectedIds.size} Members
+            </h3>
+            <p className="text-gray-500 text-sm text-center mb-6">
+              Select the zone and branch to assign to the selected members.
+            </p>
+
+            <form onSubmit={handleBulkAssignSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+                  Zone
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800 appearance-none"
+                    value={bulkAssignData.zoneId}
+                    onChange={(e) =>
+                      setBulkAssignData({
+                        ...bulkAssignData,
+                        zoneId: e.target.value,
+                        branchId: "", // Reset branch when zone changes
+                      })
+                    }
+                  >
+                    <option value="">Select Zone...</option>
+                    {data.settings.organization?.zones?.map((z) => (
+                      <option key={z.id || z.name} value={z.id || z.name}>
+                        {z.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    <ChevronDown size={16} className="text-gray-400" />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+                  Branch
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800 appearance-none"
+                    value={bulkAssignData.branchId}
+                    onChange={(e) => {
+                      const newBranchId = e.target.value;
+                      let newZoneId = bulkAssignData.zoneId;
+                      
+                      // Auto-update zone if not selected
+                      if (!newZoneId) {
+                        const matchedZone = data.settings.organization?.zones?.find(z => 
+                          z.branches?.some(b => (b.id || b.name) === newBranchId)
+                        );
+                        if (matchedZone) {
+                          newZoneId = matchedZone.id || matchedZone.name;
+                        }
+                      }
+
+                      setBulkAssignData({
+                        ...bulkAssignData,
+                        branchId: newBranchId,
+                        zoneId: newZoneId,
+                      });
+                    }}
+                  >
+                    <option value="">Select Branch...</option>
+                    {(bulkAssignData.zoneId
+                      ? data.settings.organization?.zones?.find(
+                          (z) => (z.id || z.name) === bulkAssignData.zoneId
+                        )?.branches || []
+                      : data.settings.organization?.zones?.flatMap((z) => z.branches || []) || []
+                    ).map((b) => (
+                      <option key={b.id || b.name} value={b.id || b.name}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    <ChevronDown size={16} className="text-gray-400" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setIsBulkAssignModalOpen(false)}
+                  className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
+                  disabled={isBulkAssigning}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!bulkAssignData.branchId || isBulkAssigning}
+                  className="flex-[2] py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
+                >
+                  {isBulkAssigning ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      Processing...
+                    </>
+                  ) : (
+                    "Assign Members"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* BULK ADD MODAL */}
       {isBulkAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
