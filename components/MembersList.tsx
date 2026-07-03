@@ -492,35 +492,82 @@ const MembersList: React.FC<MembersListProps> = ({
     }
   };
 
-  const getTeenStatus = (birthDateStr?: string) => {
+  const getPromotionStatus = (assignedChurch: Church, birthDateStr?: string) => {
     if (!birthDateStr)
       return {
         label: "NO",
-        colorClass: "bg-red-50 text-red-600 border-red-100",
+        colorClass: "bg-slate-50 text-slate-500 border-slate-200",
+        progress: 0
       };
+
+    let targetAge = 13;
+    let prevAge = 10;
+    if (assignedChurch === "I") { targetAge = 2; prevAge = 0; }
+    else if (assignedChurch === "K") { targetAge = 6; prevAge = 2; }
+    else if (assignedChurch === "LJ") { targetAge = 9; prevAge = 6; }
+    else if (assignedChurch === "UJ") { targetAge = 13; prevAge = 9; }
+    else return { label: "NO", colorClass: "bg-slate-50 text-slate-500 border-slate-200", progress: 0 };
+
     const birth = new Date(birthDateStr);
     const today = new Date();
+    
+    const targetBirthday = new Date(birth);
+    targetBirthday.setFullYear(birth.getFullYear() + targetAge);
+    
+    const prevBirthday = new Date(birth);
+    prevBirthday.setFullYear(birth.getFullYear() + prevAge);
+    
     let age = today.getFullYear() - birth.getFullYear();
     const m = today.getMonth() - birth.getMonth();
     if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
 
-    if (age >= 13)
+    const totalStageMs = targetBirthday.getTime() - prevBirthday.getTime();
+    const elapsedMs = today.getTime() - prevBirthday.getTime();
+    let progress = Math.max(0, Math.min(100, (elapsedMs / totalStageMs) * 100));
+
+    if (age >= targetAge) {
       return {
         label: "YES",
-        colorClass: "bg-green-100 text-green-700 border-green-200",
+        colorClass: "bg-emerald-100 text-emerald-700 border-emerald-200",
+        progress: 100
       };
+    }
 
-    const thirteenthBirthday = new Date(birth);
-    thirteenthBirthday.setFullYear(birth.getFullYear() + 13);
+    const diffMs = targetBirthday.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    
+    let remainingText = "";
+    if (diffDays <= 30) {
+      remainingText = `${diffDays} days`;
+    } else {
+      const diffMonths = Math.ceil(diffDays / 30);
+      if (diffMonths >= 12) {
+        const diffYears = Math.floor(diffMonths / 12);
+        const remMonths = diffMonths % 12;
+        remainingText = `${diffYears} yr${diffYears > 1 ? 's' : ''}${remMonths > 0 ? ` ${remMonths} mo` : ''}`;
+      } else {
+        remainingText = `${diffMonths} mos`;
+      }
+    }
+
     const fiveMonthsFromNow = new Date(today);
     fiveMonthsFromNow.setMonth(today.getMonth() + 5);
 
-    if (thirteenthBirthday <= fiveMonthsFromNow)
+    if (targetBirthday <= fiveMonthsFromNow) {
       return {
         label: "SOON",
-        colorClass: "bg-yellow-100 text-yellow-800 border-yellow-200",
+        colorClass: "bg-amber-100 text-amber-800 border-amber-200",
+        remainingText,
+        progress
       };
-    return { label: "NO", colorClass: "bg-red-50 text-red-600 border-red-100" };
+    }
+
+    return { 
+      label: "NO", 
+      colorClass: "bg-blue-50 text-blue-600 border-blue-100", 
+      remainingText,
+      progress 
+    };
   };
 
   const getCheckColumnName = () => {
@@ -548,6 +595,12 @@ const MembersList: React.FC<MembersListProps> = ({
     if (!dateStr) return "--";
     const d = new Date(dateStr);
     return d.toLocaleDateString("en-GB");
+  };
+
+  const formatBirthDate = (dateStr: string) => {
+    if (!dateStr) return "--";
+    const d = new Date(dateStr);
+    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
   };
 
   const isBirthdayThisWeek = (birthDateString?: string) => {
@@ -854,7 +907,7 @@ const MembersList: React.FC<MembersListProps> = ({
                 <tbody className="divide-y divide-gray-50">
                   {members.map((member: Member) => {
                     const isSelected = selectedIds.has(member.id);
-                    const teenStatus = getTeenStatus(member.birthDate);
+                    const promoStatus = getPromotionStatus(member.assignedChurch, member.birthDate);
                     const bdayWeek = isBirthdayThisWeek(member.birthDate);
 
                     return (
@@ -937,7 +990,7 @@ const MembersList: React.FC<MembersListProps> = ({
 
                         <td className="px-6 py-4">
                           <span className="text-sm text-gray-600">
-                            {formatDateDDMMYYYY(member.birthDate || "")}
+                            {formatBirthDate(member.birthDate || "")}
                           </span>
                         </td>
 
@@ -961,11 +1014,30 @@ const MembersList: React.FC<MembersListProps> = ({
                           </td>
                         ) : (
                           <td className="px-6 py-4">
-                            <span
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold border shadow-sm ${teenStatus.colorClass}`}
-                            >
-                              {teenStatus.label}
-                            </span>
+                            <div className="flex flex-col gap-2 min-w-[120px]">
+                              <div>
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold border shadow-sm ${promoStatus.colorClass}`}
+                                >
+                                  {promoStatus.label}
+                                </span>
+                              </div>
+                              {member.birthDate && (
+                                <div className="w-full">
+                                  <div className="flex justify-between items-end mb-1">
+                                    <span className={`text-[9px] font-bold ${promoStatus.progress >= 100 ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                      {promoStatus.progress >= 100 ? "Ready" : `${promoStatus.remainingText}`}
+                                    </span>
+                                  </div>
+                                  <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                                    <div 
+                                      className={`h-full rounded-full transition-all duration-500 ${promoStatus.progress >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                                      style={{ width: `${Math.min(100, promoStatus.progress)}%` }}
+                                    ></div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           </td>
                         )}
 
@@ -1042,7 +1114,7 @@ const MembersList: React.FC<MembersListProps> = ({
             {/* MOBILE CARD VIEW */}
             <div className="md:hidden p-2 space-y-3">
               {members.map((member: Member) => {
-                const teenStatus = getTeenStatus(member.birthDate);
+                const promoStatus = getPromotionStatus(member.assignedChurch, member.birthDate);
                 const bdayWeek = isBirthdayThisWeek(member.birthDate);
                 return (
                   <div
@@ -1086,14 +1158,17 @@ const MembersList: React.FC<MembersListProps> = ({
                             )}
                             {member.birthDate && (
                               <span className="text-xs px-2 py-1 rounded-md bg-blue-50 text-blue-600 border border-blue-100 font-medium">
-                                🎂 {formatDateDDMMYYYY(member.birthDate)}
+                                🎂 {formatBirthDate(member.birthDate)}
                               </span>
                             )}
-                            {!isTeacherSection && teenStatus.label !== "NO" && (
+                            {!isTeacherSection && promoStatus.label !== "NO" && (
                               <span
-                                className={`text-xs px-2 py-1 rounded-md border font-bold ${teenStatus.colorClass}`}
+                                className={`text-xs px-2 py-1 rounded-md border font-bold flex items-center gap-1 ${promoStatus.colorClass}`}
                               >
-                                {getCheckColumnName()}: {teenStatus.label}
+                                {getCheckColumnName()}: {promoStatus.label}
+                                {promoStatus.remainingText && (
+                                  <span className="opacity-75">({promoStatus.remainingText})</span>
+                                )}
                               </span>
                             )}
                             {isTeacherSection && member.isAccessActive && (
@@ -1102,6 +1177,24 @@ const MembersList: React.FC<MembersListProps> = ({
                               </span>
                             )}
                           </div>
+                          
+                          {!isTeacherSection && member.birthDate && (
+                            <div className="mt-4 bg-slate-50/80 border border-slate-100 rounded-xl p-3">
+                              <div className="flex justify-between items-end mb-2">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Next Promotion</span>
+                                <span className={`text-[10px] font-bold ${promoStatus.progress >= 100 ? 'text-emerald-600' : 'text-indigo-600'}`}>
+                                  {promoStatus.progress >= 100 ? "Ready for Transition" : `${promoStatus.remainingText} remaining`}
+                                </span>
+                              </div>
+                              <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full transition-all duration-500 ${promoStatus.progress >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                                  style={{ width: `${Math.min(100, promoStatus.progress)}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          )}
+
                           {!isTeacherSection && (
                             <div className="mt-3">
                               {renderAttendanceBadge(member)}

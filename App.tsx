@@ -409,12 +409,19 @@ const App: React.FC = () => {
     normalizedName === "main admin";
   const isAdmin = currentUser.role === "ADMIN" || isSuperAdminUser;
 
+  const hasPermission = (moduleName: string) => {
+    if (isSuperAdminUser) return true;
+    if (!currentUser.role) return false;
+    const perms = data.settings.permissions?.[currentUser.role] || [];
+    return perms.includes(moduleName);
+  };
+
   const showOutreach =
-    isSuperAdminUser ||
+    hasPermission("Outreach") ||
     normalizedName.includes("maxeen") ||
     ["I", "K", "LJ"].includes(currentUser.assignedChurch);
-  const showFinances = isSuperAdminUser;
-  const showAnalytics = isSuperAdminUser;
+  const showFinances = hasPermission("Finances");
+  const showAnalytics = hasPermission("Analytics");
   const showSettings = isSuperAdminUser;
 
   const NavItem = ({
