@@ -42,6 +42,7 @@ import {
   Smartphone,
   UserCircle,
   BadgeCheck,
+  CheckCircle,
 } from "lucide-react";
 import {
   updateMember,
@@ -152,6 +153,14 @@ const MembersList: React.FC<MembersListProps> = ({
     branchId: "",
   });
   const [isBulkAssigning, setIsBulkAssigning] = useState(false);
+
+  // BULK GENDER STATE
+  const [isBulkGenderModalOpen, setIsBulkGenderModalOpen] = useState(false);
+  const [bulkGenderValue, setBulkGenderValue] = useState<"MALE" | "FEMALE" | "">("");
+  const [isBulkGendering, setIsBulkGendering] = useState(false);
+  
+  // TOAST NOTIFICATION
+  const [toastMessage, setToastMessage] = useState<{title: string, message: string} | null>(null);
 
   // FORM DATA
   const [formData, setFormData] = useState<Partial<Member>>({
@@ -272,7 +281,34 @@ const MembersList: React.FC<MembersListProps> = ({
     setIsBulkAssignModalOpen(false);
     setSelectedIds(new Set());
     onUpdate();
-    alert(`Successfully assigned ${updatedCount} members.`);
+    setToastMessage({ title: "Assignment Complete", message: `Successfully assigned ${updatedCount} members.` });
+    setTimeout(() => setToastMessage(null), 5000);
+  };
+
+  const handleBulkGenderSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedIds.size === 0 || !bulkGenderValue) return;
+
+    setIsBulkGendering(true);
+    let updatedCount = 0;
+    
+    for (const id of selectedIds) {
+      const member = data.members.find((m) => m.id === id);
+      if (member) {
+        await updateMember({
+          ...member,
+          gender: bulkGenderValue as "MALE" | "FEMALE",
+        });
+        updatedCount++;
+      }
+    }
+
+    setIsBulkGendering(false);
+    setIsBulkGenderModalOpen(false);
+    setSelectedIds(new Set());
+    onUpdate();
+    setToastMessage({ title: "Gender Update Complete", message: `Successfully updated gender for ${updatedCount} members.` });
+    setTimeout(() => setToastMessage(null), 5000);
   };
 
   const handleSave = async () => {
@@ -350,9 +386,19 @@ const MembersList: React.FC<MembersListProps> = ({
     }
   };
 
+  const getTransferOptions = (currentChurch: string): string[] => {
+    switch (currentChurch) {
+      case "I": return ["K", "LJ", "UJ"];
+      case "K": return ["LJ", "UJ"];
+      case "LJ": return ["UJ"];
+      case "UJ": return ["ARCHIVED"];
+      default: return availableChurches.filter(c => c !== currentChurch);
+    }
+  };
+
   const openTransferModal = (member: Member) => {
     setTransferMember(member);
-    setTransferTarget(member.assignedChurch);
+    setTransferTarget("");
   };
 
   const confirmTransfer = async () => {
@@ -368,7 +414,8 @@ const MembersList: React.FC<MembersListProps> = ({
       };
       const updatedMember = {
         ...transferMember,
-        assignedChurch: transferTarget,
+        assignedChurch: transferTarget === "ARCHIVED" ? transferMember.assignedChurch : transferTarget,
+        status: transferTarget === "ARCHIVED" ? MemberStatus.ARCHIVED : transferMember.status,
         promotionHistory: [
           ...(transferMember.promotionHistory || []),
           promotion,
@@ -1323,7 +1370,7 @@ const MembersList: React.FC<MembersListProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
               Date of Birth
@@ -1340,6 +1387,30 @@ const MembersList: React.FC<MembersListProps> = ({
                   setFormData({ ...formData, birthDate: e.target.value })
                 }
               />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+              Gender
+            </label>
+            <div className="relative">
+              <select
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800 appearance-none"
+                value={formData.gender || ""}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    gender: (e.target.value as any) || undefined,
+                  })
+                }
+              >
+                <option value="">Unassigned</option>
+                <option value="MALE">Male</option>
+                <option value="FEMALE">Female</option>
+              </select>
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                <ChevronDown size={16} className="text-gray-400" />
+              </div>
             </div>
           </div>
           <div>
@@ -1534,45 +1605,49 @@ const MembersList: React.FC<MembersListProps> = ({
         <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-2 text-sm uppercase tracking-wider">
           <Phone size={16} className="text-indigo-500" /> Contact Details
         </h4>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
-              Personal Phone
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Smartphone size={18} className="text-gray-400" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {["Teacher", "Helper", "Volunteer"].includes(formData.type as string) && (
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+                Personal Phone
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Smartphone size={18} className="text-gray-400" />
+                </div>
+                <input
+                  type="tel"
+                  className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800"
+                  value={formData.phone}
+                  onChange={(e) =>
+                    setFormData({ ...formData, phone: e.target.value })
+                  }
+                  placeholder="050..."
+                />
               </div>
-              <input
-                type="tel"
-                className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800"
-                value={formData.phone}
-                onChange={(e) =>
-                  setFormData({ ...formData, phone: e.target.value })
-                }
-                placeholder="050..."
-              />
             </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
-              Parent Phone
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Phone size={18} className="text-gray-400" />
+          )}
+          {!["Teacher", "Helper", "Volunteer"].includes(formData.type as string) && (
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+                Parent Phone
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Phone size={18} className="text-gray-400" />
+                </div>
+                <input
+                  type="tel"
+                  className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800"
+                  value={formData.parentPhone}
+                  onChange={(e) =>
+                    setFormData({ ...formData, parentPhone: e.target.value })
+                  }
+                  placeholder="Guardian..."
+                />
               </div>
-              <input
-                type="tel"
-                className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800"
-                value={formData.parentPhone}
-                onChange={(e) =>
-                  setFormData({ ...formData, parentPhone: e.target.value })
-                }
-                placeholder="Guardian..."
-              />
             </div>
-          </div>
+          )}
         </div>
 
         <div>
@@ -1873,6 +1948,16 @@ const MembersList: React.FC<MembersListProps> = ({
                 className="flex items-center gap-2 hover:text-indigo-300 transition-colors font-medium text-indigo-200 whitespace-nowrap"
               >
                 <MapPin size={18} /> Bulk Assign
+              </button>
+              <div className="h-4 w-px bg-gray-700 hidden md:block"></div>
+              <button
+                onClick={() => {
+                  setBulkGenderValue("");
+                  setIsBulkGenderModalOpen(true);
+                }}
+                className="flex items-center gap-2 hover:text-indigo-300 transition-colors font-medium text-indigo-200 whitespace-nowrap"
+              >
+                <User size={18} /> Bulk Gender
               </button>
               <div className="h-4 w-px bg-gray-700 hidden md:block"></div>
             </>
@@ -2371,13 +2456,13 @@ const MembersList: React.FC<MembersListProps> = ({
                 onChange={(e) => setTransferTarget(e.target.value as Church)}
               >
                 <option value="">Select a branch</option>
-                {availableChurches.map((c) => (
+                {getTransferOptions(transferMember.assignedChurch).map((c) => (
                   <option
                     key={c}
                     value={c}
                     disabled={c === transferMember.assignedChurch}
                   >
-                    {c} {c === transferMember.assignedChurch ? "(Current)" : ""}
+                    {c === "ARCHIVED" ? "Archive (Teen)" : c} {c === transferMember.assignedChurch ? "(Current)" : ""}
                   </option>
                 ))}
               </select>
@@ -2406,6 +2491,85 @@ const MembersList: React.FC<MembersListProps> = ({
           </div>
         </div>
       )}
+      {/* TOAST NOTIFICATION */}
+      {toastMessage && (
+        <div className="fixed top-6 right-6 z-50 animate-in slide-in-from-top-4 fade-in duration-300">
+          <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 p-4 rounded-2xl shadow-xl flex items-start gap-4 max-w-sm">
+            <div className="p-2 bg-emerald-100 rounded-full shrink-0">
+              <CheckCircle size={20} className="text-emerald-600" />
+            </div>
+            <div className="flex-1">
+              <h4 className="font-bold text-emerald-900">{toastMessage.title}</h4>
+              <p className="text-emerald-700 text-sm">{toastMessage.message}</p>
+            </div>
+            <button onClick={() => setToastMessage(null)} className="text-emerald-500 hover:text-emerald-700">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* BULK GENDER MODAL */}
+      {isBulkGenderModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-indigo-100 text-indigo-600 mb-4 mx-auto">
+              <User size={24} />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 text-center mb-2">
+              Update Gender for {selectedIds.size} Members
+            </h3>
+            <p className="text-gray-500 text-sm text-center mb-6">
+              Select the new gender to assign to all selected members.
+            </p>
+
+            <form onSubmit={handleBulkGenderSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+                  Gender
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800 appearance-none"
+                    value={bulkGenderValue}
+                    onChange={(e) => setBulkGenderValue(e.target.value as any)}
+                  >
+                    <option value="">Select Gender...</option>
+                    <option value="MALE">Male</option>
+                    <option value="FEMALE">Female</option>
+                  </select>
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    <ChevronDown size={16} className="text-gray-400" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setIsBulkGenderModalOpen(false)}
+                  className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
+                  disabled={isBulkGendering}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isBulkGendering || !bulkGenderValue}
+                  className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isBulkGendering ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  ) : (
+                    "Apply Update"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* BULK ASSIGN MODAL */}
       {isBulkAssignModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">

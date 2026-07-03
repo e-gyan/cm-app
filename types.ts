@@ -23,6 +23,9 @@ export type Role =
   | "ADMIN"
   | "DIRECTORATE_HEAD"
   | "ZONAL_HEAD"
+  | "BRANCH_COORDINATOR"
+  | "CMD_COORDINATOR"
+  | "EXTERNAL"
   | "CM"
   | "TEACHER"
   | "FINANCE"
@@ -40,6 +43,7 @@ export interface Member {
   assignedChurch: Church;
   branchId?: string;
   zoneId?: string;
+  gender?: "MALE" | "FEMALE";
   // Auth Fields
   role?: Role;
   passcode?: string;
@@ -152,6 +156,7 @@ export interface AppSettings {
     punctuality: boolean;
     outreach: boolean;
   };
+  permissions?: Record<string, string[]>; // e.g. { ZONAL_HEAD: ["Finances", "Outreach"] }
 }
 
 export interface AppData {

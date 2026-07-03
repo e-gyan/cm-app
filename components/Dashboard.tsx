@@ -49,6 +49,8 @@ import {
   MapPin,
   Hourglass,
   Phone,
+  PartyPopper,
+  Gift,
 } from "lucide-react";
 
 interface DashboardProps {
@@ -60,6 +62,34 @@ interface DashboardProps {
 const formatDateDDMMYYYY = (dateStr: string) => {
   const d = new Date(dateStr);
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+};
+
+const isBirthdayThisWeek = (birthDateString?: string) => {
+  if (!birthDateString) return false;
+  const parts = birthDateString.includes("-")
+    ? birthDateString.split("-")
+    : birthDateString.split("/");
+  let month, day;
+  if (birthDateString.includes("-")) {
+    month = parseInt(parts[1], 10);
+    day = parseInt(parts[2], 10);
+  } else {
+    day = parseInt(parts[0], 10);
+    month = parseInt(parts[1], 10);
+  }
+
+  if (isNaN(day) || isNaN(month)) return false;
+
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const bdayThisYear = new Date(currentYear, month - 1, day);
+
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay());
+  const endOfWeek = new Date(today);
+  endOfWeek.setDate(today.getDate() + (6 - today.getDay()));
+
+  return bdayThisYear >= startOfWeek && bdayThisYear <= endOfWeek;
 };
 
 const formatDuration = (mins: number) => {
@@ -266,6 +296,20 @@ const AdminDashboard: React.FC<{
       const target = data.targets?.[church] || 0;
       const targetAchievement =
         target > 0 ? Math.round((population / target) * 100) : 0;
+        
+      let male = 0;
+      let female = 0;
+      let unassigned = 0;
+      data.members.filter(m => m.assignedChurch === church && m.status !== MemberStatus.ARCHIVED && m.status !== MemberStatus.TRANSFERRED).forEach(m => {
+        if (m.gender === "MALE") male++;
+        else if (m.gender === "FEMALE") female++;
+        else unassigned++;
+      });
+      const genderData = [
+        { name: "Male", value: male },
+        { name: "Female", value: female },
+        { name: "Unassigned", value: unassigned }
+      ];
 
       return {
         church,
@@ -277,12 +321,31 @@ const AdminDashboard: React.FC<{
         growth,
         target,
         targetAchievement,
+        genderData,
       };
     });
   }, [data, churches]);
 
   const totalPop = churchStats.reduce((acc, curr) => acc + curr.population, 0);
   const totalAvg = churchStats.reduce((acc, curr) => acc + curr.avg, 0);
+
+  const globalGenderData = useMemo(() => {
+    let male = 0;
+    let female = 0;
+    let unassigned = 0;
+    data.members.forEach(m => {
+      if (m.status !== MemberStatus.ARCHIVED && m.status !== MemberStatus.TRANSFERRED) {
+        if (m.gender === "MALE") male++;
+        else if (m.gender === "FEMALE") female++;
+        else unassigned++;
+      }
+    });
+    return [
+      { name: "Male", value: male },
+      { name: "Female", value: female },
+      { name: "Unassigned", value: unassigned }
+    ];
+  }, [data.members]);
 
   const totalTarget = churchStats.reduce(
     (acc, curr) => acc + (curr.target > 0 ? curr.target : 0),
@@ -578,6 +641,32 @@ const AdminDashboard: React.FC<{
         </motion.div>
       )}
 
+      {/* Global Gender Breakdown */}
+      {globalGenderData && globalGenderData.length > 0 && (
+        <motion.div variants={itemVariants} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+          <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-6 text-sm uppercase tracking-wider">
+            <Users size={16} className="text-indigo-500" /> Global Gender Breakdown
+          </h3>
+          <div className="flex flex-col gap-4">
+            {globalGenderData.map((g) => (
+              <div key={g.name} className="flex items-center gap-4">
+                <span className="w-24 text-sm font-bold text-slate-600">{g.name}</span>
+                <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full ${g.name === "Male" ? "bg-blue-500" : g.name === "Female" ? "bg-pink-500" : "bg-slate-400"}`} 
+                    style={{ width: `${(g.value / totalPop) * 100}%` }}
+                  />
+                </div>
+                <span className="text-sm font-bold text-slate-800">{g.value}</span>
+                <span className="text-xs font-medium text-slate-400 w-10 text-right">
+                  {totalPop > 0 ? Math.round((g.value / totalPop) * 100) : 0}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
       <motion.div
         variants={itemVariants}
         className="grid grid-cols-1 md:grid-cols-2 gap-4"
@@ -645,6 +734,24 @@ const AdminDashboard: React.FC<{
                   ></div>
                 </div>
               </div>
+
+              {/* Gender Breakdown */}
+              {stat.genderData && (
+                <div className="pt-3 border-t border-slate-100 mt-3 flex items-center justify-between text-xs font-bold">
+                  {stat.genderData.map(g => {
+                    const total = stat.genderData.reduce((a, b) => a + b.value, 0);
+                    const percent = total > 0 ? Math.round((g.value / total) * 100) : 0;
+                    return (
+                      <div key={g.name} className="flex flex-col items-center">
+                        <span className="text-slate-400 mb-0.5">{g.name === "Unassigned" ? "Un" : g.name}</span>
+                        <span className={`px-2 py-0.5 rounded-md ${g.name === "Male" ? "bg-blue-50 text-blue-600" : g.name === "Female" ? "bg-pink-50 text-pink-600" : "bg-slate-100 text-slate-600"}`}>
+                          {g.value} ({percent}%)
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -714,6 +821,51 @@ const AdminDashboard: React.FC<{
           </div>
         </div>
       )}
+    </motion.div>
+  );
+};
+
+const UpcomingBirthdays: React.FC<{ members: Member[] }> = ({ members }) => {
+  const birthdaysThisWeek = useMemo(() => {
+    return members.filter(m => isBirthdayThisWeek(m.birthDate)).sort((a, b) => {
+      if (!a.birthDate || !b.birthDate) return 0;
+      const getDayMonth = (d: string) => {
+        const parts = d.includes("-") ? d.split("-") : d.split("/");
+        return d.includes("-") ? { d: parseInt(parts[2], 10), m: parseInt(parts[1], 10) } : { d: parseInt(parts[0], 10), m: parseInt(parts[1], 10) };
+      };
+      const dateA = getDayMonth(a.birthDate);
+      const dateB = getDayMonth(b.birthDate);
+      if (dateA.m !== dateB.m) return dateA.m - dateB.m;
+      return dateA.d - dateB.d;
+    });
+  }, [members]);
+
+  if (birthdaysThisWeek.length === 0) return null;
+
+  return (
+    <motion.div variants={itemVariants} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+      <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-6 text-sm uppercase tracking-wider">
+        <PartyPopper size={16} className="text-pink-500" /> Upcoming Birthdays (This Week)
+      </h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {birthdaysThisWeek.map((member) => (
+          <div key={member.id} className="flex items-center gap-4 p-4 rounded-2xl bg-pink-50/50 border border-pink-100/50">
+            <div className="h-10 w-10 bg-pink-100 text-pink-600 rounded-full flex items-center justify-center shrink-0">
+              <Gift size={20} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="font-bold text-slate-800 truncate">{member.name}</h4>
+              <p className="text-xs font-medium text-slate-500 flex items-center gap-2">
+                <Calendar size={12} />
+                {member.birthDate} 
+                <span className="text-[10px] bg-white px-2 py-0.5 rounded-full border border-pink-100 text-pink-500 uppercase tracking-wider font-bold">
+                  {member.type}
+                </span>
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
     </motion.div>
   );
 };
@@ -868,6 +1020,24 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
     };
   }, [data, activeChurch]);
 
+  const churchGenderData = useMemo(() => {
+    let male = 0;
+    let female = 0;
+    let unassigned = 0;
+    data.members.forEach(m => {
+      if (m.assignedChurch === activeChurch && m.status !== MemberStatus.ARCHIVED && m.status !== MemberStatus.TRANSFERRED) {
+        if (m.gender === "MALE") male++;
+        else if (m.gender === "FEMALE") female++;
+        else unassigned++;
+      }
+    });
+    return [
+      { name: "Male", value: male },
+      { name: "Female", value: female },
+      { name: "Unassigned", value: unassigned }
+    ];
+  }, [data.members, activeChurch]);
+
   return (
     <motion.div
       className="space-y-6"
@@ -875,6 +1045,35 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
       initial="hidden"
       animate="show"
     >
+      {churchGenderData && churchGenderData.length > 0 && (
+        <motion.div variants={itemVariants} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+          <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-6 text-sm uppercase tracking-wider">
+            <Users size={16} className="text-indigo-500" /> Gender Breakdown ({activeChurch})
+          </h3>
+          <div className="flex flex-col gap-4">
+            {churchGenderData.map((g) => {
+              const total = churchGenderData.reduce((acc, curr) => acc + curr.value, 0);
+              const percentage = total > 0 ? (g.value / total) * 100 : 0;
+              return (
+                <div key={g.name} className="flex items-center gap-4">
+                  <span className="w-24 text-sm font-bold text-slate-600">{g.name}</span>
+                  <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full ${g.name === "Male" ? "bg-blue-500" : g.name === "Female" ? "bg-pink-500" : "bg-slate-400"}`} 
+                      style={{ width: `${percentage}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-bold text-slate-800">{g.value}</span>
+                  <span className="text-xs font-medium text-slate-400 w-10 text-right">
+                    {percentage.toFixed(0)}%
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
         {/* Existing Stats Cards */}
         <StatCard
@@ -924,6 +1123,8 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
           subtitle="Population vs Target"
         />
       </div>
+
+      <UpcomingBirthdays members={data.members.filter(m => m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE)} />
 
       {/* Outreach Section */}
       {outreachStats && (

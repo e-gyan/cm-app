@@ -429,6 +429,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
   // AI State
   const [aiInsight, setAiInsight] = useState<string>("");
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [chartViewMode, setChartViewMode] = useState<"ATTENDANCE" | "GENDER">("ATTENDANCE");
   const [selectedChartDate, setSelectedChartDate] = useState<{
     date: string;
     presentIds: string[];
@@ -505,6 +506,9 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
         FNF: number;
         Inconsistent: number;
         Total: number;
+        Male: number;
+        Female: number;
+        Unassigned: number;
         presentIds: string[];
       }
     >();
@@ -524,6 +528,9 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
           FNF: 0,
           Inconsistent: 0,
           Total: 0,
+          Male: 0,
+          Female: 0,
+          Unassigned: 0,
           presentIds: [],
         });
       }
@@ -543,6 +550,10 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
           else if (m.type === MemberType.FNF || m.type === MemberType.VISITOR)
             entry.FNF++;
           else entry.Inconsistent++;
+
+          if (m.gender === "MALE") entry.Male++;
+          else if (m.gender === "FEMALE") entry.Female++;
+          else entry.Unassigned++;
         }
       });
     });
@@ -1112,19 +1123,50 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
 
         {/* Attendance Chart */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-2 flex flex-col">
-          <div className="mb-6 flex justify-between items-center">
+          <div className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <h3 className="font-bold text-slate-800">Attendance Breakdown</h3>
-            <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wide">
-              <div className="flex items-center gap-1 text-indigo-600">
-                <div className="w-2 h-2 rounded-full bg-indigo-500"></div>{" "}
-                Member
+            <div className="flex items-center gap-4">
+              <div className="flex bg-slate-100 p-1 rounded-xl">
+                <button
+                  onClick={() => setChartViewMode("ATTENDANCE")}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${chartViewMode === "ATTENDANCE" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  Type
+                </button>
+                <button
+                  onClick={() => setChartViewMode("GENDER")}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${chartViewMode === "GENDER" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  Gender
+                </button>
               </div>
-              <div className="flex items-center gap-1 text-amber-600">
-                <div className="w-2 h-2 rounded-full bg-amber-500"></div> FNF
-              </div>
-              <div className="flex items-center gap-1 text-rose-600">
-                <div className="w-2 h-2 rounded-full bg-rose-500"></div> Other
-              </div>
+
+              {chartViewMode === "ATTENDANCE" ? (
+                <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wide">
+                  <div className="flex items-center gap-1 text-indigo-600">
+                    <div className="w-2 h-2 rounded-full bg-indigo-500"></div>{" "}
+                    Member
+                  </div>
+                  <div className="flex items-center gap-1 text-amber-600">
+                    <div className="w-2 h-2 rounded-full bg-amber-500"></div> FNF
+                  </div>
+                  <div className="flex items-center gap-1 text-rose-600">
+                    <div className="w-2 h-2 rounded-full bg-rose-500"></div> Other
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wide">
+                  <div className="flex items-center gap-1 text-blue-600">
+                    <div className="w-2 h-2 rounded-full bg-blue-500"></div> Male
+                  </div>
+                  <div className="flex items-center gap-1 text-pink-600">
+                    <div className="w-2 h-2 rounded-full bg-pink-500"></div> Female
+                  </div>
+                  <div className="flex items-center gap-1 text-slate-600">
+                    <div className="w-2 h-2 rounded-full bg-slate-500"></div> Unassigned
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1155,6 +1197,14 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                         <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8} />
                         <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
                       </linearGradient>
+                      <linearGradient id="colorMale" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="colorFemale" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ec4899" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="#ec4899" stopOpacity={0} />
+                      </linearGradient>
                     </defs>
                     <CartesianGrid
                       strokeDasharray="3 3"
@@ -1174,39 +1224,64 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                       tick={{ fill: "#94a3b8", fontSize: 10 }}
                     />
                     <Tooltip
-                      contentStyle={{
-                        borderRadius: "12px",
-                        border: "none",
-                        boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1)",
-                      }}
+                      content={<CustomAnalyticsTooltip />}
                       cursor={{
                         stroke: "#cbd5e1",
                         strokeWidth: 1,
                         strokeDasharray: "4 4",
                       }}
                     />
-                    <Area
-                      type="monotone"
-                      dataKey="Member"
-                      stackId="1"
-                      stroke="#6366f1"
-                      fill="url(#colorMem)"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="FNF"
-                      stackId="1"
-                      stroke="#f59e0b"
-                      fill="url(#colorFnf)"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="Inconsistent"
-                      stackId="1"
-                      stroke="#f43f5e"
-                      fill="#f43f5e"
-                      fillOpacity={0.6}
-                    />
+                    {chartViewMode === "ATTENDANCE" ? (
+                      <>
+                        <Area
+                          type="monotone"
+                          dataKey="Member"
+                          stackId="1"
+                          stroke="#6366f1"
+                          fill="url(#colorMem)"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="FNF"
+                          stackId="1"
+                          stroke="#f59e0b"
+                          fill="url(#colorFnf)"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="Inconsistent"
+                          stackId="1"
+                          stroke="#f43f5e"
+                          fill="#f43f5e"
+                          fillOpacity={0.6}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <Area
+                          type="monotone"
+                          dataKey="Male"
+                          stackId="1"
+                          stroke="#3b82f6"
+                          fill="url(#colorMale)"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="Female"
+                          stackId="1"
+                          stroke="#ec4899"
+                          fill="url(#colorFemale)"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="Unassigned"
+                          stackId="1"
+                          stroke="#64748b"
+                          fill="#64748b"
+                          fillOpacity={0.6}
+                        />
+                      </>
+                    )}
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
@@ -1662,6 +1737,29 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       )}
     </div>
   );
+};
+
+const CustomAnalyticsTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white p-3 border border-slate-100 rounded-xl shadow-lg shadow-slate-200/50">
+        <p className="font-bold text-slate-800 text-xs mb-2">{label}</p>
+        {payload.map((entry: any, index: number) => (
+          <div key={`item-${index}`} className="flex items-center justify-between gap-4 text-xs">
+            <div className="flex items-center gap-1.5">
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: entry.color }}
+              />
+              <span className="text-slate-600 font-medium">{entry.name}</span>
+            </div>
+            <span className="font-bold text-slate-800">{entry.value}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return null;
 };
 
 export default AnalyticsHub;

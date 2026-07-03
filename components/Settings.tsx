@@ -31,11 +31,11 @@ const Settings: React.FC<SettingsProps> = ({
   const isAdmin =
     currentUser.role === "ADMIN" || currentUser.role === "SUPER_ADMIN";
   const [activeTab, setActiveTab] = useState<
-    "GENERAL" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME"
+    "GENERAL" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS"
   >(() => {
     return (
       (localStorage.getItem("settings_activeTab") as
-        "GENERAL" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME") ||
+        "GENERAL" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS") ||
       "GENERAL"
     );
   });
@@ -203,6 +203,14 @@ const Settings: React.FC<SettingsProps> = ({
           >
             Theme Colors
           </button>
+          {currentUser.role === "SUPER_ADMIN" && (
+            <button
+              onClick={() => setActiveTab("PERMISSIONS")}
+              className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === "PERMISSIONS" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            >
+              Role Permissions
+            </button>
+          )}
           <button
             onClick={() => setActiveTab("CLOUD")}
             className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === "CLOUD" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
@@ -599,6 +607,90 @@ const Settings: React.FC<SettingsProps> = ({
                     );
                   },
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* PERMISSIONS TAB */}
+          {activeTab === "PERMISSIONS" && currentUser.role === "SUPER_ADMIN" && (
+            <div className="space-y-6">
+              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                <SettingsIcon size={20} className="text-indigo-600" /> Role Permissions
+              </h3>
+              <p className="text-sm text-slate-500">
+                Configure module access for different roles across the system.
+              </p>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wide">
+                    <tr>
+                      <th className="px-4 py-3">Role</th>
+                      <th className="px-4 py-3 text-center">Finances</th>
+                      <th className="px-4 py-3 text-center">Outreach</th>
+                      <th className="px-4 py-3 text-center">Analytics</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-sm">
+                    {["ZONAL_HEAD", "DIRECTORATE_HEAD", "BRANCH_COORDINATOR", "CMD_COORDINATOR", "EXTERNAL", "ADMIN", "CM", "TEACHER", "FINANCE"].map((role) => {
+                      const permissions = localSettings.permissions || {};
+                      const rolePerms = permissions[role] || [];
+                      const hasPerm = (module: string) => rolePerms.includes(module);
+                      
+                      const togglePerm = (module: string) => {
+                        const newPerms = hasPerm(module) 
+                          ? rolePerms.filter(p => p !== module)
+                          : [...rolePerms, module];
+                        setLocalSettings({
+                          ...localSettings,
+                          permissions: {
+                            ...permissions,
+                            [role]: newPerms
+                          }
+                        });
+                      };
+
+                      return (
+                        <tr key={role} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-4 font-bold text-slate-800">{role.replace("_", " ")}</td>
+                          <td className="px-4 py-4 text-center">
+                            <input
+                              type="checkbox"
+                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              checked={hasPerm("Finances")}
+                              onChange={() => togglePerm("Finances")}
+                            />
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <input
+                              type="checkbox"
+                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              checked={hasPerm("Outreach")}
+                              onChange={() => togglePerm("Outreach")}
+                            />
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <input
+                              type="checkbox"
+                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              checked={hasPerm("Analytics")}
+                              onChange={() => togglePerm("Analytics")}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="pt-6 flex justify-end">
+                <button
+                  onClick={saveConfig}
+                  className="px-6 py-2 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors flex items-center gap-2 shadow-sm"
+                >
+                  <Save size={18} /> Save Permissions
+                </button>
               </div>
             </div>
           )}
