@@ -566,12 +566,12 @@ const App: React.FC = () => {
                 bg-indigo-600 shadow-indigo-200
             `}
             >
-              {activeChurch.substring(0, 2)}
+              {activeChurch === "CM" ? "CMD" : activeChurch.substring(0, 2)}
             </div>
             {!isSidebarCollapsed && (
               <div className="overflow-hidden whitespace-nowrap animate-in slide-in-from-left-2 duration-300">
                 <h1 className="text-lg font-bold leading-none tracking-tight text-slate-900">
-                  {activeChurch} Church
+                  {activeChurch === "CM" ? "CM Directorate" : `${activeChurch} Church`}
                 </h1>
                 <span className="text-xs text-slate-400 font-medium">
                   {activeBranchId && activeBranchId !== "ALL" 
@@ -706,11 +706,11 @@ const App: React.FC = () => {
                     bg-indigo-600
                  `}
             >
-              {activeChurch.substring(0, 2)}
+              {activeChurch === "CM" ? "CMD" : activeChurch.substring(0, 2)}
             </div>
             <div className="text-left">
               <h1 className="font-bold text-slate-800 text-sm leading-tight flex items-baseline gap-2">
-                {activeChurch} Church <span className="text-[9px] font-normal text-slate-400">v1.1.0</span>
+                {activeChurch === "CM" ? "CM Directorate" : `${activeChurch} Church`} <span className="text-[9px] font-normal text-slate-400">v1.1.0</span>
               </h1>
               <p className="text-[10px] text-slate-500 font-medium">
                 {activeBranchId && activeBranchId !== "ALL" 
@@ -849,7 +849,7 @@ const App: React.FC = () => {
                 <p className="text-slate-500 mt-1 font-medium">
                   Managing ministry activities for{" "}
                   <span className="text-indigo-600 font-bold">
-                    {activeChurch} Church
+                    {activeChurch === "CM" ? "CM Directorate" : `${activeChurch} Church`}
                   </span>
                   .
                 </p>

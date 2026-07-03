@@ -1937,7 +1937,7 @@ const MembersList: React.FC<MembersListProps> = ({
                   }}
                   className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${churchFilter === c ? "bg-white text-indigo-600 shadow-sm ring-1 ring-black/5" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
                 >
-                  {c === "All" ? "All Branches" : `${c} Church`}
+                  {c === "CM" ? "CM Directorate" : c === "All" ? "All Branches" : `${c} Church`}
                 </button>
               ))}
             </div>
@@ -1958,7 +1958,7 @@ const MembersList: React.FC<MembersListProps> = ({
                 <option value="All">All Branches</option>
                 {[...availableChurches, "CM"].map((c) => (
                   <option key={c} value={c}>
-                    {c} Church
+                    {c === "CM" ? "CM Directorate" : `${c} Church`}
                   </option>
                 ))}
               </select>
