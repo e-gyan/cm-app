@@ -152,7 +152,7 @@ const StatCard: React.FC<{
       </h3>
       <p className="text-sm text-slate-500 font-medium mt-1">{title}</p>
       {subtitle && (
-        <p className="text-xs text-slate-400 mt-2 font-medium">{subtitle}</p>
+        <div className="text-xs text-slate-400 mt-2 font-medium">{subtitle}</div>
       )}
 
       {target && typeof progressValue === "number" && (
