@@ -1834,7 +1834,7 @@ const MembersList: React.FC<MembersListProps> = ({
                   <option value="TEACHER">Teacher</option>
                   <option value="ADMIN">Admin</option>
                   <option value="NONE">None</option>
-                  {(currentUser.role === "SUPER_ADMIN" || currentUser.role === "ADMIN") && (
+                  {isAdmin && (
                     <>
                       <option value="BRANCH_COORDINATOR">Branch Coordinator</option>
                       <option value="ZONAL_HEAD">Zonal Head</option>
