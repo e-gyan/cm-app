@@ -551,9 +551,11 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
             entry.FNF++;
           else entry.Inconsistent++;
 
-          if (m.gender === "MALE") entry.Male++;
-          else if (m.gender === "FEMALE") entry.Female++;
-          else entry.Unassigned++;
+          if (m.status === MemberStatus.ACTIVE) {
+            if (m.gender === "MALE") entry.Male++;
+            else if (m.gender === "FEMALE") entry.Female++;
+            else entry.Unassigned++;
+          }
         }
       });
     });

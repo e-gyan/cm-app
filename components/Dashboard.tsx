@@ -300,7 +300,7 @@ const AdminDashboard: React.FC<{
       let male = 0;
       let female = 0;
       let unassigned = 0;
-      data.members.filter(m => m.assignedChurch === church && m.status !== MemberStatus.ARCHIVED && m.status !== MemberStatus.TRANSFERRED).forEach(m => {
+      data.members.filter(m => m.assignedChurch === church && m.status === MemberStatus.ACTIVE).forEach(m => {
         if (m.gender === "MALE") male++;
         else if (m.gender === "FEMALE") female++;
         else unassigned++;
@@ -334,7 +334,7 @@ const AdminDashboard: React.FC<{
     let female = 0;
     let unassigned = 0;
     data.members.forEach(m => {
-      if (m.status !== MemberStatus.ARCHIVED && m.status !== MemberStatus.TRANSFERRED) {
+      if (m.status === MemberStatus.ACTIVE) {
         if (m.gender === "MALE") male++;
         else if (m.gender === "FEMALE") female++;
         else unassigned++;
@@ -1025,7 +1025,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
     let female = 0;
     let unassigned = 0;
     data.members.forEach(m => {
-      if (m.assignedChurch === activeChurch && m.status !== MemberStatus.ARCHIVED && m.status !== MemberStatus.TRANSFERRED) {
+      if (m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE) {
         if (m.gender === "MALE") male++;
         else if (m.gender === "FEMALE") female++;
         else unassigned++;
@@ -1036,6 +1036,80 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
       { name: "Female", value: female },
       { name: "Unassigned", value: unassigned }
     ];
+  }, [data.members, activeChurch]);
+
+  const dynamicTips = useMemo(() => {
+    const tips: { id: number; text: string; action?: string; icon?: any }[] = [];
+    
+    // 1. Inconsistent Members
+    const inconsistentCount = data.members.filter(m => m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE && m.type === MemberType.INCONSISTENT).length;
+    if (inconsistentCount > 0) {
+      tips.push({
+        id: 1,
+        text: `You have ${inconsistentCount} active member${inconsistentCount > 1 ? 's' : ''} marked as Inconsistent.`,
+        action: "Check the People Hub to follow up with them."
+      });
+    }
+
+    // 2. Birthdays This Week
+    const today = new Date();
+    const currentDayOfWeek = today.getDay(); // 0 is Sunday, 1 is Monday...
+    const diffToMonday = currentDayOfWeek === 0 ? -6 : 1 - currentDayOfWeek;
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() + diffToMonday);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+
+    const isBirthdayThisWeek = (birthDateString?: string) => {
+      if (!birthDateString) return false;
+      const parts = birthDateString.includes("-") ? birthDateString.split("-") : birthDateString.split("/");
+      let month, day;
+      if (birthDateString.includes("-")) {
+        month = parseInt(parts[1], 10);
+        day = parseInt(parts[2], 10);
+      } else {
+        day = parseInt(parts[0], 10);
+        month = parseInt(parts[1], 10);
+      }
+      if (isNaN(month) || isNaN(day)) return false;
+      const bdayThisYear = new Date(today.getFullYear(), month - 1, day);
+      return bdayThisYear >= startOfWeek && bdayThisYear <= endOfWeek;
+    };
+
+    const bdayCount = data.members.filter(m => m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE && isBirthdayThisWeek(m.birthDate)).length;
+    if (bdayCount > 0) {
+      tips.push({
+        id: tips.length + 1,
+        text: `${bdayCount} member${bdayCount > 1 ? 's have' : ' has a'} birthday this week!`,
+        action: "Head over to the People Hub to see who they are."
+      });
+    }
+
+    // 3. FNF/Visitors to convert
+    const fnfCount = data.members.filter(m => m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE && (m.type === MemberType.FNF || m.type === MemberType.VISITOR)).length;
+    if (fnfCount > 0) {
+      tips.push({
+        id: tips.length + 1,
+        text: `You have ${fnfCount} recent visitor${fnfCount > 1 ? 's' : ''} or FNF.`,
+        action: "Review their attendance in the People Hub to help them transition to full members."
+      });
+    }
+
+    // Fallbacks if not enough tips
+    if (tips.length === 0) {
+      tips.push({ id: 1, text: "Great job! All your members are active.", action: "Use the Punctual toggle for early arrivals to gamify the experience." });
+    }
+    if (tips.length < 2) {
+      tips.push({ id: tips.length + 1, text: "Ensure accurate tracking.", action: "Mark new visitors as FNF to track outreach separately." });
+    }
+    if (tips.length < 3) {
+      tips.push({ id: tips.length + 1, text: "Keep members engaged.", action: "Regularly check the Outreach Hub to schedule follow-ups." });
+    }
+
+    return tips.slice(0, 3);
   }, [data.members, activeChurch]);
 
   return (
@@ -1261,31 +1335,17 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
           <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-5 rounded-full blur-3xl translate-x-10 -translate-y-10"></div>
           <h3 className="text-xl font-bold mb-4 relative z-10">Sunday Tips</h3>
           <ul className="space-y-4 relative z-10">
-            <li className="flex gap-3 items-start">
-              <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                1
-              </div>
-              <p className="text-sm text-slate-300 font-medium">
-                Use the Punctual toggle for early arrivals to gamify the
-                experience.
-              </p>
-            </li>
-            <li className="flex gap-3 items-start">
-              <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                2
-              </div>
-              <p className="text-sm text-slate-300 font-medium">
-                Mark visitors as FNF to track outreach separately.
-              </p>
-            </li>
-            <li className="flex gap-3 items-start">
-              <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                3
-              </div>
-              <p className="text-sm text-slate-300 font-medium">
-                Review the Inconsistent list in People Hub to reach out.
-              </p>
-            </li>
+            {dynamicTips.map((tip, index) => (
+              <li key={tip.id} className="flex gap-3 items-start">
+                <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                  {index + 1}
+                </div>
+                <div className="text-sm">
+                  <p className="text-white font-medium mb-1">{tip.text}</p>
+                  <p className="text-slate-300 font-medium">{tip.action}</p>
+                </div>
+              </li>
+            ))}
           </ul>
         </div>
       </motion.div>
