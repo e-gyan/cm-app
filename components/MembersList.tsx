@@ -1927,7 +1927,7 @@ const MembersList: React.FC<MembersListProps> = ({
             </h3>
 
             {/* Desktop: Horizontal Scroll - Updated Order I, K, LJ, UJ */}
-            <div className="hidden md:flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto no-scrollbar">
+            <div className="hidden md:flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto hide-scrollbar">
               {["All", ...availableChurches, "CM"].map((c) => (
                 <button
                   key={c}
@@ -1974,7 +1974,7 @@ const MembersList: React.FC<MembersListProps> = ({
           </h3>
 
           {/* Desktop: Horizontal Scroll */}
-          <div className="hidden md:flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto no-scrollbar">
+          <div className="hidden md:flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto hide-scrollbar">
             {["CM", ...getCreationRoleOptions(), "ARCHIVED"].map((f) => (
               <button
                 key={f}
@@ -2035,11 +2035,11 @@ const MembersList: React.FC<MembersListProps> = ({
       </div>
 
       {selectedIds.size > 0 && canManage && (
-        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-4 w-[90%] md:w-auto justify-between md:justify-start animate-in fade-in slide-in-from-bottom-4">
-          <span className="font-bold whitespace-nowrap">
+        <div className="fixed bottom-24 md:bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-4 w-[95%] md:w-auto justify-start overflow-x-auto hide-scrollbar animate-in fade-in slide-in-from-bottom-4 border border-gray-800">
+          <span className="font-bold whitespace-nowrap shrink-0">
             {selectedIds.size} selected
           </span>
-          <div className="h-4 w-px bg-gray-700 hidden md:block"></div>
+          <div className="h-4 w-px bg-gray-700 shrink-0"></div>
           {isAdmin && (
             <>
               <button
@@ -2047,41 +2047,41 @@ const MembersList: React.FC<MembersListProps> = ({
                   setBulkAssignData({ zoneId: "", branchId: "" });
                   setIsBulkAssignModalOpen(true);
                 }}
-                className="flex items-center gap-2 hover:text-indigo-300 transition-colors font-medium text-indigo-200 whitespace-nowrap"
+                className="flex items-center gap-2 hover:text-indigo-300 transition-colors font-medium text-indigo-200 whitespace-nowrap shrink-0"
               >
                 <MapPin size={18} /> Bulk Assign
               </button>
-              <div className="h-4 w-px bg-gray-700 hidden md:block"></div>
+              <div className="h-4 w-px bg-gray-700 shrink-0"></div>
               <button
                 onClick={() => {
                   setBulkGenderValue("");
                   setIsBulkGenderModalOpen(true);
                 }}
-                className="flex items-center gap-2 hover:text-indigo-300 transition-colors font-medium text-indigo-200 whitespace-nowrap"
+                className="flex items-center gap-2 hover:text-indigo-300 transition-colors font-medium text-indigo-200 whitespace-nowrap shrink-0"
               >
                 <User size={18} /> Bulk Gender
               </button>
-              <div className="h-4 w-px bg-gray-700 hidden md:block"></div>
+              <div className="h-4 w-px bg-gray-700 shrink-0"></div>
             </>
           )}
           {filter !== "ARCHIVED" ? (
             <button
               onClick={handleBulkArchive}
-              className="flex items-center gap-2 hover:text-red-300 transition-colors font-medium text-red-200 whitespace-nowrap"
+              className="flex items-center gap-2 hover:text-red-300 transition-colors font-medium text-red-200 whitespace-nowrap shrink-0"
             >
               <Archive size={18} /> Bulk Archive
             </button>
           ) : (
             <button
               onClick={handleBulkDelete}
-              className="flex items-center gap-2 hover:text-red-300 transition-colors font-medium text-red-200 whitespace-nowrap"
+              className="flex items-center gap-2 hover:text-red-300 transition-colors font-medium text-red-200 whitespace-nowrap shrink-0"
             >
               <Trash2 size={18} /> Bulk Delete
             </button>
           )}
           <button
             onClick={() => setSelectedIds(new Set())}
-            className="ml-2 p-1 hover:bg-gray-700 rounded-full transition-colors"
+            className="ml-2 p-1 hover:bg-gray-700 rounded-full transition-colors shrink-0"
           >
             <X size={16} />
           </button>

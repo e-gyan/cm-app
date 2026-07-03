@@ -905,7 +905,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   return (
     <div className="space-y-4 pb-24 relative min-h-screen">
       {/* HEADER TABS */}
-      <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex gap-1 sticky top-0 z-30 overflow-x-auto no-scrollbar">
+      <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex gap-1 sticky top-0 z-30 overflow-x-auto hide-scrollbar">
         <button
           onClick={() => setActiveTab("VISIT")}
           className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all ${activeTab === "VISIT" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}

@@ -699,7 +699,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         {/* SERVICE TOGGLE (Visible only in Member Mode for UJ, I, K, LJ) */}
         {attendanceMode === "MEMBERS" &&
           (effectiveChurch !== "CM" || isCombinedView) && (
-            <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100 mb-1 overflow-x-auto no-scrollbar">
+            <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100 mb-1 overflow-x-auto hide-scrollbar">
               <button
                 onClick={() => setCurrentService("JOY")}
                 className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "JOY" ? "bg-amber-100 text-amber-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
@@ -878,7 +878,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               />
             </div>
 
-            <div className="flex gap-2 overflow-x-auto pb-1 px-1 no-scrollbar items-center">
+            <div className="flex gap-2 overflow-x-auto pb-1 px-1 hide-scrollbar items-center">
               <div className="md:hidden flex items-center gap-1 pr-2 border-r border-slate-200 mr-1 shrink-0">
                 {enablePunctuality && (
                   <button
@@ -1181,7 +1181,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               </div>
             </div>
 
-            <div className="p-2 flex gap-2 bg-slate-50 border-b border-slate-100 overflow-x-auto no-scrollbar">
+            <div className="p-2 flex gap-2 bg-slate-50 border-b border-slate-100 overflow-x-auto hide-scrollbar">
               {(() => {
                 const options = isAdmin
                   ? [

@@ -308,7 +308,7 @@ const AttendanceHeatmap = ({
   }
 
   return (
-    <div className="overflow-x-auto no-scrollbar py-2">
+    <div className="overflow-x-auto hide-scrollbar py-2">
       <div className="min-w-fit flex">
         <div className="flex flex-col text-[10px] text-slate-400 font-medium justify-between pr-2 py-1 select-none h-32">
           <span className="h-4 flex items-center">Sun</span>
@@ -1172,7 +1172,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
             </div>
           </div>
 
-          <div className="flex-1 min-h-[250px] overflow-x-auto scrollbar-hide">
+          <div className="flex-1 min-h-[250px] overflow-x-auto hide-scrollbar">
             <div className="min-w-[600px] h-full">
               {chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
@@ -1559,7 +1559,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
             <div className="mb-6 flex justify-between items-center">
               <h3 className="font-bold text-slate-800">Financial Trend</h3>
             </div>
-            <div className="flex-1 min-h-[250px] overflow-x-auto scrollbar-hide">
+            <div className="flex-1 min-h-[250px] overflow-x-auto hide-scrollbar">
               {financialIntel.chartData.length > 0 ? (
                 <div className="min-w-[500px] h-full">
                   <ResponsiveContainer width="100%" height="100%">

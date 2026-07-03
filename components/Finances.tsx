@@ -210,7 +210,7 @@ const Finances: React.FC<FinancesProps> = ({
 
       {/* Toolbar */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100">
-        <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 no-scrollbar">
+        <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 hide-scrollbar">
           {isAdmin && activeChurch === "CM" && (
             <>
               <span className="text-xs font-bold text-slate-400 uppercase mr-2">
