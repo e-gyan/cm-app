@@ -105,7 +105,7 @@ const StatCard: React.FC<{
   icon: React.ReactNode;
   colorClass: string;
   trend?: number;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   target?: number;
   progressValue?: number;
 }> = ({
@@ -235,7 +235,7 @@ const AdminDashboard: React.FC<{
   const churchStats = useMemo(() => {
     return churches.map((church) => {
       // New "Membership Goal" Logic: Active Members + FNF
-      const population = data.members.filter(
+      const membersInChurch = data.members.filter(
         (m) =>
           m.assignedChurch === church &&
           m.status === MemberStatus.ACTIVE &&
@@ -243,7 +243,19 @@ const AdminDashboard: React.FC<{
             m.type === MemberType.FNF ||
             ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
             m.type === MemberType.TEACHER),
-      ).length;
+      );
+      
+      const population = membersInChurch.length;
+      
+      let memberPop = 0;
+      let teacherPop = 0;
+      membersInChurch.forEach(m => {
+        if (m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE")) {
+          teacherPop++;
+        } else {
+          memberPop++;
+        }
+      });
 
       const attendance = data.attendance.filter((r) => r.churchId === church);
       const sortedAttendance = [...attendance].sort(
@@ -269,12 +281,21 @@ const AdminDashboard: React.FC<{
       let lastAttendance = 0;
       let prevAttendance = 0;
       let growth = 0;
+      let lastMemberAttendance = 0;
+      let lastTeacherAttendance = 0;
       if (sortedAttendance.length > 0) {
         const lastRec = sortedAttendance[sortedAttendance.length - 1];
-        lastAttendance = lastRec.presentMemberIds.filter((id) => {
+        lastRec.presentMemberIds.forEach((id) => {
           const m = data.members.find((mem) => mem.id === id);
-          return !!m;
-        }).length;
+          if (m) {
+            lastAttendance++;
+            if (m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE")) {
+              lastTeacherAttendance++;
+            } else {
+              lastMemberAttendance++;
+            }
+          }
+        });
 
         if (sortedAttendance.length >= 2) {
           const prevRec = sortedAttendance[sortedAttendance.length - 2];
@@ -314,9 +335,13 @@ const AdminDashboard: React.FC<{
       return {
         church,
         population,
+        memberPop,
+        teacherPop,
         avg,
         retention,
         lastAttendance,
+        lastMemberAttendance,
+        lastTeacherAttendance,
         prevAttendance,
         growth,
         target,
@@ -327,25 +352,58 @@ const AdminDashboard: React.FC<{
   }, [data, churches]);
 
   const totalPop = churchStats.reduce((acc, curr) => acc + curr.population, 0);
+  const totalMemberPop = churchStats.reduce((acc, curr) => acc + curr.memberPop, 0);
+  const totalTeacherPop = churchStats.reduce((acc, curr) => acc + curr.teacherPop, 0);
   const totalAvg = churchStats.reduce((acc, curr) => acc + curr.avg, 0);
 
-  const globalGenderData = useMemo(() => {
-    let male = 0;
-    let female = 0;
-    let unassigned = 0;
+  const { globalGenderBreakdown, globalAttendanceBreakdown } = useMemo(() => {
+    let maleMembers = 0, femaleMembers = 0;
+    let maleTeachers = 0, femaleTeachers = 0;
+    
     data.members.forEach(m => {
       if (m.status === MemberStatus.ACTIVE) {
-        if (m.gender === "MALE") male++;
-        else if (m.gender === "FEMALE") female++;
-        else unassigned++;
+        const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+        if (isTeacher) {
+          if (m.gender === "MALE") maleTeachers++;
+          else if (m.gender === "FEMALE") femaleTeachers++;
+        } else {
+          if (m.gender === "MALE") maleMembers++;
+          else if (m.gender === "FEMALE") femaleMembers++;
+        }
       }
     });
-    return [
-      { name: "Male", value: male },
-      { name: "Female", value: female },
-      { name: "Unassigned", value: unassigned }
-    ];
-  }, [data.members]);
+
+    let memberAttendance = 0;
+    let teacherAttendance = 0;
+    
+    const sortedAttendance = [...data.attendance].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    if (sortedAttendance.length > 0) {
+      const latestDate = sortedAttendance[sortedAttendance.length - 1].date;
+      const latestRecords = sortedAttendance.filter(r => r.date === latestDate);
+      latestRecords.forEach(r => {
+        r.presentMemberIds.forEach(id => {
+          const m = data.members.find(mem => mem.id === id);
+          if (m) {
+            const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+            if (isTeacher) teacherAttendance++;
+            else memberAttendance++;
+          }
+        });
+      });
+    }
+
+    return {
+      globalGenderBreakdown: {
+        members: { male: maleMembers, female: femaleMembers },
+        teachers: { male: maleTeachers, female: femaleTeachers }
+      },
+      globalAttendanceBreakdown: {
+        members: memberAttendance,
+        teachers: teacherAttendance
+      }
+    };
+  }, [data.members, data.attendance]);
 
   const totalTarget = churchStats.reduce(
     (acc, curr) => acc + (curr.target > 0 ? curr.target : 0),
@@ -461,12 +519,13 @@ const AdminDashboard: React.FC<{
           <h2 className="text-5xl font-extrabold mb-2 tracking-tight">
             {totalPop}
           </h2>
-          <p className="text-indigo-100 font-medium text-lg">
+          <p className="text-indigo-100 font-medium text-lg mb-2">
             Total Membership
           </p>
-          <p className="text-indigo-200 text-sm mt-1 opacity-80">
-            Active & FNF
-          </p>
+          <div className="flex items-center gap-3 text-xs font-medium text-indigo-200">
+            <span className="bg-white/10 px-2 py-1 rounded-md">{totalMemberPop} Members</span>
+            <span className="bg-white/10 px-2 py-1 rounded-md">{totalTeacherPop} Teachers</span>
+          </div>
         </div>
 
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 lg:col-span-3 flex flex-col justify-center relative">
@@ -642,30 +701,57 @@ const AdminDashboard: React.FC<{
       )}
 
       {/* Global Gender Breakdown */}
-      {globalGenderData && globalGenderData.length > 0 && (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <motion.div variants={itemVariants} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
           <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-6 text-sm uppercase tracking-wider">
-            <Users size={16} className="text-indigo-500" /> Global Gender Breakdown
+            <Users size={16} className="text-indigo-500" /> Global Demographics
           </h3>
-          <div className="flex flex-col gap-4">
-            {globalGenderData.map((g) => (
-              <div key={g.name} className="flex items-center gap-4">
-                <span className="w-24 text-sm font-bold text-slate-600">{g.name}</span>
-                <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
-                  <div 
-                    className={`h-full ${g.name === "Male" ? "bg-blue-500" : g.name === "Female" ? "bg-pink-500" : "bg-slate-400"}`} 
-                    style={{ width: `${(g.value / totalPop) * 100}%` }}
-                  />
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase mb-3">Members</p>
+              <div className="flex flex-col gap-2">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">Male</span>
+                  <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{globalGenderBreakdown.members.male}</span>
                 </div>
-                <span className="text-sm font-bold text-slate-800">{g.value}</span>
-                <span className="text-xs font-medium text-slate-400 w-10 text-right">
-                  {totalPop > 0 ? Math.round((g.value / totalPop) * 100) : 0}%
-                </span>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">Female</span>
+                  <span className="font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded">{globalGenderBreakdown.members.female}</span>
+                </div>
               </div>
-            ))}
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase mb-3">Teachers/Staff</p>
+              <div className="flex flex-col gap-2">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">Male</span>
+                  <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{globalGenderBreakdown.teachers.male}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">Female</span>
+                  <span className="font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded">{globalGenderBreakdown.teachers.female}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </motion.div>
-      )}
+
+        <motion.div variants={itemVariants} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+          <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-6 text-sm uppercase tracking-wider">
+            <Calendar size={16} className="text-emerald-500" /> Last Sunday Attendance
+          </h3>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-col items-center justify-center">
+              <span className="text-3xl font-black text-indigo-600">{globalAttendanceBreakdown.members}</span>
+              <span className="text-xs font-bold text-slate-500 uppercase mt-1">Members Present</span>
+            </div>
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-col items-center justify-center">
+              <span className="text-3xl font-black text-emerald-600">{globalAttendanceBreakdown.teachers}</span>
+              <span className="text-xs font-bold text-slate-500 uppercase mt-1">Teachers Present</span>
+            </div>
+          </div>
+        </motion.div>
+      </div>
 
       <motion.div
         variants={itemVariants}
@@ -700,6 +786,9 @@ const AdminDashboard: React.FC<{
                   <p className="text-sm text-slate-500 font-medium">
                     {stat.population} Active Members
                   </p>
+                  <p className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">
+                    {stat.memberPop} M • {stat.teacherPop} T
+                  </p>
                 </div>
               </div>
               <div
@@ -712,6 +801,9 @@ const AdminDashboard: React.FC<{
                   <span className="text-2xl font-bold">
                     {stat.lastAttendance}
                   </span>
+                  <div className="text-[10px] font-medium text-slate-400 uppercase mt-1">
+                    {stat.lastMemberAttendance} M • {stat.lastTeacherAttendance} T
+                  </div>
                 </div>
               </div>
             </div>
@@ -878,7 +970,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
   // ... existing stats calculation ...
   const stats = useMemo(() => {
     // ... (existing code for population, members, attendance) ...
-    const population = data.members.filter(
+    const membersInChurch = data.members.filter(
       (m) =>
         m.assignedChurch === activeChurch &&
         m.status === MemberStatus.ACTIVE &&
@@ -886,7 +978,18 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
           m.type === MemberType.FNF ||
           ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
           m.type === MemberType.TEACHER),
-    ).length;
+    );
+    const population = membersInChurch.length;
+    
+    let memberPop = 0;
+    let teacherPop = 0;
+    membersInChurch.forEach(m => {
+      if (m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE")) {
+        teacherPop++;
+      } else {
+        memberPop++;
+      }
+    });
 
     const members = data.members.filter(
       (m) =>
@@ -927,14 +1030,35 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
         )
       : 0;
     const lastAtt = last5.length > 0 ? last5[last5.length - 1].count : 0;
+    
+    let lastMemberAttendance = 0;
+    let lastTeacherAttendance = 0;
+    if (attendance.length > 0) {
+      const lastRec = attendance[attendance.length - 1];
+      lastRec.presentMemberIds.forEach(id => {
+        const m = data.members.find(mem => mem.id === id);
+        if (m) {
+          if (m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE")) {
+            lastTeacherAttendance++;
+          } else {
+            lastMemberAttendance++;
+          }
+        }
+      });
+    }
+
     const trend = avg > 0 ? Math.round(((lastAtt - avg) / avg) * 100) : 0;
     const target = data.targets?.[activeChurch] || 0;
     const retention = population > 0 ? Math.round((avg / population) * 100) : 0;
 
     return {
       totalMembers: population,
+      memberPop,
+      teacherPop,
       avgAttendance: avg,
       lastAttendance: lastAtt,
+      lastMemberAttendance,
+      lastTeacherAttendance,
       trendData: last5,
       trend,
       target,
@@ -1020,23 +1144,55 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
     };
   }, [data, activeChurch]);
 
-  const churchGenderData = useMemo(() => {
-    let male = 0;
-    let female = 0;
-    let unassigned = 0;
+  const { churchGenderBreakdown, churchAttendanceBreakdown } = useMemo(() => {
+    let maleMembers = 0, femaleMembers = 0;
+    let maleTeachers = 0, femaleTeachers = 0;
+    
     data.members.forEach(m => {
       if (m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE) {
-        if (m.gender === "MALE") male++;
-        else if (m.gender === "FEMALE") female++;
-        else unassigned++;
+        const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+        if (isTeacher) {
+          if (m.gender === "MALE") maleTeachers++;
+          else if (m.gender === "FEMALE") femaleTeachers++;
+        } else {
+          if (m.gender === "MALE") maleMembers++;
+          else if (m.gender === "FEMALE") femaleMembers++;
+        }
       }
     });
-    return [
-      { name: "Male", value: male },
-      { name: "Female", value: female },
-      { name: "Unassigned", value: unassigned }
-    ];
-  }, [data.members, activeChurch]);
+
+    let memberAttendance = 0;
+    let teacherAttendance = 0;
+    
+    const churchAttendance = data.attendance.filter(r => r.churchId === activeChurch);
+    const sortedAttendance = [...churchAttendance].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    if (sortedAttendance.length > 0) {
+      const latestDate = sortedAttendance[sortedAttendance.length - 1].date;
+      const latestRecords = sortedAttendance.filter(r => r.date === latestDate);
+      latestRecords.forEach(r => {
+        r.presentMemberIds.forEach(id => {
+          const m = data.members.find(mem => mem.id === id);
+          if (m) {
+            const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+            if (isTeacher) teacherAttendance++;
+            else memberAttendance++;
+          }
+        });
+      });
+    }
+
+    return {
+      churchGenderBreakdown: {
+        members: { male: maleMembers, female: femaleMembers },
+        teachers: { male: maleTeachers, female: femaleTeachers }
+      },
+      churchAttendanceBreakdown: {
+        members: memberAttendance,
+        teachers: teacherAttendance
+      }
+    };
+  }, [data.members, data.attendance, activeChurch]);
 
   const dynamicTips = useMemo(() => {
     const tips: { id: number; text: string; action?: string; icon?: any }[] = [];
@@ -1119,43 +1275,72 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
       initial="hidden"
       animate="show"
     >
-      {churchGenderData && churchGenderData.length > 0 && (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <motion.div variants={itemVariants} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
           <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-6 text-sm uppercase tracking-wider">
-            <Users size={16} className="text-indigo-500" /> Gender Breakdown ({activeChurch})
+            <Users size={16} className="text-indigo-500" /> Demographics ({activeChurch})
           </h3>
-          <div className="flex flex-col gap-4">
-            {churchGenderData.map((g) => {
-              const total = churchGenderData.reduce((acc, curr) => acc + curr.value, 0);
-              const percentage = total > 0 ? (g.value / total) * 100 : 0;
-              return (
-                <div key={g.name} className="flex items-center gap-4">
-                  <span className="w-24 text-sm font-bold text-slate-600">{g.name}</span>
-                  <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full ${g.name === "Male" ? "bg-blue-500" : g.name === "Female" ? "bg-pink-500" : "bg-slate-400"}`} 
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                  <span className="text-sm font-bold text-slate-800">{g.value}</span>
-                  <span className="text-xs font-medium text-slate-400 w-10 text-right">
-                    {percentage.toFixed(0)}%
-                  </span>
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase mb-3">Members</p>
+              <div className="flex flex-col gap-2">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">Male</span>
+                  <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{churchGenderBreakdown.members.male}</span>
                 </div>
-              );
-            })}
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">Female</span>
+                  <span className="font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded">{churchGenderBreakdown.members.female}</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase mb-3">Teachers/Staff</p>
+              <div className="flex flex-col gap-2">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">Male</span>
+                  <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{churchGenderBreakdown.teachers.male}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">Female</span>
+                  <span className="font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded">{churchGenderBreakdown.teachers.female}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </motion.div>
-      )}
+
+        <motion.div variants={itemVariants} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+          <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-6 text-sm uppercase tracking-wider">
+            <Calendar size={16} className="text-emerald-500" /> Last Sunday Attendance
+          </h3>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-col items-center justify-center">
+              <span className="text-3xl font-black text-indigo-600">{churchAttendanceBreakdown.members}</span>
+              <span className="text-xs font-bold text-slate-500 uppercase mt-1">Members Present</span>
+            </div>
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-col items-center justify-center">
+              <span className="text-3xl font-black text-emerald-600">{churchAttendanceBreakdown.teachers}</span>
+              <span className="text-xs font-bold text-slate-500 uppercase mt-1">Teachers Present</span>
+            </div>
+          </div>
+        </motion.div>
+      </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
         {/* Existing Stats Cards */}
         <StatCard
-          title="Active + FNF"
+          title="Total Membership"
           value={stats.totalMembers}
           icon={<Users size={24} />}
           colorClass="bg-indigo-600"
-          subtitle="Current Pop."
+          subtitle={
+            <div className="flex items-center gap-2 mt-1">
+              <span>{stats.memberPop} Members</span>
+              <span>•</span>
+              <span>{stats.teacherPop} Teachers</span>
+            </div>
+          }
         />
         <StatCard
           title="Retention Rate"
@@ -1170,7 +1355,12 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
           icon={<Calendar size={24} />}
           colorClass="bg-emerald-500"
           trend={stats.trend}
-          subtitle={`vs Avg (${stats.avgAttendance})`}
+          subtitle={
+            <div className="flex flex-col gap-1 mt-1">
+              <span>{stats.lastMemberAttendance} Members • {stats.lastTeacherAttendance} Teachers</span>
+              <span>vs Avg ({stats.avgAttendance})</span>
+            </div>
+          }
         />
         <StatCard
           title="WoW Change"

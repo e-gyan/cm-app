@@ -1001,9 +1001,13 @@ const MembersList: React.FC<MembersListProps> = ({
                               member.isAccessActive ? (
                                 <span className="flex items-center gap-1 text-xs bg-green-50 text-green-700 px-2 py-1 rounded border border-green-100 font-medium">
                                   <Key size={12} />{" "}
-                                  {member.role === "ADMIN"
-                                    ? "Admin"
-                                    : "Teacher"}
+                                  {member.role === "SUPER_ADMIN" ? "Super Admin" : 
+                                   member.role === "ZONAL_HEAD" ? "Zonal Head" : 
+                                   member.role === "BRANCH_COORDINATOR" ? "Branch Coord" : 
+                                   member.role === "CMD_COORDINATOR" ? "CMD Coord" : 
+                                   member.role === "EXTERNAL" ? "External" : 
+                                   member.role === "ADMIN" ? "Admin" : 
+                                   "Teacher"}
                                 </span>
                               ) : (
                                 <span className="flex items-center gap-1 text-xs bg-gray-50 text-gray-400 px-2 py-1 rounded border border-gray-100">
@@ -1830,13 +1834,18 @@ const MembersList: React.FC<MembersListProps> = ({
                   <option value="TEACHER">Teacher</option>
                   <option value="ADMIN">Admin</option>
                   <option value="NONE">None</option>
-                  {currentUser.role === "SUPER_ADMIN" && (
+                  {(currentUser.role === "SUPER_ADMIN" || currentUser.role === "ADMIN") && (
                     <>
-                      <option value="ZONAL_HEAD">Zone Head</option>
-                      <option value="SUPER_ADMIN">
-                        CMD Head (Super Admin)
-                      </option>
+                      <option value="BRANCH_COORDINATOR">Branch Coordinator</option>
+                      <option value="ZONAL_HEAD">Zonal Head</option>
+                      <option value="CMD_COORDINATOR">CMD Coordinator</option>
+                      <option value="EXTERNAL">External</option>
                     </>
+                  )}
+                  {currentUser.role === "SUPER_ADMIN" && (
+                    <option value="SUPER_ADMIN">
+                      Super Admin
+                    </option>
                   )}
                 </select>
                 <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">

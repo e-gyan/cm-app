@@ -54,6 +54,8 @@ const Settings: React.FC<SettingsProps> = ({
     text: string;
   } | null>(null);
   const [selectedChurchForTheme, setSelectedChurchForTheme] = useState(activeChurch);
+  const [permTab, setPermTab] = useState<"MATRIX" | "INDIVIDUAL">("MATRIX");
+  const [selectedRoleForPerms, setSelectedRoleForPerms] = useState<string>("ZONAL_HEAD");
   const [isSyncing, setIsSyncing] = useState(false);
   const [cloudLastUpdated, setCloudLastUpdated] = useState<number | null>(null);
 
@@ -203,14 +205,12 @@ const Settings: React.FC<SettingsProps> = ({
           >
             Theme Colors
           </button>
-          {currentUser.role === "SUPER_ADMIN" && (
-            <button
-              onClick={() => setActiveTab("PERMISSIONS")}
-              className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === "PERMISSIONS" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
-            >
-              Role Permissions
-            </button>
-          )}
+          <button
+            onClick={() => setActiveTab("PERMISSIONS")}
+            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === "PERMISSIONS" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+          >
+            Role Permissions
+          </button>
           <button
             onClick={() => setActiveTab("CLOUD")}
             className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === "CLOUD" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
@@ -612,77 +612,164 @@ const Settings: React.FC<SettingsProps> = ({
           )}
 
           {/* PERMISSIONS TAB */}
-          {activeTab === "PERMISSIONS" && currentUser.role === "SUPER_ADMIN" && (
+          {activeTab === "PERMISSIONS" && (
             <div className="space-y-6">
-              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                <SettingsIcon size={20} className="text-indigo-600" /> Role Permissions
-              </h3>
+              <div className="flex justify-between items-center">
+                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                  <SettingsIcon size={20} className="text-indigo-600" /> Role Permissions
+                </h3>
+              </div>
               <p className="text-sm text-slate-500">
                 Configure module access for different roles across the system.
               </p>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wide">
-                    <tr>
-                      <th className="px-4 py-3">Role</th>
-                      <th className="px-4 py-3 text-center">Finances</th>
-                      <th className="px-4 py-3 text-center">Outreach</th>
-                      <th className="px-4 py-3 text-center">Analytics</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-sm">
-                    {["ZONAL_HEAD", "DIRECTORATE_HEAD", "BRANCH_COORDINATOR", "CMD_COORDINATOR", "EXTERNAL", "ADMIN", "CM", "TEACHER", "FINANCE"].map((role) => {
+              <div className="flex gap-4 border-b border-slate-100 pb-4 mb-4">
+                <button
+                  onClick={() => setPermTab("MATRIX")}
+                  className={`px-4 py-2 font-bold text-sm rounded-xl transition-colors ${permTab === "MATRIX" ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-50"}`}
+                >
+                  Role Access Overview
+                </button>
+                <button
+                  onClick={() => setPermTab("INDIVIDUAL")}
+                  className={`px-4 py-2 font-bold text-sm rounded-xl transition-colors ${permTab === "INDIVIDUAL" ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-50"}`}
+                >
+                  Individual Role Management
+                </button>
+              </div>
+
+              {permTab === "MATRIX" && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wide">
+                      <tr>
+                        <th className="px-4 py-3">Role</th>
+                        <th className="px-4 py-3 text-center">Dashboard</th>
+                        <th className="px-4 py-3 text-center">People Hub</th>
+                        <th className="px-4 py-3 text-center">Attendance</th>
+                        <th className="px-4 py-3 text-center">Finances</th>
+                        <th className="px-4 py-3 text-center">Outreach</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-sm">
+                      {["ZONAL_HEAD", "BRANCH_COORDINATOR", "CMD_COORDINATOR", "EXTERNAL", "ADMIN", "SUPER_ADMIN", "TEACHER"].map((role) => {
+                        const permissions = localSettings.permissions || {};
+                        const rolePerms = permissions[role] || [];
+                        const hasPerm = (module: string) => rolePerms.includes(module);
+                        
+                        const togglePerm = (module: string) => {
+                          const newPerms = hasPerm(module) 
+                            ? rolePerms.filter(p => p !== module)
+                            : [...rolePerms, module];
+                          setLocalSettings({
+                            ...localSettings,
+                            permissions: {
+                              ...permissions,
+                              [role]: newPerms
+                            }
+                          });
+                        };
+
+                        return (
+                          <tr key={role} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-4 font-bold text-slate-800">{role.replace(/_/g, " ")}</td>
+                            <td className="px-4 py-4 text-center">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                checked={hasPerm("Dashboard")}
+                                onChange={() => togglePerm("Dashboard")}
+                              />
+                            </td>
+                            <td className="px-4 py-4 text-center">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                checked={hasPerm("People Hub")}
+                                onChange={() => togglePerm("People Hub")}
+                              />
+                            </td>
+                            <td className="px-4 py-4 text-center">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                checked={hasPerm("Attendance")}
+                                onChange={() => togglePerm("Attendance")}
+                              />
+                            </td>
+                            <td className="px-4 py-4 text-center">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                checked={hasPerm("Finances")}
+                                onChange={() => togglePerm("Finances")}
+                              />
+                            </td>
+                            <td className="px-4 py-4 text-center">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                checked={hasPerm("Outreach")}
+                                onChange={() => togglePerm("Outreach")}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {permTab === "INDIVIDUAL" && (
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Select Role to Manage</label>
+                    <select
+                      value={selectedRoleForPerms}
+                      onChange={(e) => setSelectedRoleForPerms(e.target.value)}
+                      className="w-full md:w-1/2 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {["ZONAL_HEAD", "BRANCH_COORDINATOR", "CMD_COORDINATOR", "EXTERNAL", "ADMIN", "SUPER_ADMIN", "TEACHER"].map(role => (
+                        <option key={role} value={role}>{role.replace(/_/g, " ")}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {["Dashboard", "People Hub", "Attendance", "Finances", "Outreach"].map(module => {
                       const permissions = localSettings.permissions || {};
-                      const rolePerms = permissions[role] || [];
-                      const hasPerm = (module: string) => rolePerms.includes(module);
+                      const rolePerms = permissions[selectedRoleForPerms] || [];
+                      const hasPerm = rolePerms.includes(module);
                       
-                      const togglePerm = (module: string) => {
-                        const newPerms = hasPerm(module) 
+                      const togglePerm = () => {
+                        const newPerms = hasPerm
                           ? rolePerms.filter(p => p !== module)
                           : [...rolePerms, module];
                         setLocalSettings({
                           ...localSettings,
                           permissions: {
                             ...permissions,
-                            [role]: newPerms
+                            [selectedRoleForPerms]: newPerms
                           }
                         });
                       };
 
                       return (
-                        <tr key={role} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-4 py-4 font-bold text-slate-800">{role.replace("_", " ")}</td>
-                          <td className="px-4 py-4 text-center">
-                            <input
-                              type="checkbox"
-                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                              checked={hasPerm("Finances")}
-                              onChange={() => togglePerm("Finances")}
-                            />
-                          </td>
-                          <td className="px-4 py-4 text-center">
-                            <input
-                              type="checkbox"
-                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                              checked={hasPerm("Outreach")}
-                              onChange={() => togglePerm("Outreach")}
-                            />
-                          </td>
-                          <td className="px-4 py-4 text-center">
-                            <input
-                              type="checkbox"
-                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                              checked={hasPerm("Analytics")}
-                              onChange={() => togglePerm("Analytics")}
-                            />
-                          </td>
-                        </tr>
+                        <label key={module} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
+                          <span className="font-bold text-slate-700">{module}</span>
+                          <input
+                            type="checkbox"
+                            checked={hasPerm}
+                            onChange={togglePerm}
+                            className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer"
+                          />
+                        </label>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                </div>
+              )}
 
               <div className="pt-6 flex justify-end">
                 <button

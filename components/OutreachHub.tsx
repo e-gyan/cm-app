@@ -2560,6 +2560,20 @@ const CollapsibleProgressSection = ({
                     ></div>
                   </div>
                 </div>
+                <div className="mt-2">
+                  <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase mb-1">
+                    <span>Calls</span>
+                    <span>{stats.calls}/4</span>
+                  </div>
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-purple-500 rounded-full"
+                      style={{
+                        width: `${Math.min(100, (stats.calls / 4) * 100)}%`,
+                      }}
+                    ></div>
+                  </div>
+                </div>
               </div>
             );
           }))}
@@ -2711,6 +2725,16 @@ const getMemberStats = (memberId: string, data: AppData) => {
   const visits = (data.outreachSessions || []).filter(
     (s) =>
       s.status === "COMPLETED" &&
+      (s.sessionType === "VISIT" || !s.sessionType) &&
+      new Date(s.date).getFullYear() === year &&
+      s.visitedMemberIds?.includes(memberId),
+  ).length;
+
+  const calls = (data.outreachSessions || []).filter(
+    (s) =>
+      s.status === "COMPLETED" &&
+      s.sessionType === "CALL" &&
+      s.outcome === "REACHED" &&
       new Date(s.date).getFullYear() === year &&
       s.visitedMemberIds?.includes(memberId),
   ).length;
@@ -2728,6 +2752,7 @@ const getMemberStats = (memberId: string, data: AppData) => {
 
   return {
     visits,
+    calls,
     prayer: {
       week: sumMins(
         prayers.filter(
