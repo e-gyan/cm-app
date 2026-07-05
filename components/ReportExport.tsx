@@ -824,28 +824,11 @@ const ReportExport: React.FC<ReportExportProps> = ({
                     className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                     size={18}
                   />
-                  <select
+                  <input
+                    type="date"
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 appearance-none focus:ring-2 focus:ring-indigo-500 outline-none"
-                  >
-                    {availableDates.map((d) => {
-                      const globalEventName = data.attendance.find(
-                        (r) => r.date === d && r.eventName,
-                      )?.eventName;
-                      const label = globalEventName
-                        ? `${formatDateDDMMYYYY(d)} - ${globalEventName}`
-                        : formatDateDDMMYYYY(d);
-                      return (
-                        <option key={d} value={d}>
-                          {label}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <ChevronDown
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-                    size={18}
                   />
                 </div>
               </div>

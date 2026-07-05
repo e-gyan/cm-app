@@ -771,32 +771,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                 <Calendar size={16} />
               </div>
-              {currentService === "SPECIAL" ? (
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 text-slate-800 text-xs md:text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-9 p-3 appearance-none cursor-pointer"
-                />
-              ) : (
-                <select
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 text-slate-800 text-xs md:text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-9 p-3 appearance-none cursor-pointer truncate"
-                >
-                  {sundaysCurrentYear.map((d) => {
-                    const strDate = d.toISOString().split("T")[0];
-                    const isToday =
-                      strDate === new Date().toISOString().split("T")[0];
-                    return (
-                      <option key={strDate} value={strDate}>
-                        {isToday ? "Today, " : ""}
-                        {formatDateDDMMYYYY(strDate)}
-                      </option>
-                    );
-                  })}
-                </select>
-              )}
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs md:text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-9 p-3 appearance-none cursor-pointer"
+              />
             </div>
 
             {enablePunctuality && (
