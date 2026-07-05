@@ -34,14 +34,14 @@ const Settings: React.FC<SettingsProps> = ({
     "GENERAL" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS"
   >(() => {
     return (
-      (localStorage.getItem("settings_activeTab") as
+      (sessionStorage.getItem("settings_activeTab") as
         "GENERAL" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS") ||
       "GENERAL"
     );
   });
 
   useEffect(() => {
-    localStorage.setItem("settings_activeTab", activeTab);
+    sessionStorage.setItem("settings_activeTab", activeTab);
   }, [activeTab]);
 
   // Local state for editing
@@ -53,7 +53,7 @@ const Settings: React.FC<SettingsProps> = ({
     type: "success" | "error";
     text: string;
   } | null>(null);
-  const [selectedChurchForTheme, setSelectedChurchForTheme] = useState(activeChurch);
+  const [selectedConfigChurch, setSelectedConfigChurch] = useState(activeChurch);
   const [permTab, setPermTab] = useState<"MATRIX" | "INDIVIDUAL">("MATRIX");
   const [selectedRoleForPerms, setSelectedRoleForPerms] = useState<string>("ZONAL_HEAD");
   const [isSyncing, setIsSyncing] = useState(false);
@@ -227,6 +227,26 @@ const Settings: React.FC<SettingsProps> = ({
               <h3 className="font-bold text-lg text-slate-800">
                 Feature Toggles
               </h3>
+              
+              {isAdmin && (
+                <div className="flex flex-col gap-2 mb-4">
+                  <label className="text-sm font-bold text-slate-700">
+                    Select Church / Branch to Configure
+                  </label>
+                  <select
+                    value={selectedConfigChurch}
+                    onChange={(e) => setSelectedConfigChurch(e.target.value)}
+                    className="p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
+                  >
+                    {localSettings.churches.map((church) => (
+                      <option key={church} value={church}>
+                        {church}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="space-y-4">
                 <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl cursor-pointer">
                   <span className="font-medium text-slate-700">
@@ -234,32 +254,39 @@ const Settings: React.FC<SettingsProps> = ({
                   </span>
                   <input
                     type="checkbox"
-                    checked={localSettings.features.punctuality}
+                    checked={localSettings.features?.[selectedConfigChurch]?.punctuality ?? false}
                     onChange={(e) =>
                       setLocalSettings({
                         ...localSettings,
                         features: {
                           ...localSettings.features,
-                          punctuality: e.target.checked,
+                          [selectedConfigChurch]: {
+                            ...(localSettings.features?.[selectedConfigChurch] || { punctuality: false, outreach: false }),
+                            punctuality: e.target.checked,
+                          }
                         },
                       })
                     }
                     className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
                   />
                 </label>
+
                 <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl cursor-pointer">
                   <span className="font-medium text-slate-700">
                     Enable Outreach Module
                   </span>
                   <input
                     type="checkbox"
-                    checked={localSettings.features.outreach}
+                    checked={localSettings.features?.[selectedConfigChurch]?.outreach ?? false}
                     onChange={(e) =>
                       setLocalSettings({
                         ...localSettings,
                         features: {
                           ...localSettings.features,
-                          outreach: e.target.checked,
+                          [selectedConfigChurch]: {
+                            ...(localSettings.features?.[selectedConfigChurch] || { punctuality: false, outreach: false }),
+                            outreach: e.target.checked,
+                          }
                         },
                       })
                     }
@@ -562,8 +589,8 @@ const Settings: React.FC<SettingsProps> = ({
                     Select Church / Branch
                   </label>
                   <select
-                    value={selectedChurchForTheme}
-                    onChange={(e) => setSelectedChurchForTheme(e.target.value)}
+                    value={selectedConfigChurch}
+                    onChange={(e) => setSelectedConfigChurch(e.target.value)}
                     className="p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
                   >
                     {localSettings.churches.map((church) => (
@@ -579,7 +606,7 @@ const Settings: React.FC<SettingsProps> = ({
                   ([colorName, palette]) => {
                     const currentThemeColors = localSettings.themeColors || {};
                     const isSelected =
-                      (currentThemeColors[selectedChurchForTheme] || "indigo") ===
+                      (currentThemeColors[selectedConfigChurch] || "indigo") ===
                       colorName;
                     return (
                       <button
@@ -587,7 +614,7 @@ const Settings: React.FC<SettingsProps> = ({
                         onClick={() => {
                           const newThemeColors = {
                             ...currentThemeColors,
-                            [selectedChurchForTheme]: colorName,
+                            [selectedConfigChurch]: colorName,
                           };
                           setLocalSettings({
                             ...localSettings,

@@ -170,10 +170,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<
     "VISIT" | "PRAYER" | "CONNECT" | "TRACK"
-  >(() => (localStorage.getItem("outreach_activeTab") as any) || "VISIT");
+  >(() => (sessionStorage.getItem("outreach_activeTab") as any) || "VISIT");
 
   useEffect(() => {
-    localStorage.setItem("outreach_activeTab", activeTab);
+    sessionStorage.setItem("outreach_activeTab", activeTab);
   }, [activeTab]);
 
   const [messageTarget, setMessageTarget] = useState<Member | null>(null);

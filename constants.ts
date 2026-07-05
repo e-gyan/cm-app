@@ -42,10 +42,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     apiKey: DEFAULT_CLOUD_CONFIG.apiKey,
     binId: DEFAULT_CLOUD_CONFIG.binId,
   },
-  features: {
-    punctuality: true,
-    outreach: true,
-  },
+  features: {},
 };
 
 export const getSundaysInYear = (year: number) => {

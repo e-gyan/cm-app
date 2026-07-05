@@ -375,12 +375,19 @@ const AdminDashboard: React.FC<{
 
     let memberAttendance = 0;
     let teacherAttendance = 0;
+    let prevMemberAttendance = 0;
+    let prevTeacherAttendance = 0;
+    let latestDateStr = "";
+    let prevDateStr = "";
     
     const sortedAttendance = [...data.attendance].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
-    if (sortedAttendance.length > 0) {
-      const latestDate = sortedAttendance[sortedAttendance.length - 1].date;
-      const latestRecords = sortedAttendance.filter(r => r.date === latestDate);
+    // Group by unique dates
+    const uniqueDates = Array.from(new Set(sortedAttendance.map(a => a.date)));
+    
+    if (uniqueDates.length > 0) {
+      latestDateStr = uniqueDates[uniqueDates.length - 1];
+      const latestRecords = sortedAttendance.filter(r => r.date === latestDateStr);
       latestRecords.forEach(r => {
         r.presentMemberIds.forEach(id => {
           const m = data.members.find(mem => mem.id === id);
@@ -391,6 +398,21 @@ const AdminDashboard: React.FC<{
           }
         });
       });
+      
+      if (uniqueDates.length > 1) {
+        prevDateStr = uniqueDates[uniqueDates.length - 2];
+        const prevRecords = sortedAttendance.filter(r => r.date === prevDateStr);
+        prevRecords.forEach(r => {
+          r.presentMemberIds.forEach(id => {
+            const m = data.members.find(mem => mem.id === id);
+            if (m) {
+              const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+              if (isTeacher) prevTeacherAttendance++;
+              else prevMemberAttendance++;
+            }
+          });
+        });
+      }
     }
 
     return {
@@ -400,7 +422,11 @@ const AdminDashboard: React.FC<{
       },
       globalAttendanceBreakdown: {
         members: memberAttendance,
-        teachers: teacherAttendance
+        teachers: teacherAttendance,
+        prevMembers: prevMemberAttendance,
+        prevTeachers: prevTeacherAttendance,
+        latestDateStr,
+        prevDateStr,
       }
     };
   }, [data.members, data.attendance]);
@@ -433,7 +459,8 @@ const AdminDashboard: React.FC<{
       : Math.round(((totalLastAtt - totalPrevAtt) / totalPrevAtt) * 100);
 
   const globalOutreachStats = useMemo(() => {
-    if (!data.settings.features.outreach) return null;
+    const isOutreachEnabled = Object.values(data.settings.features || {}).some(f => f.outreach);
+    if (!isOutreachEnabled) return null;
 
     const eligibleMembers = data.members.filter(
       (m) =>
@@ -736,18 +763,44 @@ const AdminDashboard: React.FC<{
           </div>
         </motion.div>
 
-        <motion.div variants={itemVariants} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-          <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-6 text-sm uppercase tracking-wider">
-            <Calendar size={16} className="text-emerald-500" /> Last Sunday Attendance
-          </h3>
-          <div className="grid grid-cols-2 gap-6">
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-col items-center justify-center">
-              <span className="text-3xl font-black text-indigo-600">{globalAttendanceBreakdown.members}</span>
-              <span className="text-xs font-bold text-slate-500 uppercase mt-1">Members Present</span>
+        <motion.div variants={itemVariants} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between">
+          <h3 className="font-bold text-slate-800 flex items-center justify-between gap-2 mb-4 text-sm tracking-tight">
+            <div className="flex items-center gap-2 uppercase tracking-wider">
+              <Calendar size={16} className="text-emerald-500" /> Recent Attendance
             </div>
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-col items-center justify-center">
-              <span className="text-3xl font-black text-emerald-600">{globalAttendanceBreakdown.teachers}</span>
-              <span className="text-xs font-bold text-slate-500 uppercase mt-1">Teachers Present</span>
+          </h3>
+          
+          <div className="space-y-4">
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-slate-500 uppercase">This Sunday {globalAttendanceBreakdown.latestDateStr ? `(${formatDateDDMMYYYY(globalAttendanceBreakdown.latestDateStr)})` : ''}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100 flex flex-col items-center justify-center">
+                  <span className="text-2xl font-black text-indigo-600">{globalAttendanceBreakdown.members}</span>
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase mt-0.5">Members</span>
+                </div>
+                <div className="bg-emerald-50/50 rounded-xl p-3 border border-emerald-100 flex flex-col items-center justify-center">
+                  <span className="text-2xl font-black text-emerald-600">{globalAttendanceBreakdown.teachers}</span>
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase mt-0.5">Teachers</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="pt-3 border-t border-slate-100">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-slate-400 uppercase">Last Sunday {globalAttendanceBreakdown.prevDateStr ? `(${formatDateDDMMYYYY(globalAttendanceBreakdown.prevDateStr)})` : ''}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3 opacity-70 grayscale-[0.5]">
+                <div className="bg-slate-50 rounded-xl p-2 border border-slate-100 flex justify-between items-center px-4">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Members</span>
+                  <span className="text-lg font-black text-slate-600">{globalAttendanceBreakdown.prevMembers}</span>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-2 border border-slate-100 flex justify-between items-center px-4">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Teachers</span>
+                  <span className="text-lg font-black text-slate-600">{globalAttendanceBreakdown.prevTeachers}</span>
+                </div>
+              </div>
             </div>
           </div>
         </motion.div>
@@ -796,7 +849,7 @@ const AdminDashboard: React.FC<{
               >
                 <div className="text-right">
                   <span className="text-xs text-slate-400 font-bold uppercase block">
-                    Last Sunday
+                    This Sunday
                   </span>
                   <span className="text-2xl font-bold">
                     {stat.lastAttendance}
@@ -1068,7 +1121,8 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
 
   // Active Church Specific Outreach Stats
   const outreachStats = useMemo(() => {
-    if (!data.settings.features.outreach) return null;
+    const isOutreachEnabled = data.settings.features?.[activeChurch]?.outreach ?? false;
+    if (!isOutreachEnabled) return null;
 
     const eligibleMembers = data.members.filter(
       (m) =>
@@ -1163,13 +1217,19 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
 
     let memberAttendance = 0;
     let teacherAttendance = 0;
+    let prevMemberAttendance = 0;
+    let prevTeacherAttendance = 0;
+    let latestDateStr = "";
+    let prevDateStr = "";
     
     const churchAttendance = data.attendance.filter(r => r.churchId === activeChurch);
     const sortedAttendance = [...churchAttendance].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
-    if (sortedAttendance.length > 0) {
-      const latestDate = sortedAttendance[sortedAttendance.length - 1].date;
-      const latestRecords = sortedAttendance.filter(r => r.date === latestDate);
+    const uniqueDates = Array.from(new Set(sortedAttendance.map(a => a.date)));
+    
+    if (uniqueDates.length > 0) {
+      latestDateStr = uniqueDates[uniqueDates.length - 1];
+      const latestRecords = sortedAttendance.filter(r => r.date === latestDateStr);
       latestRecords.forEach(r => {
         r.presentMemberIds.forEach(id => {
           const m = data.members.find(mem => mem.id === id);
@@ -1180,6 +1240,21 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
           }
         });
       });
+      
+      if (uniqueDates.length > 1) {
+        prevDateStr = uniqueDates[uniqueDates.length - 2];
+        const prevRecords = sortedAttendance.filter(r => r.date === prevDateStr);
+        prevRecords.forEach(r => {
+          r.presentMemberIds.forEach(id => {
+            const m = data.members.find(mem => mem.id === id);
+            if (m) {
+              const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+              if (isTeacher) prevTeacherAttendance++;
+              else prevMemberAttendance++;
+            }
+          });
+        });
+      }
     }
 
     return {
@@ -1189,7 +1264,11 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
       },
       churchAttendanceBreakdown: {
         members: memberAttendance,
-        teachers: teacherAttendance
+        teachers: teacherAttendance,
+        prevMembers: prevMemberAttendance,
+        prevTeachers: prevTeacherAttendance,
+        latestDateStr,
+        prevDateStr,
       }
     };
   }, [data.members, data.attendance, activeChurch]);
@@ -1310,18 +1389,44 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
           </div>
         </motion.div>
 
-        <motion.div variants={itemVariants} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-          <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-6 text-sm uppercase tracking-wider">
-            <Calendar size={16} className="text-emerald-500" /> Last Sunday Attendance
-          </h3>
-          <div className="grid grid-cols-2 gap-6">
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-col items-center justify-center">
-              <span className="text-3xl font-black text-indigo-600">{churchAttendanceBreakdown.members}</span>
-              <span className="text-xs font-bold text-slate-500 uppercase mt-1">Members Present</span>
+        <motion.div variants={itemVariants} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between">
+          <h3 className="font-bold text-slate-800 flex items-center justify-between gap-2 mb-4 text-sm tracking-tight">
+            <div className="flex items-center gap-2 uppercase tracking-wider">
+              <Calendar size={16} className="text-emerald-500" /> Recent Attendance
             </div>
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-col items-center justify-center">
-              <span className="text-3xl font-black text-emerald-600">{churchAttendanceBreakdown.teachers}</span>
-              <span className="text-xs font-bold text-slate-500 uppercase mt-1">Teachers Present</span>
+          </h3>
+          
+          <div className="space-y-4">
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-slate-500 uppercase">This Sunday {churchAttendanceBreakdown.latestDateStr ? `(${formatDateDDMMYYYY(churchAttendanceBreakdown.latestDateStr)})` : ''}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100 flex flex-col items-center justify-center">
+                  <span className="text-2xl font-black text-indigo-600">{churchAttendanceBreakdown.members}</span>
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase mt-0.5">Members</span>
+                </div>
+                <div className="bg-emerald-50/50 rounded-xl p-3 border border-emerald-100 flex flex-col items-center justify-center">
+                  <span className="text-2xl font-black text-emerald-600">{churchAttendanceBreakdown.teachers}</span>
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase mt-0.5">Teachers</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="pt-3 border-t border-slate-100">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-slate-400 uppercase">Last Sunday {churchAttendanceBreakdown.prevDateStr ? `(${formatDateDDMMYYYY(churchAttendanceBreakdown.prevDateStr)})` : ''}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3 opacity-70 grayscale-[0.5]">
+                <div className="bg-slate-50 rounded-xl p-2 border border-slate-100 flex justify-between items-center px-4">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Members</span>
+                  <span className="text-lg font-black text-slate-600">{churchAttendanceBreakdown.prevMembers}</span>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-2 border border-slate-100 flex justify-between items-center px-4">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Teachers</span>
+                  <span className="text-lg font-black text-slate-600">{churchAttendanceBreakdown.prevTeachers}</span>
+                </div>
+              </div>
             </div>
           </div>
         </motion.div>

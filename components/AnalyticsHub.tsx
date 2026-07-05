@@ -403,27 +403,27 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
 
   // --- STATE ---
   const [selectedYear, setSelectedYear] = useState<number>(() => {
-    const saved = localStorage.getItem("analytics_year");
+    const saved = sessionStorage.getItem("analytics_year");
     return saved ? parseInt(saved) : new Date().getFullYear();
   });
   const [timeRange, setTimeRange] = useState<TimeRange>(
-    () => (localStorage.getItem("analytics_timeRange") as TimeRange) || "1M",
+    () => (sessionStorage.getItem("analytics_timeRange") as TimeRange) || "1M",
   );
   const [adminFilterChurch, setAdminFilterChurch] = useState<Church | "All">(
     () =>
-      (localStorage.getItem("analytics_churchFilter") as Church | "All") ||
+      (sessionStorage.getItem("analytics_churchFilter") as Church | "All") ||
       "All",
   );
 
   // Persist State
   useEffect(() => {
-    localStorage.setItem("analytics_year", selectedYear.toString());
+    sessionStorage.setItem("analytics_year", selectedYear.toString());
   }, [selectedYear]);
   useEffect(() => {
-    localStorage.setItem("analytics_timeRange", timeRange);
+    sessionStorage.setItem("analytics_timeRange", timeRange);
   }, [timeRange]);
   useEffect(() => {
-    localStorage.setItem("analytics_churchFilter", adminFilterChurch);
+    sessionStorage.setItem("analytics_churchFilter", adminFilterChurch);
   }, [adminFilterChurch]);
 
   // AI State

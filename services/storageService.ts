@@ -41,6 +41,26 @@ export const setStorageBranchId = (branchId: string) => {
   currentBranchId = branchId;
 };
 
+const migrateAppData = (data: AppData) => {
+  if (!data.transactions) data.transactions = [];
+  if (!data.notifications) data.notifications = [];
+  if (!data.targets) data.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
+  if (!data.outreachSessions) data.outreachSessions = [];
+  if (!data.prayerSchedule) data.prayerSchedule = [];
+  if (!data.settings) data.settings = { ...DEFAULT_SETTINGS };
+
+  if (!data.settings.features) {
+    data.settings.features = {};
+  } else if (typeof (data.settings.features as any).punctuality === "boolean") {
+    const oldP = (data.settings.features as any).punctuality;
+    const oldO = (data.settings.features as any).outreach;
+    data.settings.features = {};
+    data.settings.churches.forEach((c) => {
+      data.settings.features![c] = { punctuality: oldP, outreach: oldO };
+    });
+  }
+};
+
 // --- DATA LOADING & MIGRATION ---
 const loadData = (): AppData => {
   try {
@@ -49,13 +69,7 @@ const loadData = (): AppData => {
 
     if (stored) {
       parsed = JSON.parse(stored);
-      // Ensure transactions exists if loaded from legacy data
-      if (!parsed.transactions) parsed.transactions = [];
-      if (!parsed.notifications) parsed.notifications = [];
-      if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
-      if (!parsed.outreachSessions) parsed.outreachSessions = [];
-      if (!parsed.prayerSchedule) parsed.prayerSchedule = [];
-      if (!parsed.settings) parsed.settings = { ...DEFAULT_SETTINGS };
+      migrateAppData(parsed);
     } else {
       parsed = {
         members: [...INITIAL_MEMBERS],
@@ -287,11 +301,7 @@ export const syncFromCloud = async (
 
     if (force || localTime === 0 || cloudTime > localTime) {
       cloudData.members.forEach((m) => (m.name = sanitizeInput(m.name)));
-      if (!cloudData.targets) cloudData.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
-      if (!cloudData.notifications) cloudData.notifications = [];
-      if (!cloudData.outreachSessions) cloudData.outreachSessions = [];
-      if (!cloudData.prayerSchedule) cloudData.prayerSchedule = [];
-      if (!cloudData.settings) cloudData.settings = { ...DEFAULT_SETTINGS }; // Ensure settings
+      migrateAppData(cloudData);
 
       inMemoryData = cloudData;
       persistData("NONE");
@@ -342,12 +352,7 @@ export const initRealtimeSync = () => {
         // If cloud time is strictly greater, update local
         if (cloudTime > localTime) {
           cloudData.members.forEach((m) => (m.name = sanitizeInput(m.name)));
-          if (!cloudData.targets)
-            cloudData.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
-          if (!cloudData.notifications) cloudData.notifications = [];
-          if (!cloudData.outreachSessions) cloudData.outreachSessions = [];
-          if (!cloudData.prayerSchedule) cloudData.prayerSchedule = [];
-          if (!cloudData.settings) cloudData.settings = { ...DEFAULT_SETTINGS };
+          migrateAppData(cloudData);
 
           inMemoryData = cloudData;
 
@@ -413,22 +418,22 @@ interface LoginAttempt {
   lockedUntil: number | null;
 }
 const getLoginAttempts = (): LoginAttempt => {
-  const stored = localStorage.getItem(LOGIN_ATTEMPTS_KEY);
+  const stored = sessionStorage.getItem(LOGIN_ATTEMPTS_KEY);
   return stored
     ? JSON.parse(stored)
     : { count: 0, lastAttempt: 0, lockedUntil: null };
 };
 const saveLoginAttempts = (attempt: LoginAttempt) => {
-  localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(attempt));
+  sessionStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(attempt));
 };
 export const restoreSession = (): Member | null => {
   try {
-    const sessionStr = localStorage.getItem(SESSION_KEY);
+    const sessionStr = sessionStorage.getItem(SESSION_KEY);
     if (!sessionStr) return null;
     const session = JSON.parse(sessionStr);
     const now = Date.now();
     if (now - session.timestamp > 24 * 60 * 60 * 1000) {
-      localStorage.removeItem(SESSION_KEY);
+      sessionStorage.removeItem(SESSION_KEY);
       return null;
     }
     const user = inMemoryData.members.find((m) => m.id === session.userId);
@@ -439,14 +444,14 @@ export const restoreSession = (): Member | null => {
     ) {
       return user;
     }
-    localStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(SESSION_KEY);
     return null;
   } catch (e) {
     return null;
   }
 };
 export const logoutUser = () => {
-  localStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
 };
 export const authenticateUser = async (
   name: string,
@@ -498,11 +503,11 @@ export const authenticateUser = async (
     persistData("IMMEDIATE");
   }
   if (isValid) {
-    localStorage.setItem(
+    sessionStorage.setItem(
       LOGIN_ATTEMPTS_KEY,
       JSON.stringify({ count: 0, lastAttempt: now, lockedUntil: null }),
     );
-    localStorage.setItem(
+    sessionStorage.setItem(
       SESSION_KEY,
       JSON.stringify({ userId: user.id, timestamp: now }),
     );
@@ -545,11 +550,8 @@ export const importData = (
       if (!r.churchId) r.churchId = "UJ";
     });
     parsed.lastUpdated = Date.now();
-    if (!parsed.notifications) parsed.notifications = [];
-    if (!parsed.targets) parsed.targets = { UJ: 0, I: 0, K: 0, LJ: 0 };
-    if (!parsed.outreachSessions) parsed.outreachSessions = [];
-    if (!parsed.prayerSchedule) parsed.prayerSchedule = [];
-    if (!parsed.settings) parsed.settings = { ...DEFAULT_SETTINGS };
+    migrateAppData(parsed);
+
     inMemoryData = parsed;
     persistData("IMMEDIATE");
     isDirty = false;

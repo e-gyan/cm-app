@@ -93,34 +93,34 @@ const MembersList: React.FC<MembersListProps> = ({
   // Tabs for the Central Hub
   const [hubTab, setHubTab] = useState<"MEMBERS" | "TEACHERS">(
     () =>
-      (localStorage.getItem("members_hubTab") as "MEMBERS" | "TEACHERS") ||
+      (sessionStorage.getItem("members_hubTab") as "MEMBERS" | "TEACHERS") ||
       "MEMBERS",
   );
   const [filter, setFilter] = useState<"CM" | "ARCHIVED" | string>(
-    () => localStorage.getItem("members_filter") || "CM",
+    () => sessionStorage.getItem("members_filter") || "CM",
   );
 
   // Church Filter for Admins
   const [churchFilter, setChurchFilter] = useState<Church | "All">(
     () =>
-      (localStorage.getItem("members_churchFilter") as Church | "All") || "All",
+      (sessionStorage.getItem("members_churchFilter") as Church | "All") || "All",
   );
   const [sortOrder, setSortOrder] = useState<
     "A-Z" | "ATTENDANCE_HIGH" | "ATTENDANCE_LOW"
-  >(() => (localStorage.getItem("members_sortOrder") as any) || "A-Z");
+  >(() => (sessionStorage.getItem("members_sortOrder") as any) || "A-Z");
 
   // Persist state changes
   React.useEffect(() => {
-    localStorage.setItem("members_hubTab", hubTab);
+    sessionStorage.setItem("members_hubTab", hubTab);
   }, [hubTab]);
   React.useEffect(() => {
-    localStorage.setItem("members_filter", filter);
+    sessionStorage.setItem("members_filter", filter);
   }, [filter]);
   React.useEffect(() => {
-    localStorage.setItem("members_churchFilter", churchFilter);
+    sessionStorage.setItem("members_churchFilter", churchFilter);
   }, [churchFilter]);
   React.useEffect(() => {
-    localStorage.setItem("members_sortOrder", sortOrder);
+    sessionStorage.setItem("members_sortOrder", sortOrder);
   }, [sortOrder]);
 
   // SELECTION STATE
@@ -198,6 +198,7 @@ const MembersList: React.FC<MembersListProps> = ({
       gpsCoordinates: member.gpsCoordinates || "",
       branchId: member.branchId || "",
       zoneId: member.zoneId || "",
+      gender: member.gender || undefined,
     });
     setIsEditModalOpen(true);
   };
@@ -219,6 +220,7 @@ const MembersList: React.FC<MembersListProps> = ({
       gpsCoordinates: "",
       branchId: activeBranchId === "ALL" ? "" : activeBranchId,
       zoneId: currentUser.zoneId || "",
+      gender: undefined,
     });
     setIsCreateModalOpen(true);
   };
@@ -932,8 +934,13 @@ const MembersList: React.FC<MembersListProps> = ({
                               <Icon size={16} />
                             </div>
                             <div>
-                              <div className="font-semibold text-gray-900">
+                              <div className="font-semibold text-gray-900 flex items-center gap-2">
                                 {member.name}
+                                {member.gender && (
+                                  <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded ${member.gender === 'MALE' ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-pink-50 text-pink-600 border border-pink-100'}`}>
+                                    {member.gender.charAt(0)}
+                                  </span>
+                                )}
                               </div>
                               {bdayWeek && (
                                 <div className="flex items-center gap-1 text-[10px] uppercase font-bold text-pink-600 mt-0.5 animate-pulse">
@@ -1135,6 +1142,11 @@ const MembersList: React.FC<MembersListProps> = ({
                         <div>
                           <h4 className="font-bold text-gray-900 text-lg flex flex-wrap gap-2 items-center">
                             {member.name}
+                            {member.gender && (
+                              <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${member.gender === 'MALE' ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-pink-50 text-pink-600 border border-pink-100'}`}>
+                                {member.gender.charAt(0)}
+                              </span>
+                            )}
                             {bdayWeek && (
                               <span className="flex items-center gap-1 text-[10px] uppercase font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded-full border border-pink-100 animate-pulse">
                                 <PartyPopper size={10} /> Bday Week
@@ -1327,6 +1339,34 @@ const MembersList: React.FC<MembersListProps> = ({
         icon: Archive,
         colorClass: "text-gray-500",
         badgeClass: "bg-gray-100 text-gray-700",
+        isTeacherSection: hubTab === "TEACHERS",
+      });
+    }
+
+    if (filter === "MISSING_GENDER") {
+      const missingGender = baseList.filter(
+        (m) => m.status !== MemberStatus.ARCHIVED && !m.gender,
+      );
+      return renderMemberTableSection({
+        title: "Missing Gender",
+        members: missingGender,
+        icon: Users,
+        colorClass: "text-rose-500",
+        badgeClass: "bg-rose-100 text-rose-700",
+        isTeacherSection: hubTab === "TEACHERS",
+      });
+    }
+
+    if (filter === "UNASSIGNED_BRANCH") {
+      const unassignedBranch = baseList.filter(
+        (m) => m.status !== MemberStatus.ARCHIVED && (!m.branchId || !m.zoneId),
+      );
+      return renderMemberTableSection({
+        title: "Unassigned Branch",
+        members: unassignedBranch,
+        icon: MapPin,
+        colorClass: "text-orange-500",
+        badgeClass: "bg-orange-100 text-orange-700",
         isTeacherSection: hubTab === "TEACHERS",
       });
     }
@@ -1975,7 +2015,7 @@ const MembersList: React.FC<MembersListProps> = ({
 
           {/* Desktop: Horizontal Scroll */}
           <div className="hidden md:flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto hide-scrollbar">
-            {["CM", ...getCreationRoleOptions(), "ARCHIVED"].map((f) => (
+            {["CM", ...getCreationRoleOptions(), "MISSING_GENDER", "UNASSIGNED_BRANCH", "ARCHIVED"].map((f) => (
               <button
                 key={f}
                 onClick={() => {
@@ -1984,7 +2024,7 @@ const MembersList: React.FC<MembersListProps> = ({
                 }}
                 className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${filter === f ? "bg-white text-indigo-600 shadow-sm ring-1 ring-black/5" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
               >
-                {f === "CM" ? "All Active" : f}
+                {f === "CM" ? "All Active" : f === "MISSING_GENDER" ? "Missing Gender" : f === "UNASSIGNED_BRANCH" ? "Unassigned Branch" : f === "ARCHIVED" ? "Archived" : f}
               </button>
             ))}
           </div>
@@ -2008,6 +2048,8 @@ const MembersList: React.FC<MembersListProps> = ({
                   {f}
                 </option>
               ))}
+              <option value="MISSING_GENDER">Missing Gender</option>
+              <option value="UNASSIGNED_BRANCH">Unassigned Branch</option>
               <option value="ARCHIVED">Archived</option>
             </select>
           </div>

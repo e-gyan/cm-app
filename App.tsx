@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { LineChart, Line, ResponsiveContainer } from "recharts";
 import {
   getAppData,
   restoreSession,
@@ -68,30 +69,30 @@ const App: React.FC = () => {
     settings: DEFAULT_SETTINGS,
   });
   const [currentView, setCurrentView] = useState<View>(() => {
-    const saved = localStorage.getItem("currentView");
+    const saved = sessionStorage.getItem("currentView");
     return (saved as View) || View.DASHBOARD;
   });
 
   useEffect(() => {
-    localStorage.setItem("currentView", currentView);
+    sessionStorage.setItem("currentView", currentView);
   }, [currentView]);
 
   // GLOBAL CONTEXT STATE
   const [currentUser, setCurrentUser] = useState<Member | null>(null);
   const [activeChurch, setActiveChurch] = useState<Church>(() => {
-    const saved = localStorage.getItem("activeChurch");
+    const saved = sessionStorage.getItem("activeChurch");
     return (saved as Church) || "CM";
   });
   const [activeBranchId, setActiveBranchId] = useState<string>(() => {
-    return localStorage.getItem("activeBranchId") || "";
+    return sessionStorage.getItem("activeBranchId") || "";
   });
 
   useEffect(() => {
-    localStorage.setItem("activeChurch", activeChurch);
+    sessionStorage.setItem("activeChurch", activeChurch);
   }, [activeChurch]);
 
   useEffect(() => {
-    localStorage.setItem("activeBranchId", activeBranchId);
+    sessionStorage.setItem("activeBranchId", activeBranchId);
     setStorageBranchId(activeBranchId);
     // When branch changes, we must refresh the data to re-filter it
     refreshData();
@@ -145,7 +146,7 @@ const App: React.FC = () => {
   }, []);
 
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    const savedState = localStorage.getItem("sidebarState");
+    const savedState = sessionStorage.getItem("sidebarState");
     return savedState !== null ? JSON.parse(savedState) : true;
   });
 
@@ -155,7 +156,7 @@ const App: React.FC = () => {
   }, [activeChurch, data.settings.themeColors]);
 
   useEffect(() => {
-    localStorage.setItem("sidebarState", JSON.stringify(isSidebarCollapsed));
+    sessionStorage.setItem("sidebarState", JSON.stringify(isSidebarCollapsed));
   }, [isSidebarCollapsed]);
 
   // Initial load & Session Restore
@@ -220,12 +221,12 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("sidebarState", JSON.stringify(isSidebarCollapsed));
+    sessionStorage.setItem("sidebarState", JSON.stringify(isSidebarCollapsed));
   }, [isSidebarCollapsed]);
 
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem("currentView", currentView);
+      sessionStorage.setItem("currentView", currentView);
     }
   }, [currentView, currentUser]);
 
@@ -348,6 +349,7 @@ const App: React.FC = () => {
     logoutUser();
     setCurrentUser(null);
     setCurrentView(View.DASHBOARD);
+    sessionStorage.clear();
   };
 
   const toggleNotifications = () => {
@@ -371,6 +373,24 @@ const App: React.FC = () => {
           (currentUser.role === "ADMIN" && activeChurch === "CM")),
     );
   }, [data.notifications, activeChurch, currentUser]);
+
+  const branchTrendData = useMemo(() => {
+    if (!data.attendance || data.attendance.length === 0) return [];
+
+    const grouped = data.attendance.reduce((acc, curr) => {
+      if (!acc[curr.date]) acc[curr.date] = 0;
+      acc[curr.date] += curr.presentMemberIds.length;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const sortedDates = Object.keys(grouped).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    const last7Dates = sortedDates.slice(-7);
+
+    return last7Dates.map(date => ({
+      date,
+      count: grouped[date]
+    }));
+  }, [data.attendance]);
 
   const handleMarkRead = (id: string) => {
     markNotificationAsRead(id);
@@ -416,10 +436,12 @@ const App: React.FC = () => {
     return perms.includes(moduleName);
   };
 
+  const isOutreachEnabledForUser = data.settings.features?.[currentUser.assignedChurch]?.outreach ?? false;
+
   const showOutreach =
     hasPermission("Outreach") ||
     normalizedName.includes("maxeen") ||
-    ["I", "K", "LJ"].includes(currentUser.assignedChurch);
+    isOutreachEnabledForUser;
   const showFinances = hasPermission("Finances");
   const showAnalytics = hasPermission("Analytics");
   const showSettings = isSuperAdminUser;
@@ -761,40 +783,58 @@ const App: React.FC = () => {
                 currentUser.role === "ZONAL_HEAD" ||
                 currentUser.role === "ADMIN") &&
                 data.settings.organization?.zones && (
-                  <div className="flex items-center bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-2 mr-3">Branch</label>
-                    <select
-                      value={activeBranchId}
-                      onChange={(e) => setActiveBranchId(e.target.value)}
-                      className="flex-1 text-sm font-bold bg-slate-50 border-none rounded-xl px-4 py-2 text-slate-700 outline-none hover:bg-slate-100 cursor-pointer"
-                    >
-                      {(currentUser.role === "SUPER_ADMIN" ||
-                        currentUser.role === "ZONAL_HEAD") && (
-                        <option value="ALL">All Branches</option>
-                      )}
-                      {data.settings.organization.zones
-                        .filter(
-                          (z) =>
-                            currentUser.role === "SUPER_ADMIN" ||
-                            !currentUser.zoneId ||
-                            z.id === currentUser.zoneId,
-                        )
-                        .flatMap((z) => z.branches || [])
-                        .filter(
-                          (b) =>
-                            currentUser.role !== "ADMIN" ||
-                            !currentUser.branchId ||
-                            b.id === currentUser.branchId,
-                        )
-                        .map((b) => (
-                          <option
-                            key={b.id || b.name}
-                            value={b.id || b.name}
-                          >
-                            {b.name}
-                          </option>
-                        ))}
-                    </select>
+                  <div className="flex items-center bg-white p-2 rounded-2xl shadow-sm border border-slate-100 gap-2">
+                    <div className="flex-1 flex items-center">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-2 mr-3">Branch</label>
+                      <select
+                        value={activeBranchId}
+                        onChange={(e) => setActiveBranchId(e.target.value)}
+                        className="flex-1 text-sm font-bold bg-slate-50 border-none rounded-xl px-4 py-2 text-slate-700 outline-none hover:bg-slate-100 cursor-pointer"
+                      >
+                        {(currentUser.role === "SUPER_ADMIN" ||
+                          currentUser.role === "ZONAL_HEAD") && (
+                          <option value="ALL">All Branches</option>
+                        )}
+                        {data.settings.organization.zones
+                          .filter(
+                            (z) =>
+                              currentUser.role === "SUPER_ADMIN" ||
+                              !currentUser.zoneId ||
+                              z.id === currentUser.zoneId,
+                          )
+                          .flatMap((z) => z.branches || [])
+                          .filter(
+                            (b) =>
+                              currentUser.role !== "ADMIN" ||
+                              !currentUser.branchId ||
+                              b.id === currentUser.branchId,
+                          )
+                          .map((b) => (
+                            <option
+                              key={b.id || b.name}
+                              value={b.id || b.name}
+                            >
+                              {b.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    {branchTrendData.length > 0 && (
+                      <div className="h-8 w-20 hidden sm:block">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={branchTrendData}>
+                            <Line
+                              type="monotone"
+                              dataKey="count"
+                              stroke="#4f46e5"
+                              strokeWidth={2}
+                              dot={false}
+                              isAnimationActive={false}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
                   </div>
               )}
             </div>
@@ -810,11 +850,11 @@ const App: React.FC = () => {
                     currentUser.role === "ZONAL_HEAD" ||
                     currentUser.role === "ADMIN") &&
                     data.settings.organization?.zones && (
-                      <div className="ml-4 flex items-center">
+                      <div className="ml-4 flex items-center bg-white p-1 pr-2 rounded-xl border border-slate-200 shadow-sm gap-2">
                         <select
                           value={activeBranchId}
                           onChange={(e) => setActiveBranchId(e.target.value)}
-                          className="text-sm font-bold bg-slate-100 border-none rounded-xl px-4 py-2 text-slate-700 outline-none hover:bg-slate-200 cursor-pointer"
+                          className="text-sm font-bold bg-slate-50 border-none rounded-lg px-4 py-2 text-slate-700 outline-none hover:bg-slate-100 cursor-pointer"
                         >
                           {(currentUser.role === "SUPER_ADMIN" ||
                             currentUser.role === "ZONAL_HEAD") && (
@@ -843,6 +883,22 @@ const App: React.FC = () => {
                               </option>
                             ))}
                         </select>
+                        {branchTrendData.length > 0 && (
+                          <div className="h-8 w-20">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={branchTrendData}>
+                                <Line
+                                  type="monotone"
+                                  dataKey="count"
+                                  stroke="#4f46e5"
+                                  strokeWidth={2}
+                                  dot={false}
+                                  isAnimationActive={false}
+                                />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        )}
                       </div>
                     )}
                 </h2>

@@ -47,7 +47,7 @@ const Finances: React.FC<FinancesProps> = ({
   // State
   const [filterChurch, setFilterChurch] = useState<Church | "All">(
     () =>
-      (localStorage.getItem("finances_churchFilter") as Church | "All") ||
+      (sessionStorage.getItem("finances_churchFilter") as Church | "All") ||
       (isAdmin && activeChurch === "CM"
         ? "All"
         : activeChurch === "CM"
@@ -55,15 +55,15 @@ const Finances: React.FC<FinancesProps> = ({
           : activeChurch),
   );
   const [filterType, setFilterType] = useState<"All" | "INCOME" | "EXPENSE">(
-    () => (localStorage.getItem("finances_typeFilter") as any) || "All",
+    () => (sessionStorage.getItem("finances_typeFilter") as any) || "All",
   );
 
   // Persist State
   useEffect(() => {
-    localStorage.setItem("finances_churchFilter", filterChurch);
+    sessionStorage.setItem("finances_churchFilter", filterChurch);
   }, [filterChurch]);
   useEffect(() => {
-    localStorage.setItem("finances_typeFilter", filterType);
+    sessionStorage.setItem("finances_typeFilter", filterType);
   }, [filterType]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);

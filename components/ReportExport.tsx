@@ -68,13 +68,13 @@ const ReportExport: React.FC<ReportExportProps> = ({
     "WHATSAPP" | "KPI" | "DATA" | "EXECUTIVE"
   >(() => {
     return (
-      (localStorage.getItem("reports_activeTab") as
+      (sessionStorage.getItem("reports_activeTab") as
         "WHATSAPP" | "KPI" | "DATA" | "EXECUTIVE") || "WHATSAPP"
     );
   });
 
   useEffect(() => {
-    localStorage.setItem("reports_activeTab", activeTab);
+    sessionStorage.setItem("reports_activeTab", activeTab);
   }, [activeTab]);
   const [importMsg, setImportMsg] = useState<{
     type: "success" | "error";
@@ -84,12 +84,12 @@ const ReportExport: React.FC<ReportExportProps> = ({
   // Executive Report State
   const [execTimeframe, setExecTimeframe] = useState<"1M" | "3M" | "1Y">(
     () =>
-      (localStorage.getItem("reports_execTimeframe") as "1M" | "3M" | "1Y") ||
+      (sessionStorage.getItem("reports_execTimeframe") as "1M" | "3M" | "1Y") ||
       "1M",
   );
 
   useEffect(() => {
-    localStorage.setItem("reports_execTimeframe", execTimeframe);
+    sessionStorage.setItem("reports_execTimeframe", execTimeframe);
   }, [execTimeframe]);
   const [execReportContent, setExecReportContent] = useState("");
   const [isGeneratingExec, setIsGeneratingExec] = useState(false);

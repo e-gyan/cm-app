@@ -61,14 +61,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   // New State for Service Logic
   const [serviceMap, setServiceMap] = useState<Record<string, ServiceType>>({});
   const [currentService, setCurrentService] = useState<ServiceType>(
-    () => (localStorage.getItem("attendance_service") as any) || "JOY",
+    () => (sessionStorage.getItem("attendance_service") as any) || "JOY",
   );
   const [specialEventName, setSpecialEventName] = useState("");
   const [showEventModal, setShowEventModal] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<string>(
-    () => (localStorage.getItem("attendance_filterType") as string) || "All",
+    () => (sessionStorage.getItem("attendance_filterType") as string) || "All",
   );
 
   // Internal Church Filter for Admins when activeChurch is 'CM'
@@ -76,7 +76,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     Church | "COMBINED"
   >(
     () =>
-      (localStorage.getItem("attendance_churchFilter") as any) || "COMBINED",
+      (sessionStorage.getItem("attendance_churchFilter") as any) || "COMBINED",
   );
 
   const [newMemberName, setNewMemberName] = useState("");
@@ -88,21 +88,21 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const [successMsg, setSuccessMsg] = useState("");
 
   const [attendanceMode, setAttendanceMode] = useState<"MEMBERS" | "STAFF">(
-    () => (localStorage.getItem("attendance_mode") as any) || "MEMBERS",
+    () => (sessionStorage.getItem("attendance_mode") as any) || "MEMBERS",
   );
 
   // Persist State
   useEffect(() => {
-    localStorage.setItem("attendance_filterType", filterType);
+    sessionStorage.setItem("attendance_filterType", filterType);
   }, [filterType]);
   useEffect(() => {
-    localStorage.setItem("attendance_mode", attendanceMode);
+    sessionStorage.setItem("attendance_mode", attendanceMode);
   }, [attendanceMode]);
   useEffect(() => {
-    localStorage.setItem("attendance_churchFilter", internalChurchFilter);
+    sessionStorage.setItem("attendance_churchFilter", internalChurchFilter);
   }, [internalChurchFilter]);
   useEffect(() => {
-    localStorage.setItem("attendance_service", currentService);
+    sessionStorage.setItem("attendance_service", currentService);
   }, [currentService]);
 
   // Determine the effective church context
@@ -110,9 +110,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     activeChurch === "CM" ? internalChurchFilter : activeChurch;
   const isCombinedView = effectiveChurch === "COMBINED";
 
+  const isPunctualityEnabledForChurch = 
+    effectiveChurch !== "COMBINED" 
+      ? data.settings.features?.[effectiveChurch]?.punctuality ?? false
+      : false;
+
   const enablePunctuality =
     (attendanceMode === "MEMBERS" &&
-      (effectiveChurch === "UJ" || isCombinedView)) ||
+      (isPunctualityEnabledForChurch || (isCombinedView && data.settings.features?.["UJ"]?.punctuality))) ||
     attendanceMode === "STAFF";
   const currentYear = new Date().getFullYear();
   const sundaysCurrentYear = useMemo(
@@ -160,7 +165,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     sMap: Record<string, ServiceType>,
   ) => {
     if (!selectedDate) return;
-    localStorage.setItem(
+    sessionStorage.setItem(
       getDraftKey(),
       JSON.stringify({
         presentIds: Array.from(present),
@@ -173,7 +178,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
   const clearDraft = () => {
     if (!selectedDate) return;
-    localStorage.removeItem(getDraftKey());
+    sessionStorage.removeItem(getDraftKey());
   };
 
   // Load attendance data when context changes
@@ -235,7 +240,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       let loadedFromDraft = false;
       try {
         const key = `attendance_draft_${effectiveChurch}_${attendanceMode}_${selectedDate}`;
-        const draftData = localStorage.getItem(key);
+        const draftData = sessionStorage.getItem(key);
         if (draftData) {
           const parsed = JSON.parse(draftData);
           setPresentIds(new Set(parsed.presentIds));
@@ -275,7 +280,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       // This will allow the main attendance loader useEffect to re-run and
       // pull in the genuine fresh remote state without seeing a local draft.
       if (selectedDate) {
-        localStorage.removeItem(
+        sessionStorage.removeItem(
           `attendance_draft_${effectiveChurch}_${attendanceMode}_${selectedDate}`,
         );
       }

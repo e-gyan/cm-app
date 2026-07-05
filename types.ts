@@ -152,10 +152,10 @@ export interface AppSettings {
     apiKey: string;
     binId: string;
   };
-  features: {
+  features?: Record<string, {
     punctuality: boolean;
     outreach: boolean;
-  };
+  }>;
   permissions?: Record<string, string[]>; // e.g. { ZONAL_HEAD: ["Finances", "Outreach"] }
 }
 
