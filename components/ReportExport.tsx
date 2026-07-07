@@ -171,7 +171,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       const population = data.members.filter(
         (m) =>
           m.assignedChurch === church &&
-          m.status === MemberStatus.ACTIVE &&
+          [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) &&
           (m.type === MemberType.MEMBER || m.type === MemberType.FNF),
       ).length;
 
@@ -235,7 +235,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       ).length;
       const activeMembers = data.members.filter(
         (m) =>
-          m.status === MemberStatus.ACTIVE &&
+          [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) &&
           (activeChurch === "CM" || m.assignedChurch === activeChurch),
       ).length;
 
@@ -599,11 +599,11 @@ const ReportExport: React.FC<ReportExportProps> = ({
     }
 
     // Filter categories
-    const members = allChildren.filter((m) => m.type === MemberType.MEMBER);
+    const members = allChildren.filter((m) => m.type === MemberType.MEMBER && m.status !== MemberStatus.INCONSISTENT);
     const fnfs = allChildren.filter((m) => m.type === MemberType.FNF);
     const visitors = allChildren.filter((m) => m.type === MemberType.VISITOR);
     const inconsistent = allChildren.filter(
-      (m) => m.type === MemberType.INCONSISTENT,
+      (m) => m.status === MemberStatus.INCONSISTENT,
     );
     const notMembers = allChildren.filter(
       (m) => m.type === MemberType.NOT_MEMBER,

@@ -560,12 +560,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       (m) => m.type === MemberType.FNF,
     ).length;
     const inconsistentCount = currentMembers.filter(
-      (m) => m.type === MemberType.INCONSISTENT,
+      (m) => m.status === MemberStatus.INCONSISTENT,
     ).length;
 
     // 2. Determine Need
-    let neededType: MemberType | "ANY" = "ANY";
-    if (inconsistentCount < 1) neededType = MemberType.INCONSISTENT;
+    let neededType: MemberType | "INCONSISTENT" | "ANY" = "ANY";
+    if (inconsistentCount < 1) neededType = "INCONSISTENT";
     else if (fnfCount < 1) neededType = MemberType.FNF;
     else if (activeCount < 2) neededType = MemberType.MEMBER;
 
@@ -594,7 +594,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         !recentlyVisited.has(m.id) &&
         !assignedInPending.has(m.id) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-        (neededType === "ANY" || m.type === neededType),
+        (neededType === "ANY" ||
+          (neededType === "INCONSISTENT"
+            ? m.status === MemberStatus.INCONSISTENT
+            : m.type === neededType)),
     );
 
     let candidate =
@@ -868,7 +871,6 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             MemberType.MEMBER,
             MemberType.FNF,
             MemberType.VISITOR,
-            MemberType.INCONSISTENT,
           ].includes(m.type),
       )
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -1341,7 +1343,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
           <CollapsibleContactSection
             title="Active Members"
-            members={connectList.filter((m) => m.type === MemberType.MEMBER)}
+            members={connectList.filter((m) => m.type === MemberType.MEMBER && m.status !== MemberStatus.INCONSISTENT)}
             color="indigo"
             icon={User}
             onTrackCall={handleTrackCall}
@@ -1366,7 +1368,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
           <CollapsibleContactSection
             title="Inconsistent"
             members={connectList.filter(
-              (m) => m.type === MemberType.INCONSISTENT,
+              (m) => m.status === MemberStatus.INCONSISTENT,
             )}
             color="rose"
             icon={AlertCircle}
@@ -1691,7 +1693,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               <CollapsibleProgressSection
                 title="Active Members"
                 members={connectList.filter(
-                  (m) => m.type === MemberType.MEMBER,
+                  (m) => m.type === MemberType.MEMBER && m.status !== MemberStatus.INCONSISTENT,
                 )}
                 data={data}
                 icon={User}
@@ -1716,7 +1718,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               <CollapsibleProgressSection
                 title="Inconsistent"
                 members={connectList.filter(
-                  (m) => m.type === MemberType.INCONSISTENT,
+                  (m) => m.status === MemberStatus.INCONSISTENT,
                 )}
                 data={data}
                 icon={AlertCircle}
@@ -2439,7 +2441,7 @@ const PrayerSlotCard = ({
             if (m.type === MemberType.FNF)
               colorClass = "bg-amber-50 text-amber-700 border-amber-100";
             else if (
-              m.type === MemberType.INCONSISTENT ||
+              m.status === MemberStatus.INCONSISTENT ||
               m.status === MemberStatus.NOT_ACTIVE
             )
               colorClass = "bg-rose-50 text-rose-700 border-rose-100";

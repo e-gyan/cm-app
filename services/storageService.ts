@@ -705,12 +705,21 @@ export const addNotification = (
   );
   if (exists) return;
 
+  let branchId: string | undefined = undefined;
+  if (memberId) {
+    const member = inMemoryData.members.find((m) => m.id === memberId);
+    if (member) {
+      branchId = member.branchId;
+    }
+  }
+
   const newNotif: Notification = {
     id: crypto.randomUUID(),
     type,
     message,
     createdAt: new Date().toISOString(),
     targetChurch: churchId,
+    branchId,
     relatedMemberId: memberId,
     isRead: false,
   };
@@ -744,7 +753,10 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
       return;
 
     // 1. ACTIVATION / REACTIVATION
-    if (member.status === MemberStatus.NOT_ACTIVE) {
+    if (
+      member.status === MemberStatus.NOT_ACTIVE ||
+      member.status === MemberStatus.INCONSISTENT
+    ) {
       // VISITOR/FNF Specific Activation: 3 Consecutive
       if (
         member.type === MemberType.VISITOR ||
@@ -809,7 +821,7 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
       }
 
       if (
-        member.type === MemberType.INCONSISTENT ||
+        member.status === MemberStatus.INCONSISTENT ||
         member.type === MemberType.MEMBER
       ) {
         // Proactive Reactivation: 3 Consecutive
@@ -871,7 +883,7 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
       }
     }
 
-    // 3. DEACTIVATION: Active -> Not Active (7 consecutive absences)
+    // 3. DEACTIVATION: Active -> Inconsistent (7 consecutive absences)
     // This applies to both MEMBERS and FNF who are currently ACTIVE
     if (member.status === MemberStatus.ACTIVE) {
       if (sortedAttendance.length >= 7) {
@@ -886,13 +898,19 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
           );
 
           if (absentAll7) {
-            member.status = MemberStatus.NOT_ACTIVE;
-            if (member.type === MemberType.MEMBER) {
-              member.type = MemberType.INCONSISTENT;
-            }
+            const newStatus = MemberStatus.INCONSISTENT;
+            const statusLabel = "Inconsistent";
+            member.status = newStatus;
+
+            const branchLeader = inMemoryData.members.find(
+              (m) => m.role === "BRANCH_COORDINATOR" && m.branchId === member.branchId
+            );
+            const leaderNameStr = branchLeader ? `, ${branchLeader.name},` : "";
+            const msg = `Attention Branch Leader${leaderNameStr}: ${member.name} has missed 7 consecutive services and has been automatically marked as Inconsistent. Please schedule outreach.`;
+
             addNotification(
               "STATUS_CHANGE",
-              `${member.name} marked Not Active (7 consecutive absences).`,
+              msg,
               churchId,
               member.id,
             );
@@ -910,7 +928,11 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
 
         if (joinedDate <= oldestInWindow) {
           if (last6.every((r) => !r.presentMemberIds.includes(member.id))) {
-            const msg = `${member.name} is at risk of being marked Not Active (6 consecutive absences since ${last6[5].date}).`;
+            const branchLeader = inMemoryData.members.find(
+              (m) => m.role === "BRANCH_COORDINATOR" && m.branchId === member.branchId
+            );
+            const leaderNameStr = branchLeader ? `, ${branchLeader.name},` : "";
+            const msg = `Attention Branch Leader${leaderNameStr}: ${member.name} is at risk of being marked Inconsistent (6 consecutive absences since ${last6[5].date}).`;
             if (
               !inMemoryData.notifications.some(
                 (n) => n.relatedMemberId === member.id && n.message === msg,
@@ -926,6 +948,26 @@ const checkAndAutoUpdateMemberStatus = (churchId: Church) => {
   });
 
   if (isDirty) persistData("DEBOUNCE");
+};
+
+export const runInconsistentStatusBackgroundCheck = () => {
+  const churches = inMemoryData.settings?.churches || [];
+  let changesMade = false;
+  churches.forEach((churchId) => {
+    if (churchId !== "CM") {
+      const originalDirty = isDirty;
+      isDirty = false;
+      checkAndAutoUpdateMemberStatus(churchId);
+      if (isDirty) {
+        changesMade = true;
+      }
+      isDirty = originalDirty || isDirty;
+    }
+  });
+  if (changesMade) {
+    persistData("DEBOUNCE");
+    syncToCloud();
+  }
 };
 
 export const checkBirthdaysAndTeens = () => {
@@ -1160,7 +1202,7 @@ export const generateOutreachSchedule = (
   const fnf = generalPool.filter((m) => m.type === MemberType.FNF);
   const inconsistent = generalPool.filter(
     (m) =>
-      m.type === MemberType.INCONSISTENT ||
+      m.status === MemberStatus.INCONSISTENT ||
       m.status === MemberStatus.NOT_ACTIVE,
   );
 
@@ -1197,7 +1239,7 @@ export const generateOutreachSchedule = (
         inconsistent.length > 0 &&
         !group.some(
           (id) =>
-            members.find((m) => m.id === id)?.type === MemberType.INCONSISTENT,
+            members.find((m) => m.id === id)?.status === MemberStatus.INCONSISTENT,
         )
       ) {
         group.push(inconsistent.shift()!.id);
@@ -1296,7 +1338,6 @@ export const generatePrayerSchedule = (
   const allowedTypes = [
     MemberType.MEMBER,
     MemberType.FNF,
-    MemberType.INCONSISTENT,
   ];
 
   // 3. Create Pools
@@ -1320,7 +1361,7 @@ export const generatePrayerSchedule = (
   let fnf = cleanMembers.filter((m) => m.type === MemberType.FNF);
   let inconsistent = cleanMembers.filter(
     (m) =>
-      m.type === MemberType.INCONSISTENT ||
+      m.status === MemberStatus.INCONSISTENT ||
       (m.status === MemberStatus.NOT_ACTIVE && allowedTypes.includes(m.type)),
   );
 
@@ -1395,12 +1436,12 @@ export const generatePrayerSchedule = (
     if (dailyIds.size < TARGET_PER_DAY) {
       const hasInc = Array.from(dailyIds).some(
         (id) =>
-          members.find((m) => m.id === id)?.type === MemberType.INCONSISTENT,
+          members.find((m) => m.id === id)?.status === MemberStatus.INCONSISTENT,
       );
       if (!hasInc) {
         const m = getFromPool(
           inconsistent,
-          members.filter((x) => x.type === MemberType.INCONSISTENT),
+          members.filter((x) => x.status === MemberStatus.INCONSISTENT),
         );
         if (m) dailyIds.add(m.id);
       }

@@ -238,7 +238,7 @@ const AdminDashboard: React.FC<{
       const membersInChurch = data.members.filter(
         (m) =>
           m.assignedChurch === church &&
-          m.status === MemberStatus.ACTIVE &&
+          [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) &&
           (m.type === MemberType.MEMBER ||
             m.type === MemberType.FNF ||
             ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
@@ -321,7 +321,7 @@ const AdminDashboard: React.FC<{
       let male = 0;
       let female = 0;
       let unassigned = 0;
-      data.members.filter(m => m.assignedChurch === church && m.status === MemberStatus.ACTIVE).forEach(m => {
+      data.members.filter(m => m.assignedChurch === church && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status)).forEach(m => {
         if (m.gender === "MALE") male++;
         else if (m.gender === "FEMALE") female++;
         else unassigned++;
@@ -361,7 +361,7 @@ const AdminDashboard: React.FC<{
     let maleTeachers = 0, femaleTeachers = 0;
     
     data.members.forEach(m => {
-      if (m.status === MemberStatus.ACTIVE) {
+      if ([MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status)) {
         const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
         if (isTeacher) {
           if (m.gender === "MALE") maleTeachers++;
@@ -465,8 +465,8 @@ const AdminDashboard: React.FC<{
 
     const eligibleMembers = data.members.filter(
       (m) =>
-        ["Member", "FNF", "Inconsistent"].includes(m.type) &&
-        m.status === "Active",
+        ["Member", "FNF"].includes(m.type) &&
+        ["Active", "Inconsistent"].includes(m.status),
     );
     const eligibleKids = eligibleMembers.length;
     const eligibleKidIds = new Set(eligibleMembers.map((m) => m.id));
@@ -1033,7 +1033,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
     const membersInChurch = data.members.filter(
       (m) =>
         m.assignedChurch === activeChurch &&
-        m.status === MemberStatus.ACTIVE &&
+        [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) &&
         (m.type === MemberType.MEMBER ||
           m.type === MemberType.FNF ||
           ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
@@ -1053,7 +1053,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
 
     const members = data.members.filter(
       (m) =>
-        m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE,
+        m.assignedChurch === activeChurch && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status),
     );
     const kids = members;
     const attendance = data.attendance
@@ -1134,8 +1134,8 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
     const eligibleMembers = data.members.filter(
       (m) =>
         m.assignedChurch === activeChurch &&
-        ["Member", "FNF", "Inconsistent"].includes(m.type) &&
-        m.status === "Active",
+        ["Member", "FNF"].includes(m.type) &&
+        ["Active", "Inconsistent"].includes(m.status),
     );
     const eligibleKids = eligibleMembers.length;
     const eligibleKidIds = new Set(eligibleMembers.map((m) => m.id));
@@ -1210,7 +1210,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
     let maleTeachers = 0, femaleTeachers = 0;
     
     data.members.forEach(m => {
-      if (m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE) {
+      if (m.assignedChurch === activeChurch && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status)) {
         const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
         if (isTeacher) {
           if (m.gender === "MALE") maleTeachers++;
@@ -1286,7 +1286,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
     const tips: { id: number; text: string; action?: string; icon?: any }[] = [];
     
     // 1. Inconsistent Members
-    const inconsistentCount = data.members.filter(m => m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE && m.type === MemberType.INCONSISTENT).length;
+    const inconsistentCount = data.members.filter(m => m.assignedChurch === activeChurch && m.status === MemberStatus.INCONSISTENT).length;
     if (inconsistentCount > 0) {
       tips.push({
         id: 1,
@@ -1321,7 +1321,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
       return bdayThisYear >= startOfWeek && bdayThisYear <= endOfWeek;
     };
 
-    const bdayCount = data.members.filter(m => m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE && isBirthdayThisWeek(m.birthDate)).length;
+    const bdayCount = data.members.filter(m => m.assignedChurch === activeChurch && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) && isBirthdayThisWeek(m.birthDate)).length;
     if (bdayCount > 0) {
       tips.push({
         id: tips.length + 1,
@@ -1331,7 +1331,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
     }
 
     // 3. FNF/Visitors to convert
-    const fnfCount = data.members.filter(m => m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE && (m.type === MemberType.FNF || m.type === MemberType.VISITOR)).length;
+    const fnfCount = data.members.filter(m => m.assignedChurch === activeChurch && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) && (m.type === MemberType.FNF || m.type === MemberType.VISITOR)).length;
     if (fnfCount > 0) {
       tips.push({
         id: tips.length + 1,
@@ -1506,7 +1506,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
         />
       </div>
 
-      <UpcomingBirthdays members={data.members.filter(m => m.assignedChurch === activeChurch && m.status === MemberStatus.ACTIVE)} />
+      <UpcomingBirthdays members={data.members.filter(m => m.assignedChurch === activeChurch && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status))} />
 
       {/* Outreach Section */}
       {outreachStats && (

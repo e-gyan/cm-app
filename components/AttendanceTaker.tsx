@@ -588,14 +588,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   if (attendanceMode === "STAFF") {
     membersToList = data.members.filter(
       (m) =>
-        m.status === MemberStatus.ACTIVE &&
+        [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) &&
         targetChurches.includes(m.assignedChurch) &&
         ["Teacher", "Helper", "Volunteer"].includes(m.type),
     );
   } else {
     membersToList = data.members.filter(
       (m) =>
-        ["Active", "Not Active"].includes(m.status) &&
+        [MemberStatus.ACTIVE, MemberStatus.NOT_ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) &&
         targetChurches.includes(m.assignedChurch) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type),
     );
@@ -919,7 +919,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                     MemberType.MEMBER,
                     MemberType.FNF,
                     MemberType.VISITOR,
-                    MemberType.INCONSISTENT,
                   ]
               ).map((type) => (
                 <button

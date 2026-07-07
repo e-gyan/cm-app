@@ -11,6 +11,7 @@ import {
   subscribeToDataChanges,
   initRealtimeSync,
   setStorageBranchId,
+  runInconsistentStatusBackgroundCheck,
 } from "./services/storageService";
 import { AppData, Church, Member, Role, Notification as AppNotification } from "./types";
 import Dashboard from "./components/Dashboard";
@@ -195,13 +196,16 @@ const App: React.FC = () => {
             refreshData();
             setLastSynced(new Date());
             setSyncStatus("Cloud Synced");
+            runInconsistentStatusBackgroundCheck();
           } else {
             setSyncStatus("Offline Mode");
+            runInconsistentStatusBackgroundCheck();
           }
         })
         .catch((e) => {
           console.warn("Background initial cloud sync failed", e);
           setSyncStatus("Sync Error");
+          runInconsistentStatusBackgroundCheck();
         });
     };
 
@@ -241,6 +245,7 @@ const App: React.FC = () => {
             refreshData();
             setLastSynced(new Date());
             setSyncStatus("Cloud Synced");
+            runInconsistentStatusBackgroundCheck();
           }
         }
       }, 60000);
@@ -252,6 +257,7 @@ const App: React.FC = () => {
             refreshData();
             setLastSynced(new Date());
             setSyncStatus("Cloud Synced");
+            runInconsistentStatusBackgroundCheck();
           }
         }
       };

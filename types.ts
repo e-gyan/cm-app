@@ -6,12 +6,12 @@ export enum MemberType {
   FNF = "FNF", // Friends and Family / New
   VISITOR = "Visitor",
   NOT_MEMBER = "Not a Member",
-  INCONSISTENT = "Inconsistent",
 }
 
 export enum MemberStatus {
   ACTIVE = "Active",
   NOT_ACTIVE = "Not Active",
+  INCONSISTENT = "Inconsistent",
   ARCHIVED = "Archived",
   TRANSFERRED = "Transferred",
 }

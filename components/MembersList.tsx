@@ -344,9 +344,7 @@ const MembersList: React.FC<MembersListProps> = ({
 
         // Check for Inconsistent -> Active/FNF/Member status change
         if (
-          original.type === MemberType.INCONSISTENT &&
-          (updatedMember.type === MemberType.MEMBER ||
-            updatedMember.type === MemberType.FNF) &&
+          original.status === MemberStatus.INCONSISTENT &&
           updatedMember.status === MemberStatus.ACTIVE
         ) {
           updatedMember.lastActivationDate = new Date().toISOString();
@@ -584,6 +582,8 @@ const MembersList: React.FC<MembersListProps> = ({
     switch (status) {
       case MemberStatus.ACTIVE:
         return "bg-green-100 text-green-700";
+      case MemberStatus.INCONSISTENT:
+        return "bg-rose-100 text-rose-700 border border-rose-200";
       case MemberStatus.NOT_ACTIVE:
         return "bg-yellow-100 text-yellow-700";
       case MemberStatus.ARCHIVED:
@@ -743,7 +743,7 @@ const MembersList: React.FC<MembersListProps> = ({
         alertMsg = "Promotion ready: 1 visit away from Full Member";
         alertColor = "text-emerald-500 bg-emerald-100 border-emerald-200";
       }
-    } else if (member.status === MemberStatus.NOT_ACTIVE) {
+    } else if (member.status === MemberStatus.NOT_ACTIVE || member.status === MemberStatus.INCONSISTENT) {
       if (
         (member.type === MemberType.VISITOR ||
           member.type === MemberType.FNF) &&
@@ -752,8 +752,7 @@ const MembersList: React.FC<MembersListProps> = ({
         alertMsg = "1 visit away from Active FNF";
         alertColor = "text-emerald-500 bg-emerald-100 border-emerald-200";
       } else if (
-        (member.type === MemberType.MEMBER ||
-          member.type === MemberType.INCONSISTENT) &&
+        member.type === MemberType.MEMBER &&
         consecutiveAttendances >= 3
       ) {
         alertMsg = "1 visit away from Reactivation";
@@ -939,6 +938,11 @@ const MembersList: React.FC<MembersListProps> = ({
                                 {member.gender && (
                                   <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded ${member.gender === 'MALE' ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-pink-50 text-pink-600 border border-pink-100'}`}>
                                     {member.gender.charAt(0)}
+                                  </span>
+                                )}
+                                {member.status === MemberStatus.INCONSISTENT && (
+                                  <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100">
+                                    Inconsistent
                                   </span>
                                 )}
                               </div>
@@ -1145,6 +1149,11 @@ const MembersList: React.FC<MembersListProps> = ({
                             {member.gender && (
                               <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${member.gender === 'MALE' ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-pink-50 text-pink-600 border border-pink-100'}`}>
                                 {member.gender.charAt(0)}
+                              </span>
+                            )}
+                            {member.status === MemberStatus.INCONSISTENT && (
+                              <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100">
+                                Inconsistent
                               </span>
                             )}
                             {bdayWeek && (
@@ -1442,15 +1451,6 @@ const MembersList: React.FC<MembersListProps> = ({
             badgeClass: "bg-teal-100 text-teal-700",
           })}
           {renderMemberTableSection({
-            title: "Inconsistent",
-            members: membersToShow.filter(
-              (m) => m.type === MemberType.INCONSISTENT,
-            ),
-            icon: AlertCircle,
-            colorClass: "text-rose-600",
-            badgeClass: "bg-rose-100 text-rose-700",
-          })}
-          {renderMemberTableSection({
             title: "Not A Member",
             members: membersToShow.filter(
               (m) => m.type === MemberType.NOT_MEMBER,
@@ -1472,7 +1472,6 @@ const MembersList: React.FC<MembersListProps> = ({
         MemberType.MEMBER,
         MemberType.FNF,
         MemberType.VISITOR,
-        MemberType.INCONSISTENT,
         MemberType.NOT_MEMBER,
       ];
     }
@@ -2301,10 +2300,10 @@ const MembersList: React.FC<MembersListProps> = ({
                   data.members.filter(
                     (m) =>
                       m.assignedChurch === member.assignedChurch &&
-                      ["Member", "FNF", "Visitor", "Inconsistent"].includes(
+                      ["Member", "FNF", "Visitor"].includes(
                         m.type,
                       ) &&
-                      m.status === "Active",
+                      ["Active", "Inconsistent"].includes(m.status),
                   ).length || 1;
 
                 for (let i = 5; i >= 0; i--) {
@@ -2349,7 +2348,6 @@ const MembersList: React.FC<MembersListProps> = ({
                               "Member",
                               "FNF",
                               "Visitor",
-                              "Inconsistent",
                             ].includes(m.type)
                           );
                         }).length
