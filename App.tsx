@@ -296,13 +296,28 @@ const App: React.FC = () => {
       });
     }
     
+    const rawAttendance = raw.attendance ? raw.attendance.filter(branchFilter) : [];
+    const attendanceMap = new Map<string, any>();
+    rawAttendance.forEach(record => {
+      const key = `${record.date}_${record.churchId}`;
+      const existing = attendanceMap.get(key);
+      if (!existing) {
+        attendanceMap.set(key, record);
+      } else {
+        if (record.branchId === activeBranchId || (!existing.branchId && record.branchId)) {
+          attendanceMap.set(key, record);
+        }
+      }
+    });
+    const deduplicatedAttendance = Array.from(attendanceMap.values());
+
     // Update ref
     prevNotificationIds.current = new Set(newNotifications.map(n => n.id));
 
     setData({
       ...raw,
       members: raw.members ? raw.members.filter(branchFilter) : [],
-      attendance: raw.attendance ? raw.attendance.filter(branchFilter) : [],
+      attendance: deduplicatedAttendance,
       transactions: raw.transactions
         ? raw.transactions.filter(branchFilter)
         : [],
