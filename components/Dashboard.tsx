@@ -377,43 +377,42 @@ const AdminDashboard: React.FC<{
     let teacherAttendance = 0;
     let prevMemberAttendance = 0;
     let prevTeacherAttendance = 0;
-    let latestDateStr = "";
-    let prevDateStr = "";
     
-    const sortedAttendance = [...data.attendance].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const today = new Date();
+    const currentSunday = new Date(today);
+    currentSunday.setDate(today.getDate() - today.getDay());
+    const latestDateStr = currentSunday.toISOString().split("T")[0];
     
-    // Group by unique dates
-    const uniqueDates = Array.from(new Set(sortedAttendance.map(a => a.date)));
+    const prevSunday = new Date(currentSunday);
+    prevSunday.setDate(currentSunday.getDate() - 7);
+    const prevDateStr = prevSunday.toISOString().split("T")[0];
+
+    const hasLatestRecord = data.attendance.some(r => r.date === latestDateStr);
+    const hasPrevRecord = data.attendance.some(r => r.date === prevDateStr);
     
-    if (uniqueDates.length > 0) {
-      latestDateStr = uniqueDates[uniqueDates.length - 1];
-      const latestRecords = sortedAttendance.filter(r => r.date === latestDateStr);
-      latestRecords.forEach(r => {
-        r.presentMemberIds.forEach(id => {
-          const m = data.members.find(mem => mem.id === id);
-          if (m) {
-            const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
-            if (isTeacher) teacherAttendance++;
-            else memberAttendance++;
-          }
-        });
+    const latestRecords = data.attendance.filter(r => r.date === latestDateStr);
+    latestRecords.forEach(r => {
+      r.presentMemberIds.forEach(id => {
+        const m = data.members.find(mem => mem.id === id);
+        if (m) {
+          const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+          if (isTeacher) teacherAttendance++;
+          else memberAttendance++;
+        }
       });
-      
-      if (uniqueDates.length > 1) {
-        prevDateStr = uniqueDates[uniqueDates.length - 2];
-        const prevRecords = sortedAttendance.filter(r => r.date === prevDateStr);
-        prevRecords.forEach(r => {
-          r.presentMemberIds.forEach(id => {
-            const m = data.members.find(mem => mem.id === id);
-            if (m) {
-              const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
-              if (isTeacher) prevTeacherAttendance++;
-              else prevMemberAttendance++;
-            }
-          });
-        });
-      }
-    }
+    });
+    
+    const prevRecords = data.attendance.filter(r => r.date === prevDateStr);
+    prevRecords.forEach(r => {
+      r.presentMemberIds.forEach(id => {
+        const m = data.members.find(mem => mem.id === id);
+        if (m) {
+          const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+          if (isTeacher) prevTeacherAttendance++;
+          else prevMemberAttendance++;
+        }
+      });
+    });
 
     return {
       globalGenderBreakdown: {
@@ -427,6 +426,8 @@ const AdminDashboard: React.FC<{
         prevTeachers: prevTeacherAttendance,
         latestDateStr,
         prevDateStr,
+        hasLatestRecord,
+        hasPrevRecord,
       }
     };
   }, [data.members, data.attendance]);
@@ -774,6 +775,9 @@ const AdminDashboard: React.FC<{
             <div>
               <div className="flex justify-between items-center mb-2">
                 <span className="text-xs font-bold text-slate-500 uppercase">This Sunday {globalAttendanceBreakdown.latestDateStr ? `(${formatDateDDMMYYYY(globalAttendanceBreakdown.latestDateStr)})` : ''}</span>
+                {!globalAttendanceBreakdown.hasLatestRecord && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full border border-amber-200">Pending</span>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100 flex flex-col items-center justify-center">
@@ -790,6 +794,9 @@ const AdminDashboard: React.FC<{
             <div className="pt-3 border-t border-slate-100">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-xs font-bold text-slate-400 uppercase">Last Sunday {globalAttendanceBreakdown.prevDateStr ? `(${formatDateDDMMYYYY(globalAttendanceBreakdown.prevDateStr)})` : ''}</span>
+                {!globalAttendanceBreakdown.hasPrevRecord && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-50 text-slate-400 rounded-full border border-slate-200">No Record</span>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3 opacity-70 grayscale-[0.5]">
                 <div className="bg-slate-50 rounded-xl p-2 border border-slate-100 flex justify-between items-center px-4">
@@ -1219,43 +1226,43 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
     let teacherAttendance = 0;
     let prevMemberAttendance = 0;
     let prevTeacherAttendance = 0;
-    let latestDateStr = "";
-    let prevDateStr = "";
     
+    const today = new Date();
+    const currentSunday = new Date(today);
+    currentSunday.setDate(today.getDate() - today.getDay());
+    const latestDateStr = currentSunday.toISOString().split("T")[0];
+    
+    const prevSunday = new Date(currentSunday);
+    prevSunday.setDate(currentSunday.getDate() - 7);
+    const prevDateStr = prevSunday.toISOString().split("T")[0];
+
     const churchAttendance = data.attendance.filter(r => r.churchId === activeChurch);
-    const sortedAttendance = [...churchAttendance].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const hasLatestRecord = churchAttendance.some(r => r.date === latestDateStr);
+    const hasPrevRecord = churchAttendance.some(r => r.date === prevDateStr);
     
-    const uniqueDates = Array.from(new Set(sortedAttendance.map(a => a.date)));
-    
-    if (uniqueDates.length > 0) {
-      latestDateStr = uniqueDates[uniqueDates.length - 1];
-      const latestRecords = sortedAttendance.filter(r => r.date === latestDateStr);
-      latestRecords.forEach(r => {
-        r.presentMemberIds.forEach(id => {
-          const m = data.members.find(mem => mem.id === id);
-          if (m) {
-            const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
-            if (isTeacher) teacherAttendance++;
-            else memberAttendance++;
-          }
-        });
+    const latestRecords = churchAttendance.filter(r => r.date === latestDateStr);
+    latestRecords.forEach(r => {
+      r.presentMemberIds.forEach(id => {
+        const m = data.members.find(mem => mem.id === id);
+        if (m) {
+          const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+          if (isTeacher) teacherAttendance++;
+          else memberAttendance++;
+        }
       });
-      
-      if (uniqueDates.length > 1) {
-        prevDateStr = uniqueDates[uniqueDates.length - 2];
-        const prevRecords = sortedAttendance.filter(r => r.date === prevDateStr);
-        prevRecords.forEach(r => {
-          r.presentMemberIds.forEach(id => {
-            const m = data.members.find(mem => mem.id === id);
-            if (m) {
-              const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
-              if (isTeacher) prevTeacherAttendance++;
-              else prevMemberAttendance++;
-            }
-          });
-        });
-      }
-    }
+    });
+    
+    const prevRecords = churchAttendance.filter(r => r.date === prevDateStr);
+    prevRecords.forEach(r => {
+      r.presentMemberIds.forEach(id => {
+        const m = data.members.find(mem => mem.id === id);
+        if (m) {
+          const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+          if (isTeacher) prevTeacherAttendance++;
+          else prevMemberAttendance++;
+        }
+      });
+    });
 
     return {
       churchGenderBreakdown: {
@@ -1269,6 +1276,8 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
         prevTeachers: prevTeacherAttendance,
         latestDateStr,
         prevDateStr,
+        hasLatestRecord,
+        hasPrevRecord,
       }
     };
   }, [data.members, data.attendance, activeChurch]);
@@ -1288,10 +1297,8 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
 
     // 2. Birthdays This Week
     const today = new Date();
-    const currentDayOfWeek = today.getDay(); // 0 is Sunday, 1 is Monday...
-    const diffToMonday = currentDayOfWeek === 0 ? -6 : 1 - currentDayOfWeek;
     const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() + diffToMonday);
+    startOfWeek.setDate(today.getDate() - today.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
 
     const endOfWeek = new Date(startOfWeek);
@@ -1400,6 +1407,9 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
             <div>
               <div className="flex justify-between items-center mb-2">
                 <span className="text-xs font-bold text-slate-500 uppercase">This Sunday {churchAttendanceBreakdown.latestDateStr ? `(${formatDateDDMMYYYY(churchAttendanceBreakdown.latestDateStr)})` : ''}</span>
+                {!churchAttendanceBreakdown.hasLatestRecord && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full border border-amber-200">Pending</span>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100 flex flex-col items-center justify-center">
@@ -1416,6 +1426,9 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
             <div className="pt-3 border-t border-slate-100">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-xs font-bold text-slate-400 uppercase">Last Sunday {churchAttendanceBreakdown.prevDateStr ? `(${formatDateDDMMYYYY(churchAttendanceBreakdown.prevDateStr)})` : ''}</span>
+                {!churchAttendanceBreakdown.hasPrevRecord && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-50 text-slate-400 rounded-full border border-slate-200">No Record</span>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3 opacity-70 grayscale-[0.5]">
                 <div className="bg-slate-50 rounded-xl p-2 border border-slate-100 flex justify-between items-center px-4">
@@ -1704,17 +1717,17 @@ const SundayWeeklySummary: React.FC<{ data: AppData; currentUser: Member }> = ({
     });
   });
 
-  const sortedDates = Object.keys(dateMap).sort(
-    (a, b) => new Date(a).getTime() - new Date(b).getTime(),
-  );
+  const today = new Date();
+  const currentSunday = new Date(today);
+  currentSunday.setDate(today.getDate() - today.getDay());
+  const thisWeekDate = currentSunday.toISOString().split("T")[0];
 
-  if (sortedDates.length < 2) return null;
+  const prevSunday = new Date(currentSunday);
+  prevSunday.setDate(currentSunday.getDate() - 7);
+  const lastWeekDate = prevSunday.toISOString().split("T")[0];
 
-  const thisWeekDate = sortedDates[sortedDates.length - 1];
-  const lastWeekDate = sortedDates[sortedDates.length - 2];
-
-  const thisWeek = dateMap[thisWeekDate];
-  const lastWeek = dateMap[lastWeekDate];
+  const thisWeek = dateMap[thisWeekDate] || { members: 0, teachers: 0 };
+  const lastWeek = dateMap[lastWeekDate] || { members: 0, teachers: 0 };
 
   const memberGrowth = lastWeek.members
     ? Math.round(

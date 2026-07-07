@@ -248,28 +248,30 @@ const Settings: React.FC<SettingsProps> = ({
               )}
 
               <div className="space-y-4">
-                <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl cursor-pointer">
-                  <span className="font-medium text-slate-700">
-                    Enable Punctuality Tracking
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={localSettings.features?.[selectedConfigChurch]?.punctuality ?? false}
-                    onChange={(e) =>
-                      setLocalSettings({
-                        ...localSettings,
-                        features: {
-                          ...localSettings.features,
-                          [selectedConfigChurch]: {
-                            ...(localSettings.features?.[selectedConfigChurch] || { punctuality: false, outreach: false }),
-                            punctuality: e.target.checked,
-                          }
-                        },
-                      })
-                    }
-                    className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
-                  />
-                </label>
+                {selectedConfigChurch === "UJ" && (
+                  <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl cursor-pointer">
+                    <span className="font-medium text-slate-700">
+                      Enable Punctuality Tracking (UJ Church Only)
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={localSettings.features?.[selectedConfigChurch]?.punctuality ?? false}
+                      onChange={(e) =>
+                        setLocalSettings({
+                          ...localSettings,
+                          features: {
+                            ...localSettings.features,
+                            [selectedConfigChurch]: {
+                              ...(localSettings.features?.[selectedConfigChurch] || { punctuality: false, outreach: false }),
+                              punctuality: e.target.checked,
+                            }
+                          },
+                        })
+                      }
+                      className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
+                    />
+                  </label>
+                )}
 
                 <label className="flex items-center justify-between p-4 bg-slate-50 rounded-xl cursor-pointer">
                   <span className="font-medium text-slate-700">

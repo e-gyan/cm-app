@@ -27,8 +27,10 @@ import {
   addMember,
   saveAttendance,
   syncFromCloud,
+  getAppData,
+  updateMember,
 } from "../services/storageService";
-import { sanitizeInput } from "../services/securityService";
+import { sanitizeInput, determineGenderByName } from "../services/securityService";
 
 interface AttendanceTakerProps {
   data: AppData;
@@ -111,14 +113,15 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const isCombinedView = effectiveChurch === "COMBINED";
 
   const isPunctualityEnabledForChurch = 
-    effectiveChurch !== "COMBINED" 
+    effectiveChurch === "UJ" 
       ? data.settings.features?.[effectiveChurch]?.punctuality ?? false
       : false;
 
   const enablePunctuality =
-    (attendanceMode === "MEMBERS" &&
-      (isPunctualityEnabledForChurch || (isCombinedView && data.settings.features?.["UJ"]?.punctuality))) ||
-    attendanceMode === "STAFF";
+    effectiveChurch === "UJ" && (
+      (attendanceMode === "MEMBERS" && isPunctualityEnabledForChurch) ||
+      attendanceMode === "STAFF"
+    );
   const currentYear = new Date().getFullYear();
   const sundaysCurrentYear = useMemo(
     () => getSundaysInYear(currentYear),
@@ -390,18 +393,25 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     confirmSave();
   };
 
-  const confirmSave = async () => {
+  const confirmSave = async (
+    overridePresentIds?: Set<string>,
+    overrideServiceMap?: Record<string, ServiceType>,
+  ) => {
+    const activePresentIds = overridePresentIds || presentIds;
+    const activeServiceMap = overrideServiceMap || serviceMap;
+
     // Notify saving started if desired, but user wants it swift, so we just calculate and save directly.
     const branchesToSave = getRelevantBranches(effectiveChurch, attendanceMode);
     let hasActualChanges = false;
+    const allMembers = getAppData().members;
 
     branchesToSave.forEach((churchId) => {
       const existingRecord = data.attendance.find(
         (r) => r.date === selectedDate && r.churchId === churchId,
       );
 
-      const currentBranchPresentIds: string[] = [...presentIds].filter((id) => {
-        const m = data.members.find((mem) => mem.id === id);
+      const currentBranchPresentIds: string[] = [...activePresentIds].filter((id) => {
+        const m = allMembers.find((mem) => mem.id === id);
         if (!m) return false;
         if (isCombinedView) return m.assignedChurch === churchId;
         return churchId === effectiveChurch;
@@ -409,7 +419,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
       const currentBranchPunctualIds: string[] = [...punctualIds].filter(
         (id) => {
-          const m = data.members.find((mem) => mem.id === id);
+          const m = allMembers.find((mem) => mem.id === id);
           if (!m) return false;
           if (isCombinedView) return m.assignedChurch === churchId;
           return churchId === effectiveChurch;
@@ -426,14 +436,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         if (attendanceMode === "STAFF") {
           const existingMembers = existingRecord.presentMemberIds.filter(
             (id) => {
-              const m = data.members.find((mem) => mem.id === id);
+              const m = allMembers.find((mem) => mem.id === id);
               return m && !["Teacher", "Helper", "Volunteer"].includes(m.type);
             },
           );
           const existingMembersPunctual = (
             existingRecord.punctualMemberIds || []
           ).filter((id: string) => {
-            const m = data.members.find((mem) => mem.id === id);
+            const m = allMembers.find((mem) => mem.id === id);
             return m && !["Teacher", "Helper", "Volunteer"].includes(m.type);
           });
           finalPresent = [...existingMembers, ...currentBranchPresentIds];
@@ -443,13 +453,13 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           ];
         } else {
           const existingStaff = existingRecord.presentMemberIds.filter((id) => {
-            const m = data.members.find((mem) => mem.id === id);
+            const m = allMembers.find((mem) => mem.id === id);
             return m && ["Teacher", "Helper", "Volunteer"].includes(m.type);
           });
           const existingStaffPunctual = (
             existingRecord.punctualMemberIds || []
           ).filter((id: string) => {
-            const m = data.members.find((mem) => mem.id === id);
+            const m = allMembers.find((mem) => mem.id === id);
             return m && ["Teacher", "Helper", "Volunteer"].includes(m.type);
           });
           finalPresent = [...existingStaff, ...currentBranchPresentIds];
@@ -466,8 +476,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       // Update Service Map Logic:
       // We only update the map for people currently being saved in this context.
       finalPresent.forEach((id: string) => {
-        if (serviceMap[id]) {
-          finalServiceMap[id] = serviceMap[id];
+        if (activeServiceMap[id]) {
+          finalServiceMap[id] = activeServiceMap[id];
         }
       });
 
@@ -531,7 +541,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const handleAddFNF = async () => {
     if (!newMemberName.trim()) return;
     const cleanName = sanitizeInput(newMemberName);
-    const targetChurch = isCombinedView ? "UJ" : (effectiveChurch as Church);
+    
+    // Copy teacher's/currentUser's branch, zone, and church details
+    const targetChurch = currentUser?.assignedChurch || (isCombinedView ? "UJ" : (effectiveChurch as Church));
+    const targetBranchId = currentUser?.branchId;
+    const targetZoneId = currentUser?.zoneId;
+    const determinedGender = determineGenderByName(cleanName);
 
     // Set initial status to NOT_ACTIVE for VISITOR
     const newMember = await addMember(
@@ -541,6 +556,15 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       "",
       MemberStatus.NOT_ACTIVE,
     );
+
+    // Update with extra automatic fields and save
+    const updatedMember: Member = {
+      ...newMember,
+      gender: determinedGender,
+      branchId: targetBranchId || newMember.branchId,
+      zoneId: targetZoneId || newMember.zoneId,
+    };
+    await updateMember(updatedMember);
 
     const newSet = new Set(presentIds);
     newSet.add(newMember.id);
@@ -554,7 +578,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
     setNewMemberName("");
     setIsAddingFNF(false);
-    onUpdate();
+    await confirmSave(newSet, newSMap);
   };
 
   // --- LIST GENERATION ---
@@ -940,22 +964,50 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       )}
 
       {isAddingFNF && (
-        <div className="shrink-0 p-4 mb-2 bg-amber-50 rounded-2xl border border-amber-200 flex gap-2 animate-in slide-in-from-top-2">
-          <input
-            type="text"
-            placeholder="Visitor Name"
-            value={newMemberName}
-            onChange={(e) => setNewMemberName(e.target.value)}
-            className="flex-1 p-2 border border-amber-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-            autoFocus
-            onKeyDown={(e) => e.key === "Enter" && handleAddFNF()}
-          />
-          <button
-            onClick={handleAddFNF}
-            className="px-4 bg-amber-500 text-white rounded-xl font-bold"
-          >
-            Add
-          </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 animate-in zoom-in-95 relative border border-slate-100">
+            <button
+              onClick={() => setIsAddingFNF(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-full hover:bg-slate-100"
+              title="Close"
+            >
+              <X size={18} />
+            </button>
+            
+            <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+              <UserPlus className="text-indigo-600" size={22} />
+              Add New Visitor
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Add a new visitor to the directory and mark them present for this Sunday ({formatDateDDMMYYYY(selectedDate)}).
+            </p>
+            
+            <input
+              type="text"
+              placeholder="Visitor's Full Name"
+              value={newMemberName}
+              onChange={(e) => setNewMemberName(e.target.value)}
+              className="w-full p-3 border border-slate-200 rounded-xl mb-4 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium text-slate-700 bg-slate-50 placeholder:text-slate-400"
+              autoFocus
+              onKeyDown={(e) => e.key === "Enter" && handleAddFNF()}
+            />
+            
+            <div className="flex gap-2">
+              <button
+                onClick={() => setIsAddingFNF(false)}
+                className="flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddFNF}
+                disabled={!newMemberName.trim()}
+                className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-colors shadow-lg shadow-indigo-100"
+              >
+                Add & Mark Present
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1131,7 +1183,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                 Cancel
               </button>
               <button
-                onClick={confirmSave}
+                onClick={() => confirmSave()}
                 disabled={!specialEventName.trim()}
                 className="flex-1 py-3 font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
               >

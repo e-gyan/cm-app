@@ -108,3 +108,110 @@ export const isValidSchema = (data: any): boolean => {
 
     return true;
 };
+
+// Auto-determine gender based on English and typical Christian/GCP first names and heuristics
+export const determineGenderByName = (fullName: string): "MALE" | "FEMALE" => {
+  if (!fullName) return "MALE";
+  
+  const clean = fullName.trim().toLowerCase();
+  
+  // Title checks
+  if (clean.startsWith("mr ") || clean.startsWith("mr.") || clean.startsWith("master ") || clean.startsWith("sir ")) {
+    return "MALE";
+  }
+  if (clean.startsWith("mrs ") || clean.startsWith("mrs.") || clean.startsWith("ms ") || clean.startsWith("ms.") || clean.startsWith("miss ") || clean.startsWith("lady ")) {
+    return "FEMALE";
+  }
+
+  // Get the first word (first name)
+  const parts = clean.split(/[\s,]+/);
+  let firstName = parts[0] || "";
+  // If first name is a title like "pastor" or "dr", look at the next part
+  if ((firstName === "pastor" || firstName === "dr" || firstName === "dr." || firstName === "reverend" || firstName === "rev" || firstName === "rev.") && parts.length > 1) {
+    firstName = parts[1];
+  }
+
+  // Clean punctuation from first name
+  firstName = firstName.replace(/[^a-z]/g, "");
+
+  const femaleNames = new Set([
+    "mary", "maria", "margaret", "patricia", "linda", "barbara", "elizabeth", "jennifer", "susan", "dorothy", 
+    "lisa", "nancy", "karen", "betty", "helen", "sandra", "donna", "carol", "ruth", "sharon", "michelle", 
+    "laura", "sarah", "kimberly", "deborah", "jessica", "shirley", "cynthia", "angela", "melissa", "brenda", 
+    "amy", "anna", "rebecca", "virginia", "kathleen", "pamela", "martha", "debra", "amanda", "stephanie", 
+    "carolyn", "christine", "marie", "janet", "catherine", "frances", "ann", "joyce", "diane", "alice", 
+    "julie", "heather", "teresa", "doris", "gloria", "evelyn", "jean", "cheryl", "mildred", "katherine", 
+    "joan", "ashley", "judith", "rose", "janice", "kelly", "nicole", "judy", "christina", "kathy", 
+    "theresa", "beverly", "denise", "tammy", "irene", "jane", "lori", "rachel", "marilyn", "andrea", 
+    "kathryn", "louise", "sara", "anne", "jacqueline", "wanda", "bonnie", "julia", "ruby", "lois", 
+    "tina", "phyllis", "norma", "paula", "diana", "annie", "lillian", "emily", "robin", "peggy", 
+    "crystal", "gladys", "rita", "dawn", "connie", "florence", "tracy", "edna", "tiffany", "carmen", 
+    "rosa", "cindy", "grace", "wendy", "victoria", "edith", "kim", "sherry", "sylvia", "josephine", 
+    "thelma", "shannon", "sheila", "ethel", "ellen", "elaine", "marjorie", "carrie", "charlotte", 
+    "monica", "esther", "pauline", "emma", "juanita", "anita", "rhonda", "hazel", "amber", "eva", 
+    "debbie", "april", "leslie", "clara", "lucille", "jamie", "joanne", "eleanor", "valerie", 
+    "danielle", "megan", "alicia", "suzanne", "michele", "gail", "bertha", "darlene", "veronica", 
+    "jill", "erin", "geraldine", "lauren", "cathy", "joann", "lorraine", "lynn", "sally", "regina", 
+    "erica", "beatrice", "dolores", "bernice", "audrey", "yvonne", "annette", "june", "samantha", 
+    "marion", "dana", "stacy", "ana", "renee", "ida", "vivian", "roberta", "holly", "brittany", 
+    "melanie", "loretta", "yolanda", "jeanette", "laurie", "katie", "kristen", "vanessa", "alma", 
+    "sue", "elsie", "beth", "jeanne", "vicki", "carla", "rosemary", "eileen", "lucy", "gertrude", 
+    "leah", "penny", "kayla", "chloe", "zoe", "sophie", "sophia", "olivia", "ava", "isabella", 
+    "mia", "abigail", "amelia", "harriet", "cecilia", "bridget", "agnes", "hilda", "matilda",
+    "stella", "bella", "ella", "lily", "daisy", "violet", "jasmine", "rose", "iris", "ruby", "pearl",
+    "ama", "abena", "akua", "yaaa", "afua", "afia", "amina", "aisha", "fatima"
+  ]);
+
+  const maleNames = new Set([
+    "james", "john", "robert", "michael", "william", "david", "richard", "charles", "joseph", "thomas", 
+    "christopher", "daniel", "paul", "mark", "donald", "george", "kenneth", "steven", "edward", "brian", 
+    "ronald", "anthony", "kevin", "jason", "matthew", "gary", "timothy", "jose", "larry", "jeffrey", 
+    "frank", "sheldon", "isaac", "abraham", "kelvin", "gerald", "raymond", "gregory", "bruce", "marcus", 
+    "denis", "derrick", "dennis", "emmanuel", "samuel", "joshua", "caleb", "benjamin", "jonathan", 
+    "simon", "peter", "andrew", "luke", "stephen", "philip", "aaron", "moses", "elijah", "elisha", 
+    "gideon", "samson", "solomon", "josiah", "hezekiah", "ezra", "nehemiah", "job", "isaiah", 
+    "jeremiah", "ezekiel", "hosea", "joel", "amos", "obadiah", "jonah", "micah", "nahum", 
+    "habakkuk", "zephaniah", "haggai", "zechariah", "malachi", "alexander", "henry", "arthur", 
+    "alfred", "louis", "frederick", "albert", "christian", "oliver", "jack", "harry", "charlie", 
+    "alfie", "archie", "leo", "oscar", "noah", "muhammad", "brandon", "justin", "tyler", "zachary", 
+    "nathan", "austin", "dylan", "jordan", "ethan", "connor", "logan", "nicholas", "gabriel", 
+    "colin", "cameron", "kyle", "ryan", "jacob", "liam", "mason", "lucas", "aiden", "walter",
+    "patrick", "harold", "douglas", "roger", "albert", "arthur", "terry", "gerald", "keith",
+    "ralph", "roy", "eugene", "louis", "billy", "bobby", "steve", "tim", "ricky", "jeff", "justin",
+    "ben", "dan", "sam", "rob", "will", "fred", "harry", "joe", "tom", "mike", "dave", "chris", "alex",
+    "kwaku", "kojo", "kwabena", "yaw", "kofi", "kwame", "kwesi", "kweku", "abdul"
+  ]);
+
+  if (femaleNames.has(firstName)) return "FEMALE";
+  if (maleNames.has(firstName)) return "MALE";
+
+  // Suffix/pattern heuristics
+  if (firstName.endsWith("a") || 
+      firstName.endsWith("bel") || 
+      firstName.endsWith("belle") || 
+      firstName.endsWith("tina") || 
+      firstName.endsWith("ette") || 
+      firstName.endsWith("ice") || 
+      firstName.endsWith("ine") || 
+      firstName.endsWith("ia") || 
+      firstName.endsWith("ie") || 
+      firstName.endsWith("na") || 
+      firstName.endsWith("ra") || 
+      firstName.endsWith("da")) {
+    return "FEMALE";
+  }
+
+  if (firstName.endsWith("son") || 
+      firstName.endsWith("ard") || 
+      firstName.endsWith("bert") || 
+      firstName.endsWith("ald") || 
+      firstName.endsWith("old") || 
+      firstName.endsWith("rick") || 
+      firstName.endsWith("ton") || 
+      firstName.endsWith("vin")) {
+    return "MALE";
+  }
+
+  // Default fallback
+  return "MALE";
+};

@@ -582,7 +582,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
     const eventNameToUse = record.eventName || globalEventName;
     if (eventNameToUse) report += `*${eventNameToUse}*\n`;
     report += `------------------\n`;
-    report += `*TOTAL PRESENT: ${totalCount}*\n`;
+    const isTeacherRole = currentUser.role === "TEACHER" || !isAdmin;
+    const totalLabel = isTeacherRole ? "TOTAL" : "TOTAL PRESENT";
+    report += `*${totalLabel}: ${totalCount}*\n`;
 
     const splits = [];
     if (totalJoy > 0) splits.push(`Joy: ${totalJoy}`);
