@@ -599,12 +599,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
     }
 
     // Filter categories
-    const members = allChildren.filter((m) => m.type === MemberType.MEMBER && m.status !== MemberStatus.INCONSISTENT);
+    const members = allChildren.filter((m) => m.type === MemberType.MEMBER);
     const fnfs = allChildren.filter((m) => m.type === MemberType.FNF);
     const visitors = allChildren.filter((m) => m.type === MemberType.VISITOR);
-    const inconsistent = allChildren.filter(
-      (m) => m.status === MemberStatus.INCONSISTENT,
-    );
     const notMembers = allChildren.filter(
       (m) => m.type === MemberType.NOT_MEMBER,
     );
@@ -616,8 +613,6 @@ const ReportExport: React.FC<ReportExportProps> = ({
     if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNF", record);
     if (visitors.length > 0)
       report += renderListWithServices(visitors, "VISITORS", record);
-    if (inconsistent.length > 0)
-      report += renderListWithServices(inconsistent, "INCONSISTENT", record);
     if (notMembers.length > 0)
       report += renderListWithServices(notMembers, "NOT A MEMBER", record);
 

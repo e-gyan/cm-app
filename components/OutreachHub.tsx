@@ -44,6 +44,7 @@ import {
   Map as MapIcon,
   CalendarPlus,
   ExternalLink,
+  Sparkles,
 } from "lucide-react";
 import {
   BarChart,
@@ -1342,8 +1343,8 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
           </div>
 
           <CollapsibleContactSection
-            title="Active Members"
-            members={connectList.filter((m) => m.type === MemberType.MEMBER && m.status !== MemberStatus.INCONSISTENT)}
+            title="Members"
+            members={connectList.filter((m) => m.type === MemberType.MEMBER)}
             color="indigo"
             icon={User}
             onTrackCall={handleTrackCall}
@@ -1361,17 +1362,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             title="Visitors"
             members={connectList.filter((m) => m.type === MemberType.VISITOR)}
             color="teal"
-            icon={User}
-            onTrackCall={handleTrackCall}
-            onMessageClick={handleMessageClick}
-          />
-          <CollapsibleContactSection
-            title="Inconsistent"
-            members={connectList.filter(
-              (m) => m.status === MemberStatus.INCONSISTENT,
-            )}
-            color="rose"
-            icon={AlertCircle}
+            icon={Sparkles}
             onTrackCall={handleTrackCall}
             onMessageClick={handleMessageClick}
           />
@@ -1691,9 +1682,9 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               </div>
 
               <CollapsibleProgressSection
-                title="Active Members"
+                title="Members"
                 members={connectList.filter(
-                  (m) => m.type === MemberType.MEMBER && m.status !== MemberStatus.INCONSISTENT,
+                  (m) => m.type === MemberType.MEMBER,
                 )}
                 data={data}
                 icon={User}
@@ -1712,17 +1703,8 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                   (m) => m.type === MemberType.VISITOR,
                 )}
                 data={data}
-                icon={User}
+                icon={Sparkles}
                 color="teal"
-              />
-              <CollapsibleProgressSection
-                title="Inconsistent"
-                members={connectList.filter(
-                  (m) => m.status === MemberStatus.INCONSISTENT,
-                )}
-                data={data}
-                icon={AlertCircle}
-                color="rose"
               />
             </div>
           );
@@ -2521,13 +2503,38 @@ const CollapsibleProgressSection = ({
           ) : (
             members.map((m: Member) => {
               const stats = getMemberStats(m.id, data);
-            return (
-              <div
-                key={m.id}
-                className="p-4 hover:bg-slate-50 transition-colors"
-              >
-                <div className="flex justify-between items-center mb-3">
-                  <h4 className="font-bold text-slate-700 text-sm">{m.name}</h4>
+              const isVisitor = m.type === MemberType.VISITOR;
+              const cardStyle = m.status === MemberStatus.INCONSISTENT
+                ? "border-l-4 border-l-rose-500 bg-rose-50/5 hover:bg-rose-50/10"
+                : m.status === MemberStatus.NOT_ACTIVE
+                ? "border-l-4 border-l-yellow-500 bg-yellow-50/5 hover:bg-yellow-50/10"
+                : isVisitor
+                ? "border-l-4 border-l-teal-500 bg-teal-50/5 hover:bg-teal-50/10"
+                : "hover:bg-slate-50";
+              return (
+                <div
+                  key={m.id}
+                  className={`p-4 transition-colors ${cardStyle}`}
+                >
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="font-bold text-slate-700 text-sm flex items-center flex-wrap gap-1">
+                      {m.name}
+                      {m.status === MemberStatus.INCONSISTENT && (
+                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100 shrink-0">
+                          Inconsistent
+                        </span>
+                      )}
+                      {m.status === MemberStatus.NOT_ACTIVE && (
+                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-600 border border-yellow-100 shrink-0">
+                          Not Active
+                        </span>
+                      )}
+                      {isVisitor && (
+                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1 shrink-0">
+                          <Sparkles size={8} /> Visitor
+                        </span>
+                      )}
+                    </h4>
                   <div className="flex gap-1">
                     <Badge
                       label="W"
@@ -2643,23 +2650,47 @@ const CollapsibleContactSection = ({
           ) : (
             members.map((member: Member) => {
               const phone = member.phone || member.parentPhone;
-            const hasPhone = !!phone;
-            const gps = member.gpsCoordinates;
-            const address = member.address;
-            const hasLoc = !!gps || !!address;
-            const mapLink = gps
-              ? `https://www.google.com/maps/dir/?api=1&destination=${gps}`
-              : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address || "")}`;
+              const hasPhone = !!phone;
+              const gps = member.gpsCoordinates;
+              const address = member.address;
+              const hasLoc = !!gps || !!address;
+              const mapLink = gps
+                ? `https://www.google.com/maps/dir/?api=1&destination=${gps}`
+                : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address || "")}`;
 
-            return (
-              <div
-                key={member.id}
-                className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between"
-              >
-                <div>
-                  <h4 className="font-bold text-slate-800 text-sm">
-                    {member.name}
-                  </h4>
+              const isVisitor = member.type === MemberType.VISITOR;
+              const cardStyle = member.status === MemberStatus.INCONSISTENT
+                ? "border-l-4 border-l-rose-500 bg-rose-50/5 hover:bg-rose-50/10"
+                : member.status === MemberStatus.NOT_ACTIVE
+                ? "border-l-4 border-l-yellow-500 bg-yellow-50/5 hover:bg-yellow-50/10"
+                : isVisitor
+                ? "border-l-4 border-l-teal-500 bg-teal-50/5 hover:bg-teal-50/10"
+                : "border-slate-100 bg-white";
+
+              return (
+                <div
+                  key={member.id}
+                  className={`p-4 rounded-xl border shadow-sm flex items-center justify-between transition-colors ${cardStyle}`}
+                >
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-sm flex items-center flex-wrap gap-1">
+                      {member.name}
+                      {member.status === MemberStatus.INCONSISTENT && (
+                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100 shrink-0">
+                          Inconsistent
+                        </span>
+                      )}
+                      {member.status === MemberStatus.NOT_ACTIVE && (
+                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-600 border border-yellow-100 shrink-0">
+                          Not Active
+                        </span>
+                      )}
+                      {isVisitor && (
+                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1 shrink-0">
+                          <Sparkles size={8} /> Visitor
+                        </span>
+                      )}
+                    </h4>
                   {address && (
                     <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
                       <MapPin size={10} /> {address.substring(0, 20)}...

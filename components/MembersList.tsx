@@ -43,6 +43,7 @@ import {
   UserCircle,
   BadgeCheck,
   CheckCircle,
+  Sparkles,
 } from "lucide-react";
 import {
   updateMember,
@@ -940,9 +941,9 @@ const MembersList: React.FC<MembersListProps> = ({
                                     {member.gender.charAt(0)}
                                   </span>
                                 )}
-                                {member.status === MemberStatus.INCONSISTENT && (
-                                  <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100">
-                                    Inconsistent
+                                {member.type === MemberType.VISITOR && (
+                                  <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1">
+                                    <Sparkles size={8} /> Visitor
                                   </span>
                                 )}
                               </div>
@@ -1151,9 +1152,9 @@ const MembersList: React.FC<MembersListProps> = ({
                                 {member.gender.charAt(0)}
                               </span>
                             )}
-                            {member.status === MemberStatus.INCONSISTENT && (
-                              <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100">
-                                Inconsistent
+                            {member.type === MemberType.VISITOR && (
+                              <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1">
+                                <Sparkles size={10} /> Visitor
                               </span>
                             )}
                             {bdayWeek && (
@@ -1446,7 +1447,7 @@ const MembersList: React.FC<MembersListProps> = ({
           {renderMemberTableSection({
             title: "Visitors",
             members: membersToShow.filter((m) => m.type === MemberType.VISITOR),
-            icon: Users,
+            icon: Sparkles,
             colorClass: "text-teal-600",
             badgeClass: "bg-teal-100 text-teal-700",
           })}
