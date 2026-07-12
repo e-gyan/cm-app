@@ -49,6 +49,22 @@ const migrateAppData = (data: AppData) => {
   if (!data.prayerSchedule) data.prayerSchedule = [];
   if (!data.settings) data.settings = { ...DEFAULT_SETTINGS };
 
+  if (data.members) {
+    data.members.forEach(m => {
+      if (
+        m.type === "Inconsistent" ||
+        m.role === "Inconsistent" ||
+        (m.status === MemberStatus.INCONSISTENT && m.type !== MemberType.MEMBER)
+      ) {
+        m.type = MemberType.MEMBER;
+        m.status = MemberStatus.INCONSISTENT;
+        if (m.role === "Inconsistent") {
+          m.role = "NONE";
+        }
+      }
+    });
+  }
+
   if (!data.settings.features) {
     data.settings.features = {};
   } else if (typeof (data.settings.features as any).punctuality === "boolean") {
