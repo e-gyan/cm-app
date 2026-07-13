@@ -638,16 +638,7 @@ const MembersList: React.FC<MembersListProps> = ({
   };
 
   const getMemberAttendanceCount = (member: Member) => {
-    const latestPromotion = member.promotionHistory
-      ?.filter((p) => p.toChurch === member.assignedChurch)
-      .sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-      )[0];
-
     let startDate = new Date(member.joinedDate);
-    if (latestPromotion && new Date(latestPromotion.date) > startDate) {
-      startDate = new Date(latestPromotion.date);
-    }
     if (
       member.lastActivationDate &&
       new Date(member.lastActivationDate) > startDate
@@ -671,20 +662,9 @@ const MembersList: React.FC<MembersListProps> = ({
   };
 
   const renderAttendanceBadge = (member: Member) => {
-    // Calculate attendance stats
-    // Filter sessions based on promotion history
-    const latestPromotion = member.promotionHistory
-      ?.filter((p) => p.toChurch === member.assignedChurch)
-      .sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-      )[0];
-
     // Determine the start date for attendance calculation
-    // Priority: Last Activation Date > Latest Promotion Date > Joined Date
+    // Priority: Last Activation Date > Joined Date
     let startDate = new Date(member.joinedDate);
-    if (latestPromotion && new Date(latestPromotion.date) > startDate) {
-      startDate = new Date(latestPromotion.date);
-    }
     if (
       member.lastActivationDate &&
       new Date(member.lastActivationDate) > startDate

@@ -605,11 +605,99 @@ export const addMember = (
   autoTransferMembersBasedOnAge();
   return newMember;
 };
+const migrateMemberAttendance = (
+  memberId: string,
+  oldChurch: string,
+  newChurch: string,
+) => {
+  if (
+    oldChurch === newChurch ||
+    !oldChurch ||
+    !newChurch ||
+    newChurch === "ARCHIVED"
+  ) {
+    return;
+  }
+
+  const recordsToMove: {
+    date: string;
+    serviceType?: any;
+    wasPunctual: boolean;
+  }[] = [];
+
+  inMemoryData.attendance.forEach((record) => {
+    if (
+      record.churchId === oldChurch &&
+      record.presentMemberIds.includes(memberId)
+    ) {
+      record.presentMemberIds = record.presentMemberIds.filter(
+        (id) => id !== memberId,
+      );
+
+      let serviceType;
+      if (record.serviceMap && record.serviceMap[memberId]) {
+        serviceType = record.serviceMap[memberId];
+        delete record.serviceMap[memberId];
+      }
+
+      let wasPunctual = false;
+      if (
+        record.punctualMemberIds &&
+        record.punctualMemberIds.includes(memberId)
+      ) {
+        wasPunctual = true;
+        record.punctualMemberIds = record.punctualMemberIds.filter(
+          (id) => id !== memberId,
+        );
+      }
+
+      recordsToMove.push({ date: record.date, serviceType, wasPunctual });
+    }
+  });
+
+  recordsToMove.forEach(({ date, serviceType, wasPunctual }) => {
+    let newRecord = inMemoryData.attendance.find(
+      (r) => r.churchId === newChurch && r.date === date,
+    );
+    if (newRecord) {
+      if (!newRecord.presentMemberIds.includes(memberId)) {
+        newRecord.presentMemberIds.push(memberId);
+      }
+      if (serviceType) {
+        if (!newRecord.serviceMap) newRecord.serviceMap = {};
+        newRecord.serviceMap[memberId] = serviceType;
+      }
+      if (wasPunctual) {
+        if (!newRecord.punctualMemberIds) newRecord.punctualMemberIds = [];
+        if (!newRecord.punctualMemberIds.includes(memberId)) {
+          newRecord.punctualMemberIds.push(memberId);
+        }
+      }
+    } else {
+      const record: any = {
+        date: date,
+        churchId: newChurch,
+        presentMemberIds: [memberId],
+      };
+      if (serviceType) {
+        record.serviceMap = { [memberId]: serviceType };
+      }
+      if (wasPunctual) {
+        record.punctualMemberIds = [memberId];
+      }
+      inMemoryData.attendance.push(record);
+    }
+  });
+};
+
 export const updateMember = async (updatedMember: Member) => {
   const index = inMemoryData.members.findIndex(
     (m) => m.id === updatedMember.id,
   );
   if (index !== -1) {
+    const oldChurch = inMemoryData.members[index].assignedChurch;
+    const newChurch = updatedMember.assignedChurch;
+
     updatedMember.name = sanitizeInput(updatedMember.name);
     if (
       updatedMember.passcode &&
@@ -620,6 +708,11 @@ export const updateMember = async (updatedMember: Member) => {
       updatedMember.passcode = await hashPasscode(updatedMember.passcode);
     }
     inMemoryData.members[index] = updatedMember;
+
+    if (oldChurch !== newChurch) {
+      migrateMemberAttendance(updatedMember.id, oldChurch, newChurch);
+    }
+
     isDirty = true;
     persistData("DEBOUNCE");
     autoTransferMembersBasedOnAge();
