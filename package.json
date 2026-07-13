@@ -11,6 +11,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@firebase/firestore": "^4.16.0",
     "@google/genai": "^1.42.0",
     "@types/d3": "^7.4.3",
     "d3": "^7.9.0",

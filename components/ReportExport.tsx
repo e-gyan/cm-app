@@ -470,14 +470,37 @@ const ReportExport: React.FC<ReportExportProps> = ({
       const eventName = data.attendance.find(
         (r) => r.date === selectedDate && r.eventName,
       )?.eventName;
-      let report = `*CM ATTENDANCE SUMMARY*\n${formattedDate}\n`;
+      let reportTitle = "CM ATTENDANCE SUMMARY";
+      if (currentUser.role === "ZONAL_HEAD") {
+        reportTitle = `${currentUser.zoneId ? currentUser.zoneId.toUpperCase() + " " : ""}ZONE ATTENDANCE SUMMARY`;
+      } else if (currentUser.role === "BRANCH_COORDINATOR") {
+        reportTitle = `${currentUser.branchId ? currentUser.branchId.toUpperCase() + " " : ""}BRANCH ATTENDANCE SUMMARY`;
+      }
+      let report = `*${reportTitle}*\n${formattedDate}\n`;
       if (eventName) report += `*${eventName}*\n`;
       report += `----------------------------\n\n`;
 
-      const branches = [...availableChurches];
-      let grandTotal = 0;
+      let allowedChurches = [...availableChurches];
+      if (currentUser.role === "ZONAL_HEAD" && currentUser.zoneId) {
+        allowedChurches =
+          data.settings.organization?.zones
+            ?.find((z) => z.id === currentUser.zoneId || z.name === currentUser.zoneId)
+            ?.branches?.flatMap((b) => b.churches || []) || [];
+      } else if (currentUser.role === "BRANCH_COORDINATOR" && currentUser.branchId) {
+        allowedChurches =
+          data.settings.organization?.zones
+            ?.flatMap(z => z.branches || [])
+            ?.find((b) => b.id === currentUser.branchId || b.name === currentUser.branchId)
+            ?.churches || [];
+      }
 
-      branches.forEach((branch) => {
+      let grandTotal = 0;
+      let grandTotalJoy = 0;
+      let grandTotalEnlargement = 0;
+      let grandTotalSpecial = 0;
+      let grandTotalTeachers = 0;
+
+      allowedChurches.forEach((branch) => {
         const record = data.attendance.find(
           (r) => r.date === selectedDate && r.churchId === branch,
         );
@@ -498,22 +521,38 @@ const ReportExport: React.FC<ReportExportProps> = ({
             m.type !== MemberType.TEACHER,
         );
 
+        const getService = (id: string) => record?.serviceMap?.[id] || "JOY";
+        const joyCount = children.filter(m => getService(m.id) === "JOY").length;
+        const enlargementCount = children.filter(m => getService(m.id) === "ENLARGEMENT").length;
+        const specialCount = children.filter(m => getService(m.id) === "SPECIAL").length;
+
         const teachersCount = staff.length;
         const membersCount = children.length;
         const branchTotal = membersCount + teachersCount;
 
         if (branchTotal > 0) {
           report += `*${branch} Church*\n`;
-          report += `Members : ${membersCount}\n`;
-          report += `Teachers : ${teachersCount}\n`;
+          if (joyCount > 0) report += `Joy Service : ${joyCount}\n`;
+          if (enlargementCount > 0) report += `Enlargement Service : ${enlargementCount}\n`;
+          if (specialCount > 0) report += `Special Service : ${specialCount}\n`;
+          if (teachersCount > 0) report += `Teachers : ${teachersCount}\n`;
           report += `Total : ${branchTotal}\n\n`;
 
           grandTotal += branchTotal;
+          grandTotalJoy += joyCount;
+          grandTotalEnlargement += enlargementCount;
+          grandTotalSpecial += specialCount;
+          grandTotalTeachers += teachersCount;
         }
       });
 
       report += `----------------------------\n`;
-      report += `*OVERALL TOTAL: ${grandTotal}*\n`;
+      report += `*OVERALL TOTALS*\n`;
+      if (grandTotalJoy > 0) report += `Joy Service : ${grandTotalJoy}\n`;
+      if (grandTotalEnlargement > 0) report += `Enlargement Service : ${grandTotalEnlargement}\n`;
+      if (grandTotalSpecial > 0) report += `Special Service : ${grandTotalSpecial}\n`;
+      if (grandTotalTeachers > 0) report += `Teachers : ${grandTotalTeachers}\n`;
+      report += `*GRAND TOTAL: ${grandTotal}*\n`;
 
       if (grandTotal === 0) {
         report += `\n_No attendance data recorded yet for this date._`;
