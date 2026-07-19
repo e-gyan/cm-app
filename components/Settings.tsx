@@ -14,6 +14,8 @@ import {
   Database,
   Terminal,
   Palette,
+  Wrench,
+  Trash2,
 } from "lucide-react";
 import { themeColorPalettes, applyTheme } from "../lib/theme";
 
@@ -33,11 +35,11 @@ const Settings: React.FC<SettingsProps> = ({
   const isAdmin =
     currentUser.role === "ADMIN" || currentUser.role === "SUPER_ADMIN";
   const [activeTab, setActiveTab] = useState<
-    "GENERAL" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS"
+    "GENERAL" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS" | "MAINTENANCE"
   >(() => {
     return (
       (sessionStorage.getItem("settings_activeTab") as
-        "GENERAL" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS") ||
+        "GENERAL" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS" | "MAINTENANCE") ||
       "GENERAL"
     );
   });
@@ -56,6 +58,51 @@ const Settings: React.FC<SettingsProps> = ({
     text: string;
   } | null>(null);
   const [selectedConfigChurch, setSelectedConfigChurch] = useState(activeChurch);
+
+  const [duplicateRecords, setDuplicateRecords] = useState<{
+    date: string;
+    churchId: string;
+    records: any[];
+  }[]>([]);
+
+  const scanForDuplicates = () => {
+    const recordsByDateAndChurch = {};
+    data.attendance.forEach(record => {
+      const key = `${record.date}_${record.churchId}`;
+      if (!recordsByDateAndChurch[key]) recordsByDateAndChurch[key] = [];
+      recordsByDateAndChurch[key].push(record);
+    });
+
+    const duplicates = Object.keys(recordsByDateAndChurch)
+      .filter(key => recordsByDateAndChurch[key].length > 1)
+      .map(key => {
+        const [date, churchId] = key.split('_');
+        return { date, churchId, records: recordsByDateAndChurch[key] };
+      });
+
+    setDuplicateRecords(duplicates);
+    
+    if (duplicates.length === 0) {
+      setStatusMsg({ type: "success", text: "No duplicates found!" });
+    } else {
+      setStatusMsg({ type: "error", text: `Found ${duplicates.length} duplicate groups.` });
+    }
+  };
+
+  const deleteDuplicateRecord = async (recordToDelete) => {
+    if (!window.confirm("Are you sure you want to delete this attendance record? This action cannot be undone.")) return;
+    
+    // Find index of the exact record
+    const index = data.attendance.indexOf(recordToDelete);
+    if (index > -1) {
+      data.attendance.splice(index, 1);
+      await syncToCloud(true);
+      onUpdate();
+      setStatusMsg({ type: "success", text: "Record deleted successfully." });
+      scanForDuplicates(); // Rescan
+    }
+  };
+
   const [permTab, setPermTab] = useState<"MATRIX" | "INDIVIDUAL">("MATRIX");
   const [selectedRoleForPerms, setSelectedRoleForPerms] = useState<string>("ZONAL_HEAD");
   const [isSyncing, setIsSyncing] = useState(false);
@@ -182,46 +229,55 @@ const Settings: React.FC<SettingsProps> = ({
         <div className="md:col-span-1 space-y-2">
           <button
             onClick={() => setActiveTab("GENERAL")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === "GENERAL" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === "GENERAL"? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
           >
             General
           </button>
           <button
             onClick={() => setActiveTab("CHURCHES")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === "CHURCHES" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab ==="GENERAL"? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
           >
             Church Branches
           </button>
           <button
             onClick={() => setActiveTab("ORGANIZATION")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === "ORGANIZATION" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab ==="GENERAL"? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
           >
             Organization Structure
           </button>
           <button
             onClick={() => setActiveTab("THEME")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === "THEME" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab ==="GENERAL"? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
           >
             Theme Colors
           </button>
           <button
             onClick={() => setActiveTab("PERMISSIONS")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === "PERMISSIONS" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab ==="PERMISSIONS" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
           >
             Role Permissions
           </button>
           <button
             onClick={() => setActiveTab("CLOUD")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === "CLOUD" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab ==="GENERAL"? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
           >
             Cloud Sync
           </button>
+          {isAdmin && (
+            <button
+              onClick={() => setActiveTab("MAINTENANCE")}
+              className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === "MAINTENANCE" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            >
+              <Wrench size={16} /> Maintenance
+            </button>
+          )}
+
         </div>
 
         {/* Content Area */}
         <div className="md:col-span-3 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 min-h-[400px]">
           {/* GENERAL TAB */}
-          {activeTab === "GENERAL" && (
+          {activeTab === "GENERAL"&& (
             <div className="space-y-6">
               <h3 className="font-bold text-lg text-slate-800">
                 Feature Toggles
@@ -299,7 +355,7 @@ const Settings: React.FC<SettingsProps> = ({
           )}
 
           {/* CHURCHES TAB */}
-          {activeTab === "CHURCHES" && (
+          {activeTab ==="GENERAL"&& (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="font-bold text-lg text-slate-800">
@@ -351,7 +407,7 @@ const Settings: React.FC<SettingsProps> = ({
           )}
 
           {/* ORGANIZATION TAB */}
-          {activeTab === "ORGANIZATION" && (
+          {activeTab ==="GENERAL"&& (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="font-bold text-lg text-slate-800">
@@ -570,7 +626,7 @@ const Settings: React.FC<SettingsProps> = ({
           )}
 
           {/* THEME TAB */}
-          {activeTab === "THEME" && (
+          {activeTab ==="GENERAL"&& (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
@@ -639,8 +695,62 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
           )}
 
+          
+          {/* MAINTENANCE TAB */}
+          {activeTab === "MAINTENANCE" && isAdmin && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                  <Wrench size={20} className="text-indigo-600" /> System Maintenance
+                </h3>
+              </div>
+
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
+                <h4 className="font-bold text-red-800 mb-2">Duplicate Attendance Records</h4>
+                <p className="text-sm text-red-700 mb-4">
+                  Identify and remove duplicate attendance entries for the same date and church.
+                </p>
+                
+                <button
+                  onClick={scanForDuplicates}
+                  className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition-colors"
+                >
+                  Scan for Duplicates
+                </button>
+                
+                {duplicateRecords.length > 0 && (
+                  <div className="mt-6 space-y-4">
+                    {duplicateRecords.map((group, i) => (
+                      <div key={i} className="bg-white p-4 rounded-xl border border-red-100 shadow-sm">
+                        <div className="font-bold text-slate-800 mb-3 border-b pb-2">
+                          {group.churchId} Church - {group.date} ({group.records.length} records)
+                        </div>
+                        <div className="space-y-3">
+                          {group.records.map((record, j) => (
+                            <div key={j} className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                              <div>
+                                <div className="text-xs font-bold text-slate-500">Event: {record.eventName || "N/A"}</div>
+                                <div className="text-xs text-slate-600">Present: {record.presentMemberIds?.length || 0}</div>
+                              </div>
+                              <button
+                                onClick={() => deleteDuplicateRecord(record)}
+                                className="px-3 py-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors"
+                              >
+                                <Trash2 size={14} /> Delete
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* PERMISSIONS TAB */}
-          {activeTab === "PERMISSIONS" && (
+          {activeTab ==="GENERAL" && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
@@ -811,7 +921,7 @@ const Settings: React.FC<SettingsProps> = ({
           )}
 
           {/* CLOUD TAB */}
-          {activeTab === "CLOUD" && (
+          {activeTab ==="GENERAL"&& (
             <div className="space-y-6">
               <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
                 <Cloud size={20} className="text-indigo-600" /> Firebase Sync
@@ -909,7 +1019,7 @@ const Settings: React.FC<SettingsProps> = ({
       </div>
 
       {/* Global Save Button (if not in cloud tab) */}
-      {activeTab !== "CLOUD" && (
+      {activeTab !=="GENERAL"&& (
         <div className="fixed bottom-24 right-4 md:bottom-8 md:right-8">
           <button
             onClick={saveConfig}
