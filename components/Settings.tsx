@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { AppData, Member, AppSettings } from "../types";
-import { updateSettings, syncFromCloud } from "../services/storageService";
+import { updateSettings, syncFromCloud, syncToCloud } from "../services/storageService";
+import { doc, getDoc } from "firebase/firestore";
+import { db, loginWithGoogle } from "../services/firebase";
 import {
   Settings as SettingsIcon,
   Cloud,
@@ -61,9 +63,7 @@ const Settings: React.FC<SettingsProps> = ({
 
   const handleInspectCloud = async () => {
     try {
-      const { doc, getDoc } = await import("firebase/firestore");
-      const { db } = await import("../services/firebase");
-      const docRef = doc(db, "appData", "main");
+                  const docRef = doc(db, "appData", "main");
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const cloudD = docSnap.data();
@@ -142,8 +142,7 @@ const Settings: React.FC<SettingsProps> = ({
   const handleForcePush = async () => {
     setIsSyncing(true);
     try {
-      const { syncToCloud } = await import("../services/storageService");
-      await syncToCloud(true);
+            await syncToCloud(true);
       setStatusMsg({ type: "success", text: "Cloud push successful" });
     } catch (err: any) {
       setStatusMsg({ type: "error", text: err.message || "Push failed" });
@@ -831,8 +830,7 @@ const Settings: React.FC<SettingsProps> = ({
                   <button
                     onClick={async () => {
                       try {
-                        const { loginWithGoogle } =
-                          await import("../services/firebase");
+                        /* loginWithGoogle statically imported */
                         await loginWithGoogle();
                         setStatusMsg({
                           type: "success",

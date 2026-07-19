@@ -534,7 +534,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
           report += `*${branch} Church*\n`;
           if (joyCount > 0) report += `Joy Service : ${joyCount}\n`;
           if (enlargementCount > 0) report += `Enlargement Service : ${enlargementCount}\n`;
-          if (specialCount > 0) report += `Special Service : ${specialCount}\n`;
+          if (specialCount > 0) report += `${eventName || "Special Service"} : ${specialCount}\n`;
           if (teachersCount > 0) report += `Teachers : ${teachersCount}\n`;
           report += `Total : ${branchTotal}\n\n`;
 
@@ -550,118 +550,104 @@ const ReportExport: React.FC<ReportExportProps> = ({
       report += `*OVERALL TOTALS*\n`;
       if (grandTotalJoy > 0) report += `Joy Service : ${grandTotalJoy}\n`;
       if (grandTotalEnlargement > 0) report += `Enlargement Service : ${grandTotalEnlargement}\n`;
-      if (grandTotalSpecial > 0) report += `Special Service : ${grandTotalSpecial}\n`;
+      if (grandTotalSpecial > 0) report += `${eventName || "Special Service"} : ${grandTotalSpecial}\n`;
       if (grandTotalTeachers > 0) report += `Teachers : ${grandTotalTeachers}\n`;
       report += `*GRAND TOTAL: ${grandTotal}*\n`;
 
       if (grandTotal === 0) {
         report += `\n_No attendance data recorded yet for this date._`;
+      } else {
+        report += `\n============================\n\n`;
+        report += `*DETAILED BREAKDOWN*\n\n`;
+        allowedChurches.forEach((branch) => {
+          const churchReport = renderSingleChurch(branch);
+          if (churchReport) {
+             report += churchReport + `\n----------------------------\n\n`;
+          }
+        });
       }
 
       return report;
     }
 
-    // --- SINGLE BRANCH REPORT (Names included with Service Split) ---
-    const record = data.attendance.find(
-      (r) => r.date === selectedDate && r.churchId === activeChurch,
-    );
-    if (!record)
-      return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
+    // --- Helper for Single Branch Report (Names included with Service Split) ---
+    function renderSingleChurch(churchId: string) {
+      const record = data.attendance.find(
+        (r) => r.date === selectedDate && r.churchId === churchId,
+      );
+      if (!record) return "";
 
-    const presentMembers = record
-      ? data.members.filter((m) => record.presentMemberIds.includes(m.id))
-      : [];
+      const presentMembers = data.members.filter((m) => record.presentMemberIds.includes(m.id));
+      presentMembers.sort((a, b) => a.name.localeCompare(b.name));
 
-    // Sort alphabetically
-    presentMembers.sort((a, b) => a.name.localeCompare(b.name));
+      const teachers = presentMembers.filter(
+        (m) =>
+          ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
+          m.type === MemberType.TEACHER,
+      );
 
-    const teachers = presentMembers.filter(
-      (m) =>
-        ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
-        m.type === MemberType.TEACHER,
-    );
+      const getService = (id: string) => record?.serviceMap?.[id] || "JOY";
 
-    // Helper to get service
-    const getService = (id: string) => record?.serviceMap?.[id] || "JOY"; // Default to Joy if legacy
+      const allChildren = presentMembers.filter(
+        (m) =>
+          !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+          m.type !== MemberType.TEACHER,
+      );
+      const totalCount = presentMembers.length;
 
-    // Punctual Lists
-    const punctualIds = record?.punctualMemberIds || [];
-    const joyPunctual = punctualIds
-      .filter((id) => getService(id) === "JOY")
-      .map((id) => data.members.find((m) => m.id === id))
-      .filter(Boolean);
-    const enlargePunctual = punctualIds
-      .filter((id) => getService(id) === "ENLARGEMENT")
-      .map((id) => data.members.find((m) => m.id === id))
-      .filter(Boolean);
+      const totalJoy = allChildren.filter((m) => getService(m.id) === "JOY").length;
+      const totalEnlargement = allChildren.filter((m) => getService(m.id) === "ENLARGEMENT").length;
+      const totalSpecial = allChildren.filter((m) => getService(m.id) === "SPECIAL").length;
 
-    // Accounting count: Everyone including teachers
-    const allChildren = presentMembers.filter(
-      (m) =>
-        !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-        m.type !== MemberType.TEACHER,
-    );
-    const totalCount = presentMembers.length;
+      let report = `*${churchId} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
+      const globalEventName = data.attendance.find((r) => r.date === selectedDate && r.eventName)?.eventName;
+      const eventNameToUse = record.eventName || globalEventName;
+      if (eventNameToUse) report += `*${eventNameToUse}*\n`;
+      report += `------------------\n`;
+      const isTeacherRole = currentUser.role === "TEACHER" || !isAdmin;
+      const totalLabel = isTeacherRole ? "TOTAL" : "TOTAL PRESENT";
+      report += `*${totalLabel}: ${totalCount}*\n`;
 
-    // Calculate Split
-    const totalJoy = allChildren.filter(
-      (m) => getService(m.id) === "JOY",
-    ).length;
-    const totalEnlargement = allChildren.filter(
-      (m) => getService(m.id) === "ENLARGEMENT",
-    ).length;
-    const totalSpecial = allChildren.filter(
-      (m) => getService(m.id) === "SPECIAL",
-    ).length;
+      const splits = [];
+      if (totalJoy > 0) splits.push(`Joy: ${totalJoy}`);
+      if (totalEnlargement > 0) splits.push(`Enlargement: ${totalEnlargement}`);
+      if (totalSpecial > 0) splits.push(`${eventNameToUse || "Special"}: ${totalSpecial}`);
+      if (teachers.length > 0) splits.push(`Teachers: ${teachers.length}`);
 
-    let report = `*${activeChurch} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
-    const globalEventName = data.attendance.find(
-      (r) => r.date === selectedDate && r.eventName,
-    )?.eventName;
-    const eventNameToUse = record.eventName || globalEventName;
-    if (eventNameToUse) report += `*${eventNameToUse}*\n`;
-    report += `------------------\n`;
-    const isTeacherRole = currentUser.role === "TEACHER" || !isAdmin;
-    const totalLabel = isTeacherRole ? "TOTAL" : "TOTAL PRESENT";
-    report += `*${totalLabel}: ${totalCount}*\n`;
+      if (splits.length > 0) {
+        report += `(${splits.join(" | ")})\n\n`;
+      } else {
+        report += `\n`;
+      }
 
-    const splits = [];
-    if (totalJoy > 0) splits.push(`Joy: ${totalJoy}`);
-    if (totalEnlargement > 0) splits.push(`Enlargement: ${totalEnlargement}`);
-    if (totalSpecial > 0) splits.push(`Special: ${totalSpecial}`);
-    if (teachers.length > 0) splits.push(`Teachers: ${teachers.length}`);
+      const members = allChildren.filter((m) => m.type === MemberType.MEMBER);
+      const fnfs = allChildren.filter((m) => m.type === MemberType.FNF);
+      const visitors = allChildren.filter((m) => m.type === MemberType.VISITOR);
+      const notMembers = allChildren.filter((m) => m.type === MemberType.NOT_MEMBER);
 
-    if (splits.length > 0) {
-      report += `(${splits.join(" | ")})\n\n`;
-    } else {
-      report += `\n`;
+      if (members.length > 0) report += renderListWithServices(members, "MEMBERS", record);
+      else report += `*MEMBERS (0)*\n_None_\n\n`;
+
+      if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNF", record);
+      if (visitors.length > 0) report += renderListWithServices(visitors, "VISITORS", record);
+      if (notMembers.length > 0) report += renderListWithServices(notMembers, "NOT A MEMBER", record);
+
+      if (teachers.length > 0) {
+        report += `*TEACHERS (${teachers.length})*\n`;
+        teachers.forEach((m, i) => (report += `${i + 1}. ${m.name}\n`));
+        report += `\n`;
+      }
+
+      return report;
     }
 
-    // Filter categories
-    const members = allChildren.filter((m) => m.type === MemberType.MEMBER);
-    const fnfs = allChildren.filter((m) => m.type === MemberType.FNF);
-    const visitors = allChildren.filter((m) => m.type === MemberType.VISITOR);
-    const notMembers = allChildren.filter(
-      (m) => m.type === MemberType.NOT_MEMBER,
-    );
-
-    if (members.length > 0)
-      report += renderListWithServices(members, "MEMBERS", record);
-    else report += `*MEMBERS (0)*\n_None_\n\n`;
-
-    if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNF", record);
-    if (visitors.length > 0)
-      report += renderListWithServices(visitors, "VISITORS", record);
-    if (notMembers.length > 0)
-      report += renderListWithServices(notMembers, "NOT A MEMBER", record);
-
-    if (teachers.length > 0) {
-      report += `*TEACHERS (${teachers.length})*\n`;
-      teachers.forEach((m, i) => (report += `${i + 1}. ${m.name}\n`));
-      report += `\n`;
+    if (activeChurch !== "CM") {
+      const churchReport = renderSingleChurch(activeChurch);
+      if (!churchReport) return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
+      return churchReport;
     }
 
-    return report;
+    return "";
   };
 
   const handleCopyReport = () => {

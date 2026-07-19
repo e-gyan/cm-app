@@ -21,12 +21,14 @@ import {
   Sun,
   Zap,
   Filter,
+  Info,
 } from "lucide-react";
 import { motion } from "motion/react";
 import {
   addMember,
   saveAttendance,
   syncFromCloud,
+  syncToCloud,
   getAppData,
   updateMember,
 } from "../services/storageService";
@@ -82,6 +84,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   );
 
   const [newMemberName, setNewMemberName] = useState("");
+  const [isSubmittingVisitor, setIsSubmittingVisitor] = useState(false);
   const [isAddingFNF, setIsAddingFNF] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboardTimeframe, setLeaderboardTimeframe] = useState<
@@ -534,51 +537,56 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
     // Explicitly push to cloud in background without blocking UI
     if (hasActualChanges) {
-      import("../services/storageService").then((mod) => mod.syncToCloud(true));
+      syncToCloud(true);
     }
   };
 
   const handleAddFNF = async () => {
-    if (!newMemberName.trim()) return;
-    const cleanName = sanitizeInput(newMemberName);
-    
-    // Copy teacher's/currentUser's branch, zone, and church details
-    const targetChurch = currentUser?.assignedChurch || (isCombinedView ? "UJ" : (effectiveChurch as Church));
-    const targetBranchId = currentUser?.branchId;
-    const targetZoneId = currentUser?.zoneId;
-    const determinedGender = determineGenderByName(cleanName);
+    if (!newMemberName.trim() || isSubmittingVisitor) return;
+    setIsSubmittingVisitor(true);
+    try {
+      const cleanName = sanitizeInput(newMemberName);
+      
+      // Copy teacher's/currentUser's branch, zone, and church details
+      const targetChurch = currentUser?.assignedChurch || (isCombinedView ? "UJ" : (effectiveChurch as Church));
+      const targetBranchId = currentUser?.branchId;
+      const targetZoneId = currentUser?.zoneId;
+      const determinedGender = determineGenderByName(cleanName);
 
-    // Set initial status to NOT_ACTIVE for VISITOR
-    const newMember = await addMember(
-      cleanName,
-      MemberType.VISITOR,
-      targetChurch,
-      "",
-      MemberStatus.NOT_ACTIVE,
-    );
+      // Set initial status to NOT_ACTIVE for VISITOR
+      const newMember = await addMember(
+        cleanName,
+        MemberType.VISITOR,
+        targetChurch,
+        "",
+        MemberStatus.NOT_ACTIVE,
+      );
 
-    // Update with extra automatic fields and save
-    const updatedMember: Member = {
-      ...newMember,
-      gender: determinedGender,
-      branchId: targetBranchId || newMember.branchId,
-      zoneId: targetZoneId || newMember.zoneId,
-    };
-    await updateMember(updatedMember);
+      // Update with extra automatic fields and save
+      const updatedMember: Member = {
+        ...newMember,
+        gender: determinedGender,
+        branchId: targetBranchId || newMember.branchId,
+        zoneId: targetZoneId || newMember.zoneId,
+      };
+      await updateMember(updatedMember);
 
-    const newSet = new Set(presentIds);
-    newSet.add(newMember.id);
-    setPresentIds(newSet);
+      const newSet = new Set(presentIds);
+      newSet.add(newMember.id);
+      setPresentIds(newSet);
 
-    // Add to current service map
-    const newSMap = { ...serviceMap, [newMember.id]: currentService };
-    setServiceMap(newSMap);
+      // Add to current service map
+      const newSMap = { ...serviceMap, [newMember.id]: currentService };
+      setServiceMap(newSMap);
 
-    saveDraft(newSet, punctualIds, newSMap);
+      saveDraft(newSet, punctualIds, newSMap);
 
-    setNewMemberName("");
-    setIsAddingFNF(false);
-    await confirmSave(newSet, newSMap);
+      setNewMemberName("");
+      setIsAddingFNF(false);
+      await confirmSave(newSet, newSMap);
+    } finally {
+      setIsSubmittingVisitor(false);
+    }
   };
 
   // --- LIST GENERATION ---
@@ -1000,10 +1008,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               </button>
               <button
                 onClick={handleAddFNF}
-                disabled={!newMemberName.trim()}
+                disabled={!newMemberName.trim() || isSubmittingVisitor}
                 className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-colors shadow-lg shadow-indigo-100"
               >
-                Add & Mark Present
+                {isSubmittingVisitor ? "Adding..." : "Add & Mark Present"}
               </button>
             </div>
           </div>
@@ -1153,9 +1161,13 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       </div>
 
       {successMsg && (
-        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-800/90 backdrop-blur text-white px-8 py-4 rounded-2xl shadow-2xl flex flex-col items-center gap-2 animate-in fade-in zoom-in-95 z-50">
-          <CheckCircle2 size={32} className="text-green-400" />
-          <span className="font-bold text-lg">{successMsg}</span>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800/95 backdrop-blur text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 z-50">
+          {successMsg === "No changes saved" ? (
+            <Info size={24} className="text-blue-400" />
+          ) : (
+            <CheckCircle2 size={24} className="text-green-400" />
+          )}
+          <span className="font-bold text-sm md:text-base">{successMsg}</span>
         </div>
       )}
 

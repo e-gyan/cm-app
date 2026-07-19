@@ -50,7 +50,7 @@ const migrateAppData = (data: AppData) => {
   if (!data.settings) data.settings = { ...DEFAULT_SETTINGS };
 
   if (data.members) {
-    data.members.forEach(m => {
+    data.members.forEach((m: any) => {
       if (
         m.type === "Inconsistent" ||
         m.role === "Inconsistent" ||

@@ -1,12 +1,30 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
-import { getFirestore, initializeFirestore, doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+} from "firebase/auth";
+import {
+  getFirestore,
+  initializeFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+} from "firebase/firestore";
+import { setLogLevel } from "firebase/firestore";
+setLogLevel("silent");
 import firebaseConfig from "../firebase-applet-config.json";
 
 console.log("Firebase Init Database ID:", firebaseConfig.firestoreDatabaseId);
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = initializeFirestore(app, { experimentalForceLongPolling: true }, firebaseConfig.firestoreDatabaseId);
+export const db = initializeFirestore(
+  app,
+  { experimentalForceLongPolling: true },
+  firebaseConfig.firestoreDatabaseId,
+);
 
 export const loginWithGoogle = async () => {
   const provider = new GoogleAuthProvider();
