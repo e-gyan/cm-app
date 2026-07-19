@@ -1238,6 +1238,7 @@ export const saveAttendance = (
     punctualMemberIds: punctualIds,
     serviceMap: serviceMap, // Persist the service map
     eventName: eventName,
+    lastUpdated: Date.now(),
   };
   if (existingIndex >= 0) {
     inMemoryData.attendance[existingIndex] = record;

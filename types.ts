@@ -42,6 +42,7 @@ export interface Member {
   birthDate?: string; // ISO Date string (DD/MM/YYYY)
   assignedChurch: Church;
   branchId?: string;
+  lastUpdated?: number;
   zoneId?: string;
   gender?: "MALE" | "FEMALE";
   // Auth Fields
@@ -74,6 +75,7 @@ export interface AttendanceRecord {
   notes?: string;
   churchId: Church;
   branchId?: string;
+  lastUpdated?: number;
 }
 
 export interface Transaction {
@@ -85,6 +87,7 @@ export interface Transaction {
   description: string;
   churchId: Church;
   branchId?: string;
+  lastUpdated?: number;
   recordedBy?: string;
 }
 
@@ -102,6 +105,7 @@ export interface Notification {
   createdAt: string; // ISO Date
   targetChurch: Church; // The church staff who should see this
   branchId?: string;
+  lastUpdated?: number;
   relatedMemberId?: string;
   isRead: boolean;
 }
@@ -120,6 +124,7 @@ export interface OutreachSession {
   notes?: string;
   completedBy?: string;
   branchId?: string;
+  lastUpdated?: number;
 }
 
 export interface PrayerSlot {
@@ -130,6 +135,7 @@ export interface PrayerSlot {
   isCompleted: boolean;
   durationMins: number; // Default 30
   branchId?: string;
+  lastUpdated?: number;
 }
 
 export interface AppSettings {

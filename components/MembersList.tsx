@@ -2418,7 +2418,7 @@ const MembersList: React.FC<MembersListProps> = ({
                           No attendance records found.
                         </div>
                       ) : (
-                        history.slice(0, 20).map((record) => {
+                        history.slice(0, 20).map((record, index) => {
                           const isPresent = record.presentMemberIds.includes(
                             member.id,
                           );
@@ -2426,7 +2426,7 @@ const MembersList: React.FC<MembersListProps> = ({
 
                           return (
                             <div
-                              key={record.date}
+                              key={`${record.date}-${index}`}
                               className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors"
                             >
                               <div className="flex items-center gap-3">

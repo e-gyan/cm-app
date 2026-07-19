@@ -310,8 +310,15 @@ const App: React.FC = () => {
       if (!existing) {
         attendanceMap.set(key, record);
       } else {
-        if (record.branchId === activeBranchId || (!existing.branchId && record.branchId)) {
+        const recordTime = record.lastUpdated || 0;
+        const existingTime = existing.lastUpdated || 0;
+        
+        if (recordTime > existingTime) {
           attendanceMap.set(key, record);
+        } else if (recordTime === existingTime) {
+          if (record.branchId === activeBranchId || (!existing.branchId && record.branchId)) {
+            attendanceMap.set(key, record);
+          }
         }
       }
     });
