@@ -548,7 +548,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       const cleanName = sanitizeInput(newMemberName);
       
       // Copy teacher's/currentUser's branch, zone, and church details
-      const targetChurch = currentUser?.assignedChurch || (isCombinedView ? "UJ" : (effectiveChurch as Church));
+      const targetChurch = (currentUser?.assignedChurch && currentUser?.assignedChurch !== "All" && currentUser?.assignedChurch !== "CM") ? currentUser.assignedChurch : (effectiveChurch as Church || "UJ");
       const targetBranchId = currentUser?.branchId;
       const targetZoneId = currentUser?.zoneId;
       const determinedGender = determineGenderByName(cleanName);

@@ -480,18 +480,30 @@ const ReportExport: React.FC<ReportExportProps> = ({
       if (eventName) report += `*${eventName}*\n`;
       report += `----------------------------\n\n`;
 
-      let allowedChurches = [...availableChurches];
+            let allowedBranches: { id?: string; name: string; churches: string[] }[] = [];
+
       if (currentUser.role === "ZONAL_HEAD" && currentUser.zoneId) {
-        allowedChurches =
-          data.settings.organization?.zones
-            ?.find((z) => z.id === currentUser.zoneId || z.name === currentUser.zoneId)
-            ?.branches?.flatMap((b) => b.churches || []) || [];
+        const zone = data.settings.organization?.zones?.find(
+          (z) => z.id === currentUser.zoneId || z.name === currentUser.zoneId
+        );
+        if (zone && zone.branches) {
+          allowedBranches = zone.branches.map(b => ({ id: b.id, name: b.name, churches: b.churches || [] }));
+        }
       } else if (currentUser.role === "BRANCH_COORDINATOR" && currentUser.branchId) {
-        allowedChurches =
-          data.settings.organization?.zones
-            ?.flatMap(z => z.branches || [])
-            ?.find((b) => b.id === currentUser.branchId || b.name === currentUser.branchId)
-            ?.churches || [];
+        const branch = data.settings.organization?.zones?.flatMap(z => z.branches || [])?.find(
+          (b) => b.id === currentUser.branchId || b.name === currentUser.branchId
+        );
+        if (branch) {
+          allowedBranches = [{ id: branch.id, name: branch.name, churches: branch.churches || [] }];
+        }
+      } else {
+        // ADMIN / SUPER_ADMIN or others
+        const allBranches = data.settings.organization?.zones?.flatMap(z => z.branches || []) || [];
+        if (allBranches.length > 0) {
+           allowedBranches = allBranches.map(b => ({ id: b.id, name: b.name, churches: b.churches || [] }));
+        } else {
+           allowedBranches = [{ name: "Main", churches: availableChurches }];
+        }
       }
 
       let grandTotal = 0;
@@ -500,49 +512,60 @@ const ReportExport: React.FC<ReportExportProps> = ({
       let grandTotalSpecial = 0;
       let grandTotalTeachers = 0;
 
-      allowedChurches.forEach((branch) => {
-        const record = data.attendance.find(
-          (r) => r.date === selectedDate && r.churchId === branch,
-        );
-        if (!record) return;
+      allowedBranches.forEach((branch) => {
+        let branchHasData = false;
+        let branchReport = `*BRANCH: ${branch.name.toUpperCase()}*\n`;
+        
+        branch.churches.forEach((church) => {
+          const record = data.attendance.find(
+            (r) => r.date === selectedDate && r.churchId === church && (r.branchId === branch.id || r.branchId === branch.name || (!r.branchId && allowedBranches.length === 1))
+          );
+          if (!record) return;
 
-        const presentMembers = data.members.filter((m) =>
-          record.presentMemberIds.includes(m.id),
-        );
+          const presentMembers = data.members.filter((m) =>
+            record.presentMemberIds.includes(m.id),
+          );
 
-        const staff = presentMembers.filter(
-          (m) =>
-            ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
-            m.type === MemberType.TEACHER,
-        );
-        const children = presentMembers.filter(
-          (m) =>
-            !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-            m.type !== MemberType.TEACHER,
-        );
+          const staff = presentMembers.filter(
+            (m) =>
+              ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
+              m.type === MemberType.TEACHER,
+          );
+          const children = presentMembers.filter(
+            (m) =>
+              !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+              m.type !== MemberType.TEACHER,
+          );
 
-        const getService = (id: string) => record?.serviceMap?.[id] || "JOY";
-        const joyCount = children.filter(m => getService(m.id) === "JOY").length;
-        const enlargementCount = children.filter(m => getService(m.id) === "ENLARGEMENT").length;
-        const specialCount = children.filter(m => getService(m.id) === "SPECIAL").length;
+          const getService = (id: string) => record?.serviceMap?.[id] || "JOY";
+          const joyCount = children.filter(m => getService(m.id) === "JOY").length;
+          const enlargementCount = children.filter(m => getService(m.id) === "ENLARGEMENT").length;
+          const specialCount = children.filter(m => getService(m.id) === "SPECIAL").length;
 
-        const teachersCount = staff.length;
-        const membersCount = children.length;
-        const branchTotal = membersCount + teachersCount;
+          const teachersCount = staff.length;
+          const membersCount = children.length;
+          const classTotal = membersCount + teachersCount;
 
-        if (branchTotal > 0) {
-          report += `*${branch} Church*\n`;
-          if (joyCount > 0) report += `Joy Service : ${joyCount}\n`;
-          if (enlargementCount > 0) report += `Enlargement Service : ${enlargementCount}\n`;
-          if (specialCount > 0) report += `${eventName || "Special Service"} : ${specialCount}\n`;
-          if (teachersCount > 0) report += `Teachers : ${teachersCount}\n`;
-          report += `Total : ${branchTotal}\n\n`;
+          if (classTotal > 0) {
+            branchHasData = true;
+            branchReport += `*${church} Church*
+`;
+            if (joyCount > 0) branchReport += `Joy Service : ${joyCount}\n`;
+            if (enlargementCount > 0) branchReport += `Enlargement Service : ${enlargementCount}\n`;
+            if (specialCount > 0) branchReport += `${eventName || "Special Service"} : ${specialCount}\n`;
+            if (teachersCount > 0) branchReport += `Teachers : ${teachersCount}\n`;
+            branchReport += `Total : ${classTotal}\n\n`;
 
-          grandTotal += branchTotal;
-          grandTotalJoy += joyCount;
-          grandTotalEnlargement += enlargementCount;
-          grandTotalSpecial += specialCount;
-          grandTotalTeachers += teachersCount;
+            grandTotal += classTotal;
+            grandTotalJoy += joyCount;
+            grandTotalEnlargement += enlargementCount;
+            grandTotalSpecial += specialCount;
+            grandTotalTeachers += teachersCount;
+          }
+        });
+        
+        if (branchHasData) {
+           report += branchReport;
         }
       });
 
@@ -559,10 +582,21 @@ const ReportExport: React.FC<ReportExportProps> = ({
       } else {
         report += `\n============================\n\n`;
         report += `*DETAILED BREAKDOWN*\n\n`;
-        allowedChurches.forEach((branch) => {
-          const churchReport = renderSingleChurch(branch);
-          if (churchReport) {
-             report += churchReport + `\n----------------------------\n\n`;
+
+        allowedBranches.forEach((branch) => {
+          let branchDetailHasData = false;
+          let branchDetailReport = `*\u25A0 ${branch.name.toUpperCase()} BRANCH*\n\n`;
+          
+          branch.churches.forEach((church) => {
+            const churchReport = renderSingleChurch(church, branch);
+            if (churchReport) {
+               branchDetailHasData = true;
+               branchDetailReport += churchReport + `\n----------------------------\n\n`;
+            }
+          });
+          
+          if (branchDetailHasData) {
+             report += branchDetailReport;
           }
         });
       }
@@ -571,9 +605,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
     }
 
     // --- Helper for Single Branch Report (Names included with Service Split) ---
-    function renderSingleChurch(churchId: string) {
+    function renderSingleChurch(churchId: string, branchObj?: { id?: string, name: string }) {
       const record = data.attendance.find(
-        (r) => r.date === selectedDate && r.churchId === churchId,
+        (r) => r.date === selectedDate && r.churchId === churchId && (!branchObj || r.branchId === branchObj.id || r.branchId === branchObj.name || (!r.branchId))
       );
       if (!record) return "";
 
@@ -642,7 +676,11 @@ const ReportExport: React.FC<ReportExportProps> = ({
     }
 
     if (activeChurch !== "CM") {
-      const churchReport = renderSingleChurch(activeChurch);
+      let currentBranchObj = undefined;
+      if (currentUser.branchId) {
+         currentBranchObj = { id: currentUser.branchId, name: currentUser.branchId };
+      }
+      const churchReport = renderSingleChurch(activeChurch, currentBranchObj);
       if (!churchReport) return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
       return churchReport;
     }
