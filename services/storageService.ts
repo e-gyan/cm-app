@@ -1302,14 +1302,18 @@ export const generateOutreachSchedule = (
   const missedMembers = members.filter((m) => missedMemberIds.has(m.id));
 
   // General Pool: Exclude those already missed (handled above) AND those recently visited
+  // Only include people tagged as Member (MemberType.MEMBER)
   const generalPool = members.filter(
-    (m) => !missedMemberIds.has(m.id) && !recentVisitedIds.has(m.id),
+    (m) =>
+      m.type === MemberType.MEMBER &&
+      !missedMemberIds.has(m.id) &&
+      !recentVisitedIds.has(m.id) &&
+      m.status !== MemberStatus.ARCHIVED,
   );
 
   const active = generalPool.filter(
-    (m) => m.status === MemberStatus.ACTIVE && m.type === MemberType.MEMBER,
+    (m) => m.status === MemberStatus.ACTIVE,
   );
-  const fnf = generalPool.filter((m) => m.type === MemberType.FNF);
   const inconsistent = generalPool.filter(
     (m) =>
       m.status === MemberStatus.INCONSISTENT ||
@@ -1319,17 +1323,15 @@ export const generateOutreachSchedule = (
   const shuffle = (array: Member[]) => array.sort(() => Math.random() - 0.5);
 
   shuffle(active);
-  shuffle(fnf);
   shuffle(inconsistent);
 
-  const priorityQueue = [...missedMembers]; // Missed members skip the rotation filter to ensure they are caught up
+  const priorityQueue = [...missedMembers.filter((m) => m.type === MemberType.MEMBER)]; // Missed members skip rotation
 
   let dateIndex = 0;
   while (dateIndex < dates.length) {
     if (
       priorityQueue.length === 0 &&
       active.length === 0 &&
-      fnf.length === 0 &&
       inconsistent.length === 0
     )
       break;
@@ -1342,9 +1344,8 @@ export const generateOutreachSchedule = (
       group.push(priorityQueue.shift()!.id);
     }
 
-    // 2. Ensure Mix: 2 Active, 1 FNF, 1 Inconsistent (if slots available)
+    // 2. Ensure Mix: Active and Inconsistent Members
     if (group.length < slotsPerDay) {
-      // Need 1 Inconsistent
       if (
         inconsistent.length > 0 &&
         !group.some(
@@ -1355,34 +1356,21 @@ export const generateOutreachSchedule = (
         group.push(inconsistent.shift()!.id);
       }
 
-      // Need 1 FNF
-      if (
-        group.length < slotsPerDay &&
-        fnf.length > 0 &&
-        !group.some(
-          (id) => members.find((m) => m.id === id)?.type === MemberType.FNF,
-        )
-      ) {
-        group.push(fnf.shift()!.id);
-      }
-
-      // Need 2 Active
       let activeCount = group.filter(
-        (id) => members.find((m) => m.id === id)?.type === MemberType.MEMBER,
+        (id) => members.find((m) => m.id === id)?.status === MemberStatus.ACTIVE,
       ).length;
       while (
         group.length < slotsPerDay &&
-        activeCount < 2 &&
+        activeCount < 3 &&
         active.length > 0
       ) {
         group.push(active.shift()!.id);
         activeCount++;
       }
 
-      // 3. Fill Remainder with any available type if specific pools exhausted
+      // 3. Fill Remainder with any available Member
       while (group.length < slotsPerDay) {
         if (active.length > 0) group.push(active.shift()!.id);
-        else if (fnf.length > 0) group.push(fnf.shift()!.id);
         else if (inconsistent.length > 0) group.push(inconsistent.shift()!.id);
         else break;
       }
@@ -1447,32 +1435,30 @@ export const generatePrayerSchedule = (
 
   const allowedTypes = [
     MemberType.MEMBER,
-    MemberType.FNF,
   ];
 
-  // 3. Create Pools
+  // 3. Create Pools (Only Members)
   const missedMembers = members.filter(
     (m) =>
       missedIds.has(m.id) &&
-      allowedTypes.includes(m.type) &&
+      m.type === MemberType.MEMBER &&
       m.status !== MemberStatus.ARCHIVED,
   );
   const cleanMembers = members.filter(
     (m) =>
       !missedIds.has(m.id) &&
-      allowedTypes.includes(m.type) &&
+      m.type === MemberType.MEMBER &&
       m.status !== MemberStatus.ARCHIVED,
   );
 
   // Filter pools
   let active = cleanMembers.filter(
-    (m) => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE,
+    (m) => m.status === MemberStatus.ACTIVE,
   );
-  let fnf = cleanMembers.filter((m) => m.type === MemberType.FNF);
   let inconsistent = cleanMembers.filter(
     (m) =>
       m.status === MemberStatus.INCONSISTENT ||
-      (m.status === MemberStatus.NOT_ACTIVE && allowedTypes.includes(m.type)),
+      m.status === MemberStatus.NOT_ACTIVE,
   );
 
   // 4. FAIRNESS SORTING: Sort by Prayer Count (ASC) to prioritize those with fewest prayers
@@ -1485,7 +1471,6 @@ export const generatePrayerSchedule = (
   };
 
   active = sortByFairness(active);
-  fnf = sortByFairness(fnf);
   inconsistent = sortByFairness(inconsistent);
 
   // Priority Pool is also sorted fairly
@@ -1528,21 +1513,6 @@ export const generatePrayerSchedule = (
       return !candidate || dailyIds.has(candidate.id) ? null : candidate;
     };
 
-    // Strategy: Try to include at least 1 FNF and 1 Inconsistent if available, then fill with Active
-    // This ensures variety even if Active members have lower counts overall
-    if (dailyIds.size < TARGET_PER_DAY) {
-      const hasFNF = Array.from(dailyIds).some(
-        (id) => members.find((m) => m.id === id)?.type === MemberType.FNF,
-      );
-      if (!hasFNF) {
-        const m = getFromPool(
-          fnf,
-          members.filter((x) => x.type === MemberType.FNF),
-        );
-        if (m) dailyIds.add(m.id);
-      }
-    }
-
     if (dailyIds.size < TARGET_PER_DAY) {
       const hasInc = Array.from(dailyIds).some(
         (id) =>
@@ -1551,14 +1521,19 @@ export const generatePrayerSchedule = (
       if (!hasInc) {
         const m = getFromPool(
           inconsistent,
-          members.filter((x) => x.status === MemberStatus.INCONSISTENT),
+          members.filter(
+            (x) =>
+              x.type === MemberType.MEMBER &&
+              (x.status === MemberStatus.INCONSISTENT ||
+                x.status === MemberStatus.NOT_ACTIVE),
+          ),
         );
         if (m) dailyIds.add(m.id);
       }
     }
 
-    // Fill remainder primarily with Active, then fallback to others
-    const combinedPool = sortByFairness([...active, ...fnf, ...inconsistent]);
+    // Fill remainder primarily with Active Members, then fallback to inconsistent members
+    const combinedPool = sortByFairness([...active, ...inconsistent]);
 
     while (dailyIds.size < TARGET_PER_DAY && combinedPool.length > 0) {
       const m = combinedPool.shift();

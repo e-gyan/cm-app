@@ -15,6 +15,7 @@ import {
   deleteOutreachSession,
   savePrayerSlot,
   addNotification,
+  updateMember,
 } from "../services/storageService";
 import {
   Calendar,
@@ -45,6 +46,10 @@ import {
   CalendarPlus,
   ExternalLink,
   Sparkles,
+  UserCheck,
+  Search,
+  Users,
+  UserPlus,
 } from "lucide-react";
 import {
   BarChart,
@@ -170,12 +175,18 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   activeChurch,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    "VISIT" | "PRAYER" | "CONNECT" | "TRACK"
+    "VISIT" | "PRAYER" | "CONNECT" | "FOLLOW_UP" | "TRACK"
   >(() => (sessionStorage.getItem("outreach_activeTab") as any) || "VISIT");
 
   useEffect(() => {
     sessionStorage.setItem("outreach_activeTab", activeTab);
   }, [activeTab]);
+
+  const [visitorFilter, setVisitorFilter] = useState<
+    "ALL" | "VISITOR" | "FNF" | "NOT_MEMBER"
+  >("ALL");
+  const [visitorSearch, setVisitorSearch] = useState<string>("");
+  const [promotingId, setPromotingId] = useState<string | null>(null);
 
   const [messageTarget, setMessageTarget] = useState<Member | null>(null);
   const handleMessageClick = (member: Member) => {
@@ -557,18 +568,14 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     const activeCount = currentMembers.filter(
       (m) => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE,
     ).length;
-    const fnfCount = currentMembers.filter(
-      (m) => m.type === MemberType.FNF,
-    ).length;
     const inconsistentCount = currentMembers.filter(
-      (m) => m.status === MemberStatus.INCONSISTENT,
+      (m) => m.type === MemberType.MEMBER && (m.status === MemberStatus.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE),
     ).length;
 
     // 2. Determine Need
     let neededType: MemberType | "INCONSISTENT" | "ANY" = "ANY";
     if (inconsistentCount < 1) neededType = "INCONSISTENT";
-    else if (fnfCount < 1) neededType = MemberType.FNF;
-    else if (activeCount < 2) neededType = MemberType.MEMBER;
+    else if (activeCount < 3) neededType = MemberType.MEMBER;
 
     // 3. Find Candidate
     const twoMonthsAgo = new Date();
@@ -594,11 +601,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         !currentMemberIds.includes(m.id) &&
         !recentlyVisited.has(m.id) &&
         !assignedInPending.has(m.id) &&
-        !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+        m.type === MemberType.MEMBER &&
+        m.status !== MemberStatus.ARCHIVED &&
         (neededType === "ANY" ||
           (neededType === "INCONSISTENT"
-            ? m.status === MemberStatus.INCONSISTENT
-            : m.type === neededType)),
+            ? (m.status === MemberStatus.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE)
+            : m.status === MemberStatus.ACTIVE)),
     );
 
     let candidate =
@@ -614,7 +622,8 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
           !currentMemberIds.includes(m.id) &&
           !recentlyVisited.has(m.id) &&
           !assignedInPending.has(m.id) &&
-          !["Teacher", "Helper", "Volunteer"].includes(m.type),
+          m.type === MemberType.MEMBER &&
+          m.status !== MemberStatus.ARCHIVED,
       );
       if (anyCandidates.length > 0)
         candidate =
@@ -868,14 +877,48 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       .filter(
         (m) =>
           isMemberInActiveChurch(m) &&
-          [
-            MemberType.MEMBER,
-            MemberType.FNF,
-            MemberType.VISITOR,
-          ].includes(m.type),
+          m.type === MemberType.MEMBER &&
+          m.status !== MemberStatus.ARCHIVED,
       )
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [data.members, activeChurch, filterChurch, isAdmin]);
+
+  // --- FOLLOW UP (VISITOR / FNF / NOT MEMBER) TAB DATA ---
+  const visitorList = useMemo(() => {
+    return data.members
+      .filter(
+        (m) =>
+          isMemberInActiveChurch(m) &&
+          (m.type === MemberType.VISITOR ||
+            m.type === MemberType.FNF ||
+            m.type === MemberType.NOT_MEMBER) &&
+          m.status !== MemberStatus.ARCHIVED,
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [data.members, activeChurch, filterChurch, isAdmin]);
+
+  const handlePromoteToMember = async (member: Member) => {
+    try {
+      setPromotingId(member.id);
+      const updated: Member = {
+        ...member,
+        type: MemberType.MEMBER,
+        status: MemberStatus.ACTIVE,
+      };
+      await updateMember(updated);
+      setGenMsg({
+        type: "success",
+        text: `🎉 ${member.name} promoted to full Member!`,
+      });
+      setTimeout(() => setGenMsg(null), 3000);
+      onUpdate();
+    } catch (e) {
+      console.error(e);
+      setGenMsg({ type: "error", text: `Failed to promote ${member.name}` });
+    } finally {
+      setPromotingId(null);
+    }
+  };
 
   const handleTrackCall = (member: Member, method: "Call" | "SMS") => {
     setCallModal({ show: true, member, method });
@@ -911,25 +954,38 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex gap-1 sticky top-0 z-30 overflow-x-auto hide-scrollbar">
         <button
           onClick={() => setActiveTab("VISIT")}
-          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all ${activeTab === "VISIT" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
+          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "VISIT" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
         >
           <MapPin size={16} /> Visits
         </button>
         <button
           onClick={() => setActiveTab("PRAYER")}
-          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all ${activeTab === "PRAYER" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
+          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "PRAYER" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
         >
           <Heart size={16} /> Prayer
         </button>
         <button
           onClick={() => setActiveTab("CONNECT")}
-          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all ${activeTab === "CONNECT" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
+          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "CONNECT" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
         >
-          <Phone size={16} /> Connect
+          <Phone size={16} /> Members
+        </button>
+        <button
+          onClick={() => setActiveTab("FOLLOW_UP")}
+          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "FOLLOW_UP" ? "bg-teal-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
+        >
+          <Sparkles size={16} /> Follow Up
+          {visitorList.length > 0 && (
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${activeTab === "FOLLOW_UP" ? "bg-teal-700 text-white" : "bg-teal-100 text-teal-700"}`}
+            >
+              {visitorList.length}
+            </span>
+          )}
         </button>
         <button
           onClick={() => setActiveTab("TRACK")}
-          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all ${activeTab === "TRACK" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
+          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "TRACK" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
         >
           <BarChart2 size={16} /> Progress
         </button>
@@ -1334,38 +1390,301 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         </div>
       )}
 
-      {/* CONNECT TAB */}
+      {/* CONNECT TAB (Members Only) */}
       {activeTab === "CONNECT" && (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
-          <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-blue-800 text-sm font-medium flex items-start gap-2">
-            <Phone size={18} className="shrink-0 mt-0.5" />
-            <p>Tap icons to call, message, or get directions.</p>
+          <div className="p-4 bg-indigo-50/70 rounded-2xl border border-indigo-100 text-indigo-900 text-sm font-medium flex items-start gap-2.5">
+            <Phone size={18} className="shrink-0 mt-0.5 text-indigo-600" />
+            <div>
+              <p className="font-bold text-slate-800">Members Directory & Connect</p>
+              <p className="text-xs text-slate-500">
+                Contact and check in on registered church members. Visitors and follow-ups are in the dedicated Follow Up tab.
+              </p>
+            </div>
           </div>
 
           <CollapsibleContactSection
-            title="Members"
-            members={connectList.filter((m) => m.type === MemberType.MEMBER)}
+            title="Active Members"
+            members={connectList.filter((m) => m.status === MemberStatus.ACTIVE)}
             color="indigo"
             icon={User}
             onTrackCall={handleTrackCall}
             onMessageClick={handleMessageClick}
           />
           <CollapsibleContactSection
-            title="Friends & Family (FNF)"
-            members={connectList.filter((m) => m.type === MemberType.FNF)}
-            color="amber"
-            icon={User}
+            title="Inconsistent Members"
+            members={connectList.filter((m) => m.status === MemberStatus.INCONSISTENT)}
+            color="rose"
+            icon={AlertCircle}
             onTrackCall={handleTrackCall}
             onMessageClick={handleMessageClick}
           />
           <CollapsibleContactSection
-            title="Visitors"
-            members={connectList.filter((m) => m.type === MemberType.VISITOR)}
-            color="teal"
-            icon={Sparkles}
+            title="Not Active Members"
+            members={connectList.filter((m) => m.status === MemberStatus.NOT_ACTIVE)}
+            color="amber"
+            icon={Clock}
             onTrackCall={handleTrackCall}
             onMessageClick={handleMessageClick}
           />
+        </div>
+      )}
+
+      {/* FOLLOW UP TAB (Exclusively for Visitors, FNF, Not-Members) */}
+      {activeTab === "FOLLOW_UP" && (
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-br from-teal-800 via-teal-700 to-slate-900 p-5 rounded-3xl text-white shadow-lg">
+            <div className="flex items-center justify-between gap-4 mb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2.5 bg-teal-500/30 rounded-2xl">
+                  <Sparkles size={22} className="text-teal-200" />
+                </span>
+                <div>
+                  <h3 className="text-lg font-extrabold tracking-tight">
+                    Visitor & Follow-Up Care
+                  </h3>
+                  <p className="text-teal-200 text-xs font-medium">
+                    Dedicated outreach for tracking visitors and FNF, with 1-click promotion to full member status.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Metrics Chips */}
+            <div className="grid grid-cols-3 gap-2 mt-2 pt-3 border-t border-teal-600/40">
+              <div className="bg-teal-900/40 p-2.5 rounded-xl text-center">
+                <div className="text-[10px] text-teal-300 font-bold uppercase">Visitors</div>
+                <div className="text-lg font-black text-white">
+                  {visitorList.filter((m) => m.type === MemberType.VISITOR).length}
+                </div>
+              </div>
+              <div className="bg-teal-900/40 p-2.5 rounded-xl text-center">
+                <div className="text-[10px] text-teal-300 font-bold uppercase">Friends & Family</div>
+                <div className="text-lg font-black text-white">
+                  {visitorList.filter((m) => m.type === MemberType.FNF).length}
+                </div>
+              </div>
+              <div className="bg-teal-900/40 p-2.5 rounded-xl text-center">
+                <div className="text-[10px] text-teal-300 font-bold uppercase">Total Pool</div>
+                <div className="text-lg font-black text-white">
+                  {visitorList.length}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Search & Filter Bar */}
+          <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+            <div className="relative">
+              <Search
+                size={16}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                type="text"
+                value={visitorSearch}
+                onChange={(e) => setVisitorSearch(e.target.value)}
+                placeholder="Search visitors by name, phone, or address..."
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-teal-500"
+              />
+              {visitorSearch && (
+                <button
+                  onClick={() => setVisitorSearch("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              {[
+                { id: "ALL", label: "All Contacts", count: visitorList.length },
+                {
+                  id: "VISITOR",
+                  label: "Visitors",
+                  count: visitorList.filter((m) => m.type === MemberType.VISITOR).length,
+                },
+                {
+                  id: "FNF",
+                  label: "Friends & Family",
+                  count: visitorList.filter((m) => m.type === MemberType.FNF).length,
+                },
+                {
+                  id: "NOT_MEMBER",
+                  label: "Not a Member",
+                  count: visitorList.filter((m) => m.type === MemberType.NOT_MEMBER).length,
+                },
+              ].map((filter) => (
+                <button
+                  key={filter.id}
+                  onClick={() => setVisitorFilter(filter.id as any)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                    visitorFilter === filter.id
+                      ? "bg-teal-600 text-white shadow-sm"
+                      : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>{filter.label}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${
+                      visitorFilter === filter.id
+                        ? "bg-teal-700 text-teal-100"
+                        : "bg-slate-200 text-slate-600"
+                    }`}
+                  >
+                    {filter.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Filtered Visitors List */}
+          {(() => {
+            const filtered = visitorList.filter((m) => {
+              if (visitorFilter !== "ALL" && m.type !== visitorFilter) return false;
+              if (visitorSearch.trim()) {
+                const q = visitorSearch.toLowerCase();
+                const matchName = m.name.toLowerCase().includes(q);
+                const matchPhone = (m.phone || "").includes(q) || (m.parentPhone || "").includes(q);
+                const matchAddr = (m.address || "").toLowerCase().includes(q);
+                return matchName || matchPhone || matchAddr;
+              }
+              return true;
+            });
+
+            if (filtered.length === 0) {
+              return (
+                <div className="bg-white rounded-3xl p-8 border border-slate-100 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto">
+                    <Sparkles size={24} />
+                  </div>
+                  <h4 className="font-bold text-slate-700">No visitors found</h4>
+                  <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                    {visitorSearch
+                      ? "No records matched your search filter."
+                      : "There are currently no visitors or friends & family in this church."}
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {filtered.map((m) => {
+                  const phone = m.parentPhone || m.phone;
+                  const isPromoting = promotingId === m.id;
+
+                  return (
+                    <div
+                      key={m.id}
+                      className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:border-teal-300 transition-all flex flex-col justify-between gap-3"
+                    >
+                      <div>
+                        {/* Header info */}
+                        <div className="flex justify-between items-start gap-2 mb-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-700 font-black flex items-center justify-center text-sm shrink-0 border border-teal-100">
+                              {m.name.charAt(0)}
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="font-extrabold text-slate-800 text-sm truncate">
+                                {m.name}
+                              </h4>
+                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-100 uppercase">
+                                  {m.type}
+                                </span>
+                                {m.assignedChurch && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">
+                                    {m.assignedChurch}
+                                  </span>
+                                )}
+                                {m.gender && (
+                                  <span className="text-[9px] font-semibold text-slate-400">
+                                    {m.gender}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Contact details */}
+                        <div className="space-y-1 mt-2 text-xs text-slate-600 bg-slate-50/70 p-2.5 rounded-xl border border-slate-100">
+                          {phone && (
+                            <div className="flex items-center gap-2">
+                              <Phone size={13} className="text-slate-400 shrink-0" />
+                              <span className="font-mono text-slate-700">{phone}</span>
+                            </div>
+                          )}
+                          {m.address && (
+                            <div className="flex items-center gap-2">
+                              <MapPin size={13} className="text-slate-400 shrink-0" />
+                              <span className="truncate">{m.address}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action Bar */}
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                        <div className="flex items-center gap-1.5">
+                          {phone && (
+                            <>
+                              <button
+                                onClick={() => handleTrackCall(m, "Call")}
+                                title="Call"
+                                className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl transition-colors"
+                              >
+                                <Phone size={15} />
+                              </button>
+                              <button
+                                onClick={() => handleMessageClick(m)}
+                                title="Message (WhatsApp / SMS)"
+                                className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-colors"
+                              >
+                                <MessageSquare size={15} />
+                              </button>
+                            </>
+                          )}
+                          {(m.gpsCoordinates || m.address) && (
+                            <a
+                              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                                m.gpsCoordinates || m.address || "",
+                              )}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Directions"
+                              className="p-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-colors"
+                            >
+                              <MapIcon size={15} />
+                            </a>
+                          )}
+                        </div>
+
+                        {/* Promote to Full Member Button */}
+                        <button
+                          onClick={() => handlePromoteToMember(m)}
+                          disabled={isPromoting}
+                          className="flex items-center gap-1.5 px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                        >
+                          {isPromoting ? (
+                            <Loader2 size={13} className="animate-spin" />
+                          ) : (
+                            <UserCheck size={13} />
+                          )}
+                          <span>Promote to Member</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 

@@ -596,7 +596,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   if (attendanceMode === "STAFF") {
     membersToList = data.members.filter(
       (m) =>
-        [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) &&
+        [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) &&
         targetChurches.includes(m.assignedChurch) &&
         ["Teacher", "Helper", "Volunteer"].includes(m.type),
     );

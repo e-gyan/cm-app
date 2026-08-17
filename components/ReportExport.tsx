@@ -32,6 +32,10 @@ import {
   Briefcase,
   Sparkles,
   Edit3,
+  Users,
+  Share2,
+  Phone,
+  MapPin,
 } from "lucide-react";
 import { getSundaysInYear } from "../constants";
 import {
@@ -39,6 +43,12 @@ import {
   syncFromCloud,
   updateTargets,
 } from "../services/storageService";
+import {
+  calculateChurchDivisions,
+  formatDivisionReportText,
+  formatDivisionCSV,
+  CHURCH_NAMES,
+} from "../lib/teacherDivision";
 
 interface ReportExportProps {
   data: AppData;
@@ -64,12 +74,16 @@ const ReportExport: React.FC<ReportExportProps> = ({
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [copiedReport, setCopiedReport] = useState(false);
+  const [copiedDivisionText, setCopiedDivisionText] = useState(false);
+  const [copiedTeacherId, setCopiedTeacherId] = useState<string | null>(null);
+  const [selectedDivisionChurch, setSelectedDivisionChurch] = useState<string>("ALL");
+  const [includeDivisionsInReport, setIncludeDivisionsInReport] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "WHATSAPP" | "KPI" | "DATA" | "EXECUTIVE"
+    "WHATSAPP" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE"
   >(() => {
     return (
       (sessionStorage.getItem("reports_activeTab") as
-        "WHATSAPP" | "KPI" | "DATA" | "EXECUTIVE") || "WHATSAPP"
+        "WHATSAPP" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE") || "WHATSAPP"
     );
   });
 
@@ -171,7 +185,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       const population = data.members.filter(
         (m) =>
           m.assignedChurch === church &&
-          [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) &&
+          [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) &&
           (m.type === MemberType.MEMBER || m.type === MemberType.FNF),
       ).length;
 
@@ -235,7 +249,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       ).length;
       const activeMembers = data.members.filter(
         (m) =>
-          [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) &&
+          [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) &&
           (activeChurch === "CM" || m.assignedChurch === activeChurch),
       ).length;
 
@@ -470,41 +484,72 @@ const ReportExport: React.FC<ReportExportProps> = ({
       const eventName = data.attendance.find(
         (r) => r.date === selectedDate && r.eventName,
       )?.eventName;
-      let reportTitle = "CM ATTENDANCE SUMMARY";
+      
+      let allowedBranches: { id?: string; name: string; churches: string[] }[] = [];
+      let zoneName = "";
+
       if (currentUser.role === "ZONAL_HEAD") {
-        reportTitle = `${currentUser.zoneId ? currentUser.zoneId.toUpperCase() + " " : ""}ZONE ATTENDANCE SUMMARY`;
-      } else if (currentUser.role === "BRANCH_COORDINATOR") {
-        reportTitle = `${currentUser.branchId ? currentUser.branchId.toUpperCase() + " " : ""}BRANCH ATTENDANCE SUMMARY`;
-      }
-      let report = `*${reportTitle}*\n${formattedDate}\n`;
-      if (eventName) report += `*${eventName}*\n`;
-      report += `----------------------------\n\n`;
-
-            let allowedBranches: { id?: string; name: string; churches: string[] }[] = [];
-
-      if (currentUser.role === "ZONAL_HEAD" && currentUser.zoneId) {
-        const zone = data.settings.organization?.zones?.find(
-          (z) => z.id === currentUser.zoneId || z.name === currentUser.zoneId
+        let zone = data.settings.organization?.zones?.find(
+          (z) => z.id === currentUser.zoneId || z.name.toLowerCase() === (currentUser.zoneId || "").toLowerCase()
         );
-        if (zone && zone.branches) {
-          allowedBranches = zone.branches.map(b => ({ id: b.id, name: b.name, churches: b.churches || [] }));
+        if (!zone && data.settings.organization?.zones?.length) {
+          zone = data.settings.organization.zones[0];
+        }
+        if (zone) {
+          zoneName = zone.name;
+          if (zone.branches && zone.branches.length > 0) {
+            allowedBranches = zone.branches.map((b) => ({
+              id: b.id,
+              name: b.name,
+              churches: b.churches && b.churches.length > 0 ? b.churches : availableChurches,
+            }));
+          } else {
+            allowedBranches = [{ id: zone.id, name: zone.name, churches: availableChurches }];
+          }
+        } else {
+          allowedBranches = [{ name: "Main", churches: availableChurches }];
         }
       } else if (currentUser.role === "BRANCH_COORDINATOR" && currentUser.branchId) {
         const branch = data.settings.organization?.zones?.flatMap(z => z.branches || [])?.find(
           (b) => b.id === currentUser.branchId || b.name === currentUser.branchId
         );
         if (branch) {
-          allowedBranches = [{ id: branch.id, name: branch.name, churches: branch.churches || [] }];
+          allowedBranches = [{
+            id: branch.id,
+            name: branch.name,
+            churches: branch.churches && branch.churches.length > 0 ? branch.churches : availableChurches,
+          }];
         }
       } else {
         // ADMIN / SUPER_ADMIN or others
         const allBranches = data.settings.organization?.zones?.flatMap(z => z.branches || []) || [];
         if (allBranches.length > 0) {
-           allowedBranches = allBranches.map(b => ({ id: b.id, name: b.name, churches: b.churches || [] }));
+          allowedBranches = allBranches.map(b => ({
+            id: b.id,
+            name: b.name,
+            churches: b.churches && b.churches.length > 0 ? b.churches : availableChurches,
+          }));
         } else {
-           allowedBranches = [{ name: "Main", churches: availableChurches }];
+          allowedBranches = [{ name: "Main", churches: availableChurches }];
         }
       }
+
+      let reportTitle = "CM ATTENDANCE SUMMARY";
+      if (currentUser.role === "ZONAL_HEAD") {
+        reportTitle = `${(zoneName || currentUser.zoneId || "ZONE").toUpperCase()} ATTENDANCE SUMMARY`;
+      } else if (currentUser.role === "BRANCH_COORDINATOR") {
+        reportTitle = `${(currentUser.branchId || "BRANCH").toUpperCase()} ATTENDANCE SUMMARY`;
+      }
+
+      let report = `*${reportTitle}*\n${formattedDate}\n`;
+      if (currentUser.role === "ZONAL_HEAD" && currentUser.name) {
+        report += `*Zonal Head:* ${currentUser.name}\n`;
+      }
+      if (allowedBranches.length > 0) {
+        report += `*Attached Branches (${allowedBranches.length}):* ${allowedBranches.map(b => b.name).join(", ")}\n`;
+      }
+      if (eventName) report += `*${eventName}*\n`;
+      report += `----------------------------\n\n`;
 
       let grandTotal = 0;
       let grandTotalJoy = 0;
@@ -672,20 +717,68 @@ const ReportExport: React.FC<ReportExportProps> = ({
         report += `\n`;
       }
 
+      if (includeDivisionsInReport) {
+        const divisions = calculateChurchDivisions(data.members, ["UJ", "LJ", "K", "I"]);
+        report += `\n============================\n\n` + formatDivisionReportText(divisions);
+      }
+
       return report;
     }
 
     if (activeChurch !== "CM") {
       let currentBranchObj = undefined;
       if (currentUser.branchId) {
-         currentBranchObj = { id: currentUser.branchId, name: currentUser.branchId };
+        currentBranchObj = { id: currentUser.branchId, name: currentUser.branchId };
       }
-      const churchReport = renderSingleChurch(activeChurch, currentBranchObj);
+      let churchReport = renderSingleChurch(activeChurch, currentBranchObj);
       if (!churchReport) return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
+      
+      if (includeDivisionsInReport && ["UJ", "LJ", "K", "I"].includes(activeChurch)) {
+        const divisions = calculateChurchDivisions(data.members, [activeChurch]);
+        churchReport += `\n============================\n\n` + formatDivisionReportText(divisions);
+      }
       return churchReport;
     }
 
     return "";
+  };
+
+  const divisions = useMemo(() => {
+    return calculateChurchDivisions(data.members, ["UJ", "LJ", "K", "I"]);
+  }, [data.members]);
+
+  const handleCopyDivisions = () => {
+    const text = formatDivisionReportText(divisions);
+    navigator.clipboard.writeText(text);
+    setCopiedDivisionText(true);
+    setTimeout(() => setCopiedDivisionText(false), 2000);
+  };
+
+  const handleCopyTeacherAssignment = (teacherName: string, members: Member[]) => {
+    let text = `👤 *Teacher:* ${teacherName} (${members.length} Members)\n\n`;
+    members.forEach((m, idx) => {
+      const phoneStr = m.parentPhone || m.phone ? ` (📞 ${m.parentPhone || m.phone})` : "";
+      text += `${idx + 1}. ${m.name}${phoneStr}\n`;
+    });
+    navigator.clipboard.writeText(text);
+    setCopiedTeacherId(teacherName);
+    setTimeout(() => setCopiedTeacherId(null), 2000);
+  };
+
+  const handleDownloadDivisionCSV = () => {
+    const csvContent = formatDivisionCSV(divisions);
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `teacher_member_divisions_${new Date().toISOString().split("T")[0]}.csv`,
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleCopyReport = () => {
@@ -739,6 +832,259 @@ const ReportExport: React.FC<ReportExportProps> = ({
   };
 
   // --- Render Functions ---
+
+  const renderDivisionView = () => {
+    const displayedChurches =
+      selectedDivisionChurch === "ALL"
+        ? ["UJ", "LJ", "K", "I"]
+        : [selectedDivisionChurch];
+
+    return (
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+        {/* Banner Card */}
+        <div className="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 p-6 rounded-3xl text-white shadow-xl">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="p-2 bg-indigo-500/30 rounded-xl">
+                  <Users size={20} className="text-indigo-200" />
+                </span>
+                <h3 className="text-xl font-bold">
+                  Equal Teacher & Member Division
+                </h3>
+              </div>
+              <p className="text-indigo-200 text-xs md:text-sm">
+                Equal member allocation across active teachers for UJ, LJ, K, and I churches (UJ Branch Head omitted).
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 w-full md:w-auto">
+              <button
+                onClick={handleCopyDivisions}
+                className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all shadow-md ${copiedDivisionText ? "bg-green-500 text-white" : "bg-white text-indigo-900 hover:bg-indigo-50"}`}
+              >
+                {copiedDivisionText ? <CheckCircle size={15} /> : <Copy size={15} />}
+                {copiedDivisionText ? "Copied All!" : "Copy WhatsApp Report"}
+              </button>
+              <button
+                onClick={handleDownloadDivisionCSV}
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-700/60 hover:bg-indigo-700 text-white border border-indigo-500/30 rounded-xl font-bold text-xs transition-all shadow-md"
+              >
+                <Download size={15} />
+                Export CSV
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Church Filter Tabs */}
+          <div className="flex bg-black/20 p-1 rounded-xl gap-1 overflow-x-auto">
+            {["ALL", "UJ", "LJ", "K", "I"].map((c) => {
+              const div = divisions[c];
+              const countStr = div ? ` (${div.totalMembers}m / ${div.totalEligibleTeachers}t)` : "";
+              return (
+                <button
+                  key={c}
+                  onClick={() => setSelectedDivisionChurch(c)}
+                  className={`flex-1 min-w-[70px] py-2 px-3 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${selectedDivisionChurch === c ? "bg-white text-indigo-950 shadow-sm" : "text-indigo-200 hover:bg-white/10"}`}
+                >
+                  {c === "ALL" ? "All Churches" : CHURCH_NAMES[c] || c}
+                  {c !== "ALL" && countStr}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Church Breakdown Sections */}
+        <div className="space-y-6">
+          {displayedChurches.map((churchKey) => {
+            const div = divisions[churchKey];
+            if (!div) return null;
+
+            return (
+              <div
+                key={churchKey}
+                className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 space-y-5"
+              >
+                {/* Church Header Card */}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-slate-100">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 font-extrabold flex items-center justify-center text-sm">
+                        {churchKey}
+                      </span>
+                      <h4 className="font-extrabold text-lg text-slate-800">
+                        {div.churchName}
+                      </h4>
+                    </div>
+                    {churchKey === "UJ" && div.omittedTeachers.length > 0 && (
+                      <p className="text-xs text-amber-600 font-medium mt-1 flex items-center gap-1">
+                        <Sparkles size={12} />
+                        Branch Head omitted from division:{" "}
+                        <span className="font-bold">
+                          {div.omittedTeachers.map((t) => t.name).join(", ")}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Summary Metric Badges */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-xl flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">
+                        Members
+                      </span>
+                      <span className="text-sm font-extrabold text-slate-700">
+                        {div.totalMembers}
+                      </span>
+                    </div>
+                    <div className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-xl flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">
+                        Teachers
+                      </span>
+                      <span className="text-sm font-extrabold text-purple-600">
+                        {div.totalEligibleTeachers}
+                      </span>
+                    </div>
+                    <div className="px-3 py-1.5 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-indigo-500 uppercase">
+                        Allocation
+                      </span>
+                      <span className="text-sm font-extrabold text-indigo-700">
+                        ~{div.membersPerTeacherAvg} / teacher
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Teachers Assignment Grid */}
+                {div.assignments.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {div.assignments.map((asg, idx) => {
+                      const isCopied = copiedTeacherId === asg.teacher.name;
+
+                      return (
+                        <div
+                          key={asg.teacher.id}
+                          className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200/70 hover:border-indigo-300 transition-all flex flex-col justify-between"
+                        >
+                          <div>
+                            {/* Teacher Header */}
+                            <div className="flex justify-between items-start mb-3 pb-2.5 border-b border-slate-200/50">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white font-bold flex items-center justify-center text-sm shadow-sm">
+                                  {asg.teacher.name.charAt(0)}
+                                </div>
+                                <div>
+                                  <div className="font-extrabold text-slate-800 text-sm">
+                                    {idx + 1}. {asg.teacher.name}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 font-semibold uppercase">
+                                    {asg.teacher.role || asg.teacher.type}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <span className="px-2.5 py-1 bg-white border border-slate-200 text-indigo-600 rounded-lg text-xs font-black shadow-2xs">
+                                  {asg.count} Members
+                                </span>
+                                <button
+                                  onClick={() =>
+                                    handleCopyTeacherAssignment(
+                                      asg.teacher.name,
+                                      asg.members,
+                                    )
+                                  }
+                                  title="Copy this teacher's list"
+                                  className={`p-1.5 rounded-lg border transition-all ${isCopied ? "bg-green-500 text-white border-green-500" : "bg-white text-slate-500 hover:text-indigo-600 border-slate-200"}`}
+                                >
+                                  {isCopied ? <CheckCircle size={14} /> : <Copy size={14} />}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Assigned Members List */}
+                            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                              {asg.members.map((m, mIdx) => {
+                                const phone = m.parentPhone || m.phone;
+                                return (
+                                  <div
+                                    key={m.id}
+                                    className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-100 text-xs hover:border-indigo-100 transition-colors"
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className="text-[10px] font-bold text-slate-400 w-4 text-right">
+                                        {mIdx + 1}.
+                                      </span>
+                                      <span className="font-bold text-slate-800 truncate">
+                                        {m.name}
+                                      </span>
+                                      {m.gender && (
+                                        <span className="text-[9px] px-1 bg-slate-100 text-slate-500 rounded font-medium">
+                                          {m.gender.charAt(0)}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span
+                                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${m.status === MemberStatus.ACTIVE ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}`}
+                                      >
+                                        {m.status}
+                                      </span>
+                                      {phone ? (
+                                        <a
+                                          href={`tel:${phone}`}
+                                          className="text-slate-400 hover:text-indigo-600 p-1"
+                                          title={`Call ${phone}`}
+                                        >
+                                          <Phone size={12} />
+                                        </a>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-6 bg-amber-50 rounded-2xl border border-amber-200 text-amber-800 text-sm flex items-center gap-3">
+                    <AlertCircle size={20} className="shrink-0 text-amber-600" />
+                    <p>
+                      No active teachers registered for {div.churchName}. All {div.totalMembers} members are currently unassigned.
+                    </p>
+                  </div>
+                )}
+
+                {/* Unassigned Warning if any */}
+                {div.unassignedMembers.length > 0 && (
+                  <div className="p-4 bg-red-50 rounded-2xl border border-red-100">
+                    <div className="font-bold text-xs text-red-700 uppercase mb-2">
+                      ⚠️ Unassigned Members ({div.unassignedMembers.length})
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {div.unassignedMembers.map((m) => (
+                        <span
+                          key={m.id}
+                          className="px-2 py-1 bg-white border border-red-200 rounded-lg text-xs font-semibold text-red-800"
+                        >
+                          {m.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   const renderKPIView = () => (
     <div className="space-y-6">
@@ -835,17 +1181,18 @@ const ReportExport: React.FC<ReportExportProps> = ({
               Generate updates and manage system data.
             </p>
           </div>
-          <div className="flex bg-slate-100 p-1 rounded-xl w-full md:w-auto">
+          <div className="flex bg-slate-100 p-1 rounded-xl w-full md:w-auto overflow-x-auto">
             {[
               { id: "WHATSAPP", icon: MessageCircle, label: "Report" },
               { id: "KPI", icon: Target, label: "KPIs" },
+              { id: "DIVISION", icon: Users, label: "Teacher Division" },
               { id: "EXECUTIVE", icon: Briefcase, label: "Executive" },
               { id: "DATA", icon: Database, label: "Data" },
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === tab.id ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                className={`flex-1 flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
               >
                 <tab.icon size={16} />{" "}
                 <span className="hidden sm:inline">{tab.label}</span>
@@ -873,6 +1220,18 @@ const ReportExport: React.FC<ReportExportProps> = ({
         {/* 1. WHATSAPP REPORT */}
         {activeTab === "WHATSAPP" && (
           <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2">
+            <div className="flex items-center justify-between p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 text-xs text-indigo-900">
+              <span className="font-bold flex items-center gap-1.5">
+                <Users size={15} className="text-indigo-600" /> Include Teacher Member Allocation in WhatsApp export
+              </span>
+              <button
+                onClick={() => setIncludeDivisionsInReport(!includeDivisionsInReport)}
+                className={`px-3 py-1 rounded-lg font-bold text-xs transition-all ${includeDivisionsInReport ? "bg-indigo-600 text-white shadow-sm" : "bg-white text-slate-600 border border-slate-200"}`}
+              >
+                {includeDivisionsInReport ? "Included (ON)" : "Excluded (OFF)"}
+              </button>
+            </div>
+
             <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 font-mono text-xs text-slate-700 whitespace-pre-wrap h-64 sm:h-96 overflow-y-auto shadow-inner">
               {generateReport()}
             </div>
@@ -922,10 +1281,13 @@ const ReportExport: React.FC<ReportExportProps> = ({
         {/* 2. KPI VIEW */}
         {activeTab === "KPI" && renderKPIView()}
 
-        {/* 3. EXECUTIVE VIEW */}
+        {/* 3. TEACHER DIVISION VIEW */}
+        {activeTab === "DIVISION" && renderDivisionView()}
+
+        {/* 4. EXECUTIVE VIEW */}
         {activeTab === "EXECUTIVE" && renderExecutiveView()}
 
-        {/* 4. DATA MANAGEMENT */}
+        {/* 5. DATA MANAGEMENT */}
         {activeTab === "DATA" && (
           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
             <button

@@ -2284,7 +2284,7 @@ const MembersList: React.FC<MembersListProps> = ({
                       ["Member", "FNF", "Visitor"].includes(
                         m.type,
                       ) &&
-                      ["Active", "Inconsistent"].includes(m.status),
+                      ["Active", "Inconsistent", "Not Active"].includes(m.status),
                   ).length || 1;
 
                 for (let i = 5; i >= 0; i--) {

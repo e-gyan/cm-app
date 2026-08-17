@@ -551,7 +551,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
           else if (m.type === MemberType.FNF || m.type === MemberType.VISITOR)
             entry.FNF++;
 
-          if (m.status === MemberStatus.ACTIVE) {
+          if ([MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)) {
             if (m.gender === "MALE") entry.Male++;
             else if (m.gender === "FEMALE") entry.Female++;
             else entry.Unassigned++;
@@ -771,7 +771,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       (m) =>
         m.assignedChurch === "UJ" &&
         [MemberType.MEMBER, MemberType.FNF].includes(m.type) &&
-        [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status),
+        [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status),
     );
     const totalEligible = ujMembers.length;
 
@@ -881,7 +881,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
     // Get all active people for this church, sorted by name
     const allActive = data.members
       .filter(
-        (m) => m.assignedChurch === church && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT].includes(m.status),
+        (m) => m.assignedChurch === church && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status),
       )
       .sort((a, b) => a.name.localeCompare(b.name));
 
