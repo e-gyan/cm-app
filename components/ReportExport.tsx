@@ -79,7 +79,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
   const [selectedDivisionChurch, setSelectedDivisionChurch] = useState<string>("ALL");
   const [includeDivisionsInReport, setIncludeDivisionsInReport] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "WHATSAPP" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE"
+    "WHATSAPP" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL"
   >(() => {
     return (
       (sessionStorage.getItem("reports_activeTab") as
@@ -425,68 +425,29 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
   // --- WhatsApp Report Logic ---
   const generateReport = () => {
-    if (!selectedDate) return "Please select a date to generate a report.";
-
-    const formattedDate = new Date(selectedDate).toLocaleDateString("en-GB", {
+    if (!selectedDate) return "Please select a date to generate the report.";
+    const parsedDate = new Date(selectedDate);
+    const formattedDate = parsedDate.toLocaleDateString("en-US", {
       weekday: "long",
-      day: "numeric",
-      month: "long",
       year: "numeric",
+      month: "long",
+      day: "numeric",
     });
 
-    // --- Helper to render list with Joy/Enlargement/Special split ---
-    const renderListWithServices = (
-      list: Member[],
-      title: string,
-      record: any,
-    ) => {
-      if (list.length === 0) return "";
-
-      const getService = (id: string) => record?.serviceMap?.[id] || "JOY";
-
-      const joyAttendees = list.filter((m) => getService(m.id) === "JOY");
-      const enlargementAttendees = list.filter(
-        (m) => getService(m.id) === "ENLARGEMENT",
-      );
-      const specialAttendees = list.filter(
-        (m) => getService(m.id) === "SPECIAL",
-      );
-
-      let section = `*${title} (${list.length})*\n`;
-
-      if (joyAttendees.length > 0) {
-        section += `_Joy Service:_\n`;
-        joyAttendees.forEach((m, i) => (section += `${i + 1}. ${m.name}\n`));
-      }
-
-      if (enlargementAttendees.length > 0) {
-        if (joyAttendees.length > 0) section += `\n`; // Spacer
-        section += `_Enlargement Service:_\n`;
-        enlargementAttendees.forEach(
-          (m, i) => (section += `${i + 1}. ${m.name}\n`),
-        );
-      }
-
-      if (specialAttendees.length > 0) {
-        if (joyAttendees.length > 0 || enlargementAttendees.length > 0)
-          section += `\n`; // Spacer
-        specialAttendees.forEach(
-          (m, i) => (section += `${i + 1}. ${m.name}\n`),
-        );
-      }
-
-      return section + `\n`;
+    const renderListWithServices = (members: Member[], title: string, record: any) => {
+      let out = `*${title} (${members.length})*\n`;
+      members.forEach((m, idx) => {
+        out += `${idx + 1}. ${m.name}\n`;
+      });
+      return out + `\n`;
     };
+    if (activeTab === "DIVISION") {
+      return formatDivisionReportText(divisions);
+    }
 
-    // --- ADMIN GLOBAL REPORT (Figures + Names) ---
     if (activeChurch === "CM") {
-      // Check for special event name across records
-      const eventName = data.attendance.find(
-        (r) => r.date === selectedDate && r.eventName,
-      )?.eventName;
-      
-      let allowedBranches: { id?: string; name: string; churches: string[] }[] = [];
-      let zoneName = "";
+      let allowedBranches = [];
+      const availableChurches = ["UJ", "LJ", "K", "I", "N"];
 
       if (currentUser.role === "ZONAL_HEAD") {
         let zone = data.settings.organization?.zones?.find(
@@ -496,7 +457,6 @@ const ReportExport: React.FC<ReportExportProps> = ({
           zone = data.settings.organization.zones[0];
         }
         if (zone) {
-          zoneName = zone.name;
           if (zone.branches && zone.branches.length > 0) {
             allowedBranches = zone.branches.map((b) => ({
               id: b.id,
@@ -523,134 +483,42 @@ const ReportExport: React.FC<ReportExportProps> = ({
       } else {
         // ADMIN / SUPER_ADMIN or others
         const allBranches = data.settings.organization?.zones?.flatMap(z => z.branches || []) || [];
-        if (allBranches.length > 0) {
-          allowedBranches = allBranches.map(b => ({
-            id: b.id,
-            name: b.name,
-            churches: b.churches && b.churches.length > 0 ? b.churches : availableChurches,
-          }));
+        const thesaurusBranch = allBranches.find(b => b.name.toLowerCase().includes("thesaurus"));
+        if (thesaurusBranch) {
+          allowedBranches = [{
+            id: thesaurusBranch.id,
+            name: thesaurusBranch.name,
+            churches: thesaurusBranch.churches && thesaurusBranch.churches.length > 0 ? thesaurusBranch.churches : availableChurches,
+          }];
         } else {
-          allowedBranches = [{ name: "Main", churches: availableChurches }];
+          allowedBranches = [{ name: "Thesaurus", churches: availableChurches }];
         }
       }
 
       let reportTitle = "CM ATTENDANCE SUMMARY";
-      if (currentUser.role === "ZONAL_HEAD") {
-        reportTitle = `${(zoneName || currentUser.zoneId || "ZONE").toUpperCase()} ATTENDANCE SUMMARY`;
-      } else if (currentUser.role === "BRANCH_COORDINATOR") {
-        reportTitle = `${(currentUser.branchId || "BRANCH").toUpperCase()} ATTENDANCE SUMMARY`;
-      }
+      let report = `*${reportTitle}*\n============================\n\n`;
 
-      let report = `*${reportTitle}*\n${formattedDate}\n`;
-      if (currentUser.role === "ZONAL_HEAD" && currentUser.name) {
-        report += `*Zonal Head:* ${currentUser.name}\n`;
-      }
-      if (allowedBranches.length > 0) {
-        report += `*Attached Branches (${allowedBranches.length}):* ${allowedBranches.map(b => b.name).join(", ")}\n`;
-      }
-      if (eventName) report += `*${eventName}*\n`;
-      report += `----------------------------\n\n`;
-
-      let grandTotal = 0;
-      let grandTotalJoy = 0;
-      let grandTotalEnlargement = 0;
-      let grandTotalSpecial = 0;
-      let grandTotalTeachers = 0;
+      let hasData = false;
 
       allowedBranches.forEach((branch) => {
-        let branchHasData = false;
-        let branchReport = `*BRANCH: ${branch.name.toUpperCase()}*\n`;
-        
         branch.churches.forEach((church) => {
-          const record = data.attendance.find(
-            (r) => r.date === selectedDate && r.churchId === church && (r.branchId === branch.id || r.branchId === branch.name || (!r.branchId && allowedBranches.length === 1))
-          );
-          if (!record) return;
-
-          const presentMembers = data.members.filter((m) =>
-            record.presentMemberIds.includes(m.id),
-          );
-
-          const staff = presentMembers.filter(
-            (m) =>
-              ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
-              m.type === MemberType.TEACHER,
-          );
-          const children = presentMembers.filter(
-            (m) =>
-              !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-              m.type !== MemberType.TEACHER,
-          );
-
-          const getService = (id: string) => record?.serviceMap?.[id] || "JOY";
-          const joyCount = children.filter(m => getService(m.id) === "JOY").length;
-          const enlargementCount = children.filter(m => getService(m.id) === "ENLARGEMENT").length;
-          const specialCount = children.filter(m => getService(m.id) === "SPECIAL").length;
-
-          const teachersCount = staff.length;
-          const membersCount = children.length;
-          const classTotal = membersCount + teachersCount;
-
-          if (classTotal > 0) {
-            branchHasData = true;
-            branchReport += `*${church} Church*
-`;
-            if (joyCount > 0) branchReport += `Joy Service : ${joyCount}\n`;
-            if (enlargementCount > 0) branchReport += `Enlargement Service : ${enlargementCount}\n`;
-            if (specialCount > 0) branchReport += `${eventName || "Special Service"} : ${specialCount}\n`;
-            if (teachersCount > 0) branchReport += `Teachers : ${teachersCount}\n`;
-            branchReport += `Total : ${classTotal}\n\n`;
-
-            grandTotal += classTotal;
-            grandTotalJoy += joyCount;
-            grandTotalEnlargement += enlargementCount;
-            grandTotalSpecial += specialCount;
-            grandTotalTeachers += teachersCount;
+          const churchReport = renderSingleChurch(church, branch, true);
+          if (churchReport) {
+             hasData = true;
+             report += churchReport + `\n\n`;
           }
         });
-        
-        if (branchHasData) {
-           report += branchReport;
-        }
       });
 
-      report += `----------------------------\n`;
-      report += `*OVERALL TOTALS*\n`;
-      if (grandTotalJoy > 0) report += `Joy Service : ${grandTotalJoy}\n`;
-      if (grandTotalEnlargement > 0) report += `Enlargement Service : ${grandTotalEnlargement}\n`;
-      if (grandTotalSpecial > 0) report += `${eventName || "Special Service"} : ${grandTotalSpecial}\n`;
-      if (grandTotalTeachers > 0) report += `Teachers : ${grandTotalTeachers}\n`;
-      report += `*GRAND TOTAL: ${grandTotal}*\n`;
-
-      if (grandTotal === 0) {
-        report += `\n_No attendance data recorded yet for this date._`;
-      } else {
-        report += `\n============================\n\n`;
-        report += `*DETAILED BREAKDOWN*\n\n`;
-
-        allowedBranches.forEach((branch) => {
-          let branchDetailHasData = false;
-          let branchDetailReport = `*\u25A0 ${branch.name.toUpperCase()} BRANCH*\n\n`;
-          
-          branch.churches.forEach((church) => {
-            const churchReport = renderSingleChurch(church, branch);
-            if (churchReport) {
-               branchDetailHasData = true;
-               branchDetailReport += churchReport + `\n----------------------------\n\n`;
-            }
-          });
-          
-          if (branchDetailHasData) {
-             report += branchDetailReport;
-          }
-        });
+      if (!hasData) {
+        report += `_No attendance data recorded yet for this date._`;
       }
 
-      return report;
+      return report.trim();
     }
 
     // --- Helper for Single Branch Report (Names included with Service Split) ---
-    function renderSingleChurch(churchId: string, branchObj?: { id?: string, name: string }) {
+    function renderSingleChurch(churchId: string, branchObj?: { id?: string, name: string }, isSummary: boolean = false) {
       const record = data.attendance.find(
         (r) => r.date === selectedDate && r.churchId === churchId && (!branchObj || r.branchId === branchObj.id || r.branchId === branchObj.name || (!r.branchId))
       );
@@ -665,34 +533,48 @@ const ReportExport: React.FC<ReportExportProps> = ({
           m.type === MemberType.TEACHER,
       );
 
-      const getService = (id: string) => record?.serviceMap?.[id] || "JOY";
-
       const allChildren = presentMembers.filter(
         (m) =>
           !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
           m.type !== MemberType.TEACHER,
       );
-      const totalCount = presentMembers.length;
-
+      
+      const globalEventName = data.attendance.find((r) => r.date === selectedDate && r.eventName)?.eventName;
+      const eventNameToUse = record.eventName || globalEventName;
+      
+      const getService = (id: string) => record?.serviceMap?.[id] || "JOY";
       const totalJoy = allChildren.filter((m) => getService(m.id) === "JOY").length;
       const totalEnlargement = allChildren.filter((m) => getService(m.id) === "ENLARGEMENT").length;
       const totalSpecial = allChildren.filter((m) => getService(m.id) === "SPECIAL").length;
+      const teachersCount = teachers.length;
+      const totalCount = allChildren.length + teachersCount;
+      
+      let report = "";
+      if (isSummary) {
+          report = `*${churchId} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
+          if (eventNameToUse) report += `*${eventNameToUse}*\n`;
+          report += `------------------\n`;
+      } else {
+          report = `*${churchId} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
+          if (eventNameToUse) report += `*${eventNameToUse}*\n`;
+          report += `------------------\n`;
+      }
 
-      let report = `*${churchId} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
-      const globalEventName = data.attendance.find((r) => r.date === selectedDate && r.eventName)?.eventName;
-      const eventNameToUse = record.eventName || globalEventName;
-      if (eventNameToUse) report += `*${eventNameToUse}*\n`;
-      report += `------------------\n`;
-      const isTeacherRole = currentUser.role === "TEACHER" || !isAdmin;
-      const totalLabel = isTeacherRole ? "TOTAL" : "TOTAL PRESENT";
-      report += `*${totalLabel}: ${totalCount}*\n`;
-
+      report += `*TOTAL PRESENT: ${totalCount}*\n`;
+      
       const splits = [];
-      if (totalJoy > 0) splits.push(`Joy: ${totalJoy}`);
-      if (totalEnlargement > 0) splits.push(`Enlargement: ${totalEnlargement}`);
-      if (totalSpecial > 0) splits.push(`${eventNameToUse || "Special"}: ${totalSpecial}`);
-      if (teachers.length > 0) splits.push(`Teachers: ${teachers.length}`);
-
+      if (eventNameToUse === "Joint Service") {
+          // If it's a Joint Service event, we usually group the children together.
+          const totalChildren = totalJoy + totalEnlargement + totalSpecial;
+          if (totalChildren > 0) splits.push(`Joint Service: ${totalChildren}`);
+      } else {
+          if (totalJoy > 0) splits.push(`Joy Service: ${totalJoy}`);
+          if (totalEnlargement > 0) splits.push(`Enlargement Service: ${totalEnlargement}`);
+          if (totalSpecial > 0) splits.push(`${eventNameToUse || "Special"}: ${totalSpecial}`);
+      }
+      
+      if (teachersCount > 0) splits.push(`Teachers: ${teachersCount}`);
+      
       if (splits.length > 0) {
         report += `(${splits.join(" | ")})\n\n`;
       } else {
@@ -717,12 +599,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
         report += `\n`;
       }
 
-      if (includeDivisionsInReport) {
-        const divisions = calculateChurchDivisions(data.members, ["UJ", "LJ", "K", "I"]);
-        report += `\n============================\n\n` + formatDivisionReportText(divisions);
-      }
-
-      return report;
+      return report.trim();
     }
 
     if (activeChurch !== "CM") {
@@ -730,14 +607,16 @@ const ReportExport: React.FC<ReportExportProps> = ({
       if (currentUser.branchId) {
         currentBranchObj = { id: currentUser.branchId, name: currentUser.branchId };
       }
-      let churchReport = renderSingleChurch(activeChurch, currentBranchObj);
+      
+      let churchReport = renderSingleChurch(activeChurch, currentBranchObj, false);
       if (!churchReport) return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
+      let finalReport = churchReport;
       
       if (includeDivisionsInReport && ["UJ", "LJ", "K", "I"].includes(activeChurch)) {
-        const divisions = calculateChurchDivisions(data.members, [activeChurch]);
-        churchReport += `\n============================\n\n` + formatDivisionReportText(divisions);
+        const divisionsData = calculateChurchDivisions(data.members, [activeChurch]);
+        finalReport += `\n\n============================\n\n` + formatDivisionReportText(divisionsData);
       }
-      return churchReport;
+      return finalReport;
     }
 
     return "";
@@ -1168,6 +1047,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
     </div>
   );
 
+
+
+
   return (
     <div className="space-y-6 pb-20">
       {/* Header Section */}
@@ -1188,6 +1070,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
               { id: "DIVISION", icon: Users, label: "Teacher Division" },
               { id: "EXECUTIVE", icon: Briefcase, label: "Executive" },
               { id: "DATA", icon: Database, label: "Data" },
+              { id: "ANNUAL", icon: Calendar, label: "Annual Record" },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -1288,6 +1171,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
         {activeTab === "EXECUTIVE" && renderExecutiveView()}
 
         {/* 5. DATA MANAGEMENT */}
+        {activeTab === "ANNUAL" && <AnnualViewTab selectedDate={selectedDate} data={data} activeChurch={activeChurch} CHURCH_NAMES={CHURCH_NAMES} />}
         {activeTab === "DATA" && (
           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
             <button
@@ -1342,5 +1226,222 @@ const ReportExport: React.FC<ReportExportProps> = ({
     </div>
   );
 };
+
+
+function AnnualViewTab({ selectedDate, data, activeChurch, CHURCH_NAMES }: any) {
+  const year = new Date(selectedDate || new Date()).getFullYear();
+  const [annualContent, setAnnualContent] = React.useState("");
+  const [copiedAnnual, setCopiedAnnual] = React.useState(false);
+
+  const [copiedDetailedAnnual, setCopiedDetailedAnnual] = React.useState(false);
+
+  const handleCopyDetailedAnnual = () => {
+    let result = `*${year} DETAILED ATTENDANCE RECORD*\n\n`;
+    
+    const recordsForYear = data.attendance.filter((r: any) => r.date.startsWith(String(year)));
+    const uniqueDates = Array.from(new Set(recordsForYear.map((r: any) => r.date))).sort();
+
+    if (uniqueDates.length === 0) {
+      result += `No attendance records found for ${year}.`;
+    } else {
+      const availableChurches = ["UJ", "LJ", "K", "I", "N"];
+      const churchesToCheck = activeChurch === "CM" ? availableChurches : [activeChurch];
+
+      uniqueDates.forEach((dateStr: any) => {
+        const displayDate = new Date(dateStr).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "short", day: "numeric" });
+        
+        let dateHasRecords = false;
+        let dateContent = `============================\n`;
+        dateContent += `*${displayDate.toUpperCase()}*\n`;
+        dateContent += `============================\n\n`;
+
+        churchesToCheck.forEach((church: any) => {
+          const churchRecords = recordsForYear.filter((r: any) => r.date === dateStr && r.churchId === church);
+          const churchName = CHURCH_NAMES[church] || church;
+
+          churchRecords.forEach((rec: any) => {
+             const presentMembers = data.members.filter((m: any) => rec.presentMemberIds.includes(m.id));
+             presentMembers.sort((a: any, b: any) => a.name.localeCompare(b.name));
+             if (presentMembers.length > 0) {
+                dateHasRecords = true;
+                
+                const teachers = presentMembers.filter(
+                  (m: any) =>
+                    ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
+                    m.type === "Teacher"
+                );
+                const allChildren = presentMembers.filter(
+                  (m: any) =>
+                    !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+                    m.type !== "Teacher"
+                );
+
+                const getService = (id: string) => rec.serviceMap?.[id] || "JOY";
+                const totalJoy = allChildren.filter((m: any) => getService(m.id) === "JOY").length;
+                const totalEnlargement = allChildren.filter((m: any) => getService(m.id) === "ENLARGEMENT").length;
+                const totalSpecial = allChildren.filter((m: any) => getService(m.id) === "SPECIAL").length;
+                
+                const teachersCount = teachers.length;
+                const totalCount = allChildren.length + teachersCount;
+                
+                const eventNameToUse = rec.eventName || "";
+                
+                let report = `*${churchName} CHURCH ATTENDANCE REPORT*\n`;
+                if (eventNameToUse) report += `*${eventNameToUse}*\n`;
+                report += `------------------\n`;
+                report += `*TOTAL PRESENT: ${totalCount}*\n`;
+
+                const splits = [];
+                if (eventNameToUse === "Joint Service") {
+                    const totalChildren = totalJoy + totalEnlargement + totalSpecial;
+                    if (totalChildren > 0) splits.push(`Joint Service: ${totalChildren}`);
+                } else {
+                    if (totalJoy > 0) splits.push(`Joy Service: ${totalJoy}`);
+                    if (totalEnlargement > 0) splits.push(`Enlargement Service: ${totalEnlargement}`);
+                    if (totalSpecial > 0) splits.push(`${eventNameToUse || "Special"}: ${totalSpecial}`);
+                }
+                
+                if (teachersCount > 0) splits.push(`Teachers: ${teachersCount}`);
+                
+                if (splits.length > 0) {
+                  report += `(${splits.join(" | ")})\n\n`;
+                } else {
+                  report += `\n`;
+                }
+
+                const renderList = (membersList: any[], title: string) => {
+                  let out = `*${title} (${membersList.length})*\n`;
+                  membersList.forEach((m: any, idx: number) => {
+                    out += `${idx + 1}. ${m.name}\n`;
+                  });
+                  return out + `\n`;
+                };
+
+                const members = allChildren.filter((m: any) => m.type === "Member");
+                const fnfs = allChildren.filter((m: any) => m.type === "FNF");
+                const visitors = allChildren.filter((m: any) => m.type === "Visitor");
+                const notMembers = allChildren.filter((m: any) => m.type === "Not Member");
+
+                if (members.length > 0) report += renderList(members, "MEMBERS");
+                else report += `*MEMBERS (0)*\n_None_\n\n`;
+
+                if (fnfs.length > 0) report += renderList(fnfs, "FNF");
+                if (visitors.length > 0) report += renderList(visitors, "VISITORS");
+                if (notMembers.length > 0) report += renderList(notMembers, "NOT A MEMBER");
+
+                if (teachers.length > 0) {
+                  report += `*TEACHERS (${teachers.length})*\n`;
+                  teachers.forEach((m: any, i: number) => (report += `${i + 1}. ${m.name}\n`));
+                  report += `\n`;
+                }
+
+                dateContent += report + `\n`;
+             }
+          });
+        });
+        
+        if (dateHasRecords) {
+           result += dateContent;
+        }
+      });
+    }
+
+    navigator.clipboard.writeText(result.trim());
+    setCopiedDetailedAnnual(true);
+    setTimeout(() => setCopiedDetailedAnnual(false), 2000);
+  };
+
+
+  React.useEffect(() => {
+    let result = `*${year} ATTENDANCE RECORD*\n\n`;
+    
+    const startDate = new Date(year, 0, 1);
+    const endDate = new Date(year, 11, 31);
+    const sundays = [];
+    
+    let d = new Date(startDate);
+    while (d.getDay() !== 0) {
+      d.setDate(d.getDate() + 1);
+    }
+    
+    while (d <= endDate) {
+      sundays.push(new Date(d));
+      d.setDate(d.getDate() + 7);
+    }
+    
+    const availableChurches = ["UJ", "LJ", "K", "I", "N"];
+    const churchesToCheck = activeChurch === "CM" ? availableChurches : [activeChurch];
+
+    sundays.forEach((sunday: any) => {
+      const y = sunday.getFullYear();
+      const m = String(sunday.getMonth() + 1).padStart(2, '0');
+      const dStr = String(sunday.getDate()).padStart(2, '0');
+      const dateStr = `${y}-${m}-${dStr}`;
+      
+      const displayDate = sunday.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "short", day: "numeric" });
+      
+      let hasAnyRecord = false;
+      let dayReport = `*${displayDate}*\n`;
+      
+      churchesToCheck.forEach((church: any) => {
+        const rec = data.attendance.find((r: any) => r.date === dateStr && r.churchId === church);
+        const churchName = CHURCH_NAMES[church] || church;
+        if (rec) {
+          dayReport += `${churchName}: ✅ Record exists (${rec.presentMemberIds.length} present)\n`;
+          hasAnyRecord = true;
+        } else {
+          dayReport += `${churchName}: ❌ No Record\n`;
+        }
+      });
+      
+      if (hasAnyRecord || churchesToCheck.length === 1) {
+          result += dayReport + `\n`;
+      } else {
+          result += `*${displayDate}*\n❌ No CM Records\n\n`;
+      }
+    });
+    
+    setAnnualContent(result.trim());
+  }, [year, data.attendance, activeChurch, CHURCH_NAMES]);
+
+  const handleCopyAnnual = () => {
+    navigator.clipboard.writeText(annualContent);
+    setCopiedAnnual(true);
+    setTimeout(() => setCopiedAnnual(false), 2000);
+  };
+
+  return (
+    <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2">
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col h-[500px]">
+        <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+          <h3 className="font-bold text-slate-700 text-sm">{year} Annual Record Tracking</h3>
+        </div>
+        <div className="flex-1 p-4 bg-slate-50/50 overflow-y-auto">
+          <pre className="whitespace-pre-wrap text-sm text-slate-700 font-mono">
+            {annualContent}
+          </pre>
+        </div>
+        
+        <div className="p-4 bg-white border-t border-slate-100 flex gap-3">
+          <button
+            onClick={handleCopyAnnual}
+            className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
+          >
+            {copiedAnnual ? <CheckCircle size={18} /> : <Copy size={18} />}
+            {copiedAnnual ? "Copied" : "Summary"}
+          </button>
+          <button
+            onClick={handleCopyDetailedAnnual}
+            className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
+          >
+            {copiedDetailedAnnual ? <CheckCircle size={18} /> : <FileText size={18} />}
+            {copiedDetailedAnnual ? "Copied Detailed" : "Detailed Export"}
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
 
 export default ReportExport;

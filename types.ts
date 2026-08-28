@@ -1,81 +1,57 @@
 export enum MemberType {
+  MEMBER = "Member",
+  FNF = "FNF",
+  VISITOR = "Visitor",
   TEACHER = "Teacher",
   HELPER = "Helper",
   VOLUNTEER = "Volunteer",
-  MEMBER = "Member",
-  FNF = "FNF", // Friends and Family / New
-  VISITOR = "Visitor",
-  NOT_MEMBER = "Not a Member",
+  NOT_MEMBER = "Not Member"
 }
 
 export enum MemberStatus {
   ACTIVE = "Active",
-  NOT_ACTIVE = "Not Active",
-  INCONSISTENT = "Inconsistent",
   ARCHIVED = "Archived",
   TRANSFERRED = "Transferred",
+  INCONSISTENT = "Inconsistent",
+  NOT_ACTIVE = "Not Active"
 }
 
-export type Church = string; // Changed from union type to string to allow dynamic configuration
-
-export type Role =
-  | "SUPER_ADMIN"
-  | "ADMIN"
-  | "DIRECTORATE_HEAD"
-  | "ZONAL_HEAD"
-  | "BRANCH_COORDINATOR"
-  | "CMD_COORDINATOR"
-  | "EXTERNAL"
-  | "CM"
-  | "TEACHER"
-  | "FINANCE"
-  | "NONE";
-
+export type Church = "UJ" | "LJ" | "K" | "I" | "N" | "All" | "CM";
+export type Role = "BRANCH_COORDINATOR" | "DIRECTORATE_HEAD" | "ZONAL_HEAD" | "ADMIN" | "SUPER_ADMIN" | "NONE" | "TEACHER" | "VOLUNTEER";
 export type ServiceType = "JOY" | "ENLARGEMENT" | "SPECIAL";
+export type NotificationType = "TRANSFER_REQUEST" | "BIRTHDAY" | "GENERAL" | "STATUS_CHANGE" | "PROMOTION" | "GENERAL_INFO";
 
 export interface Member {
   id: string;
   name: string;
-  type: MemberType;
-  joinedDate: string;
-  status: MemberStatus;
-  birthDate?: string; // ISO Date string (DD/MM/YYYY)
-  assignedChurch: Church;
+  role?: string;
+  assignedChurch?: string;
   branchId?: string;
-  lastUpdated?: number;
   zoneId?: string;
-  gender?: "MALE" | "FEMALE";
-  // Auth Fields
-  role?: Role;
+  type: MemberType;
+  status: MemberStatus;
+  gender?: string;
+  parentPhone?: string;
+  phone?: string;
+  address?: string;
+  gpsCoordinates?: string;
+  joinedDate?: string;
+  birthDate?: string;
   passcode?: string;
   isAccessActive?: boolean;
-  // Automation Fields
-  transferPendingDate?: string; // ISO Date string for the 1-week notification period
-  // Contact & Location (New)
-  phone?: string;
-  parentPhone?: string;
-  address?: string;
-  gpsCoordinates?: string; // e.g., "5.6037, -0.1870" for Maps
-  promotionHistory?: PromotionRecord[];
-  lastActivationDate?: string; // Date when status changed from Inconsistent to Active/FNF
+  transferPendingDate?: string;
 }
 
-export interface PromotionRecord {
-  date: string; // ISO Date
-  fromChurch: Church;
-  toChurch: Church;
-}
-
-export interface AttendanceRecord {
-  date: string; // ISO Date string (YYYY-MM-DD)
-  presentMemberIds: string[];
-  punctualMemberIds?: string[]; // IDs of the top 3 punctual members
-  serviceMap?: Record<string, ServiceType>; // Map member ID to specific service
-  eventName?: string; // Name of the special event if serviceType is SPECIAL
-  notes?: string;
-  churchId: Church;
+export interface Notification {
   branchId?: string;
-  lastUpdated?: number;
+  id: string;
+  message: string;
+  read?: boolean;
+  isRead?: boolean;
+  createdAt: string;
+  type?: string;
+  relatedMemberId?: string;
+  targetChurch?: string;
 }
 
 export interface Transaction {
@@ -83,103 +59,62 @@ export interface Transaction {
   date: string;
   amount: number;
   type: "INCOME" | "EXPENSE";
-  category: string;
   description: string;
-  churchId: Church;
+  category?: string;
+  churchId?: string;
   branchId?: string;
-  lastUpdated?: number;
   recordedBy?: string;
 }
 
-export type NotificationType =
-  | "BIRTHDAY"
-  | "PROMOTION"
-  | "STATUS_CHANGE"
-  | "TEEN_ALERT"
-  | "GENERAL_INFO";
-
-export interface Notification {
-  id: string;
-  type: NotificationType;
-  message: string;
-  createdAt: string; // ISO Date
-  targetChurch: Church; // The church staff who should see this
-  branchId?: string;
-  lastUpdated?: number;
-  relatedMemberId?: string;
-  isRead: boolean;
-}
-
-// --- NEW OUTREACH TYPES ---
-export interface OutreachSession {
-  id: string;
-  sessionType?: "VISIT" | "CALL";
-  outcome?: "REACHED" | "UNREACHABLE" | "PENDING";
-  date: string; // YYYY-MM-DD
-  startTime: string; // "10:00"
-  endTime: string; // "15:00"
-  assignedMemberIds: string[]; // The group assigned
-  visitedMemberIds?: string[]; // Track who was actually visited
-  status: "PENDING" | "COMPLETED" | "CANCELLED";
-  notes?: string;
-  completedBy?: string;
-  branchId?: string;
-  lastUpdated?: number;
-}
-
-export interface PrayerSlot {
-  id: string;
-  date: string; // YYYY-MM-DD
-  dayOfWeek: string; // Monday, Tuesday...
-  assignedMemberIds: string[]; // Who we are praying for
-  isCompleted: boolean;
-  durationMins: number; // Default 30
-  branchId?: string;
-  lastUpdated?: number;
-}
-
 export interface AppSettings {
-  churches: string[]; // Dynamic list of active branches (used as flat list)
-  themeColors?: Record<string, string>; // Map of church name to color name (e.g. 'UJ' -> 'indigo')
-  organization?: {
-    directorate: string; // e.g. "Main CM Directorate"
-    zones: {
-      id: string;
-      name: string; // e.g. "Zone A"
-      branches: {
-        id: string;
-        name: string; // e.g. "Branch 1"
-        churches: string[]; // e.g. ['I', 'K', 'LJ', 'UJ']
-      }[];
-    }[];
-  };
-  cloudConfig: {
-    enabled: boolean;
-    apiKey: string;
-    binId: string;
-  };
-  features?: Record<string, {
-    punctuality: boolean;
-    outreach: boolean;
-  }>;
-  permissions?: Record<string, string[]>; // e.g. { ZONAL_HEAD: ["Finances", "Outreach"] }
+  organization?: any;
+  churches?: any;
+  features?: any;
+  permissions?: any;
+  themeColors?: any;
+}
+
+export interface AttendanceRecord {
+  punctualMemberIds?: string[];
+  id: string;
+  date: string;
+  churchId: string;
+  branchId?: string;
+  eventName?: string;
+  presentMemberIds: string[];
+  serviceMap?: Record<string, string>;
+}
+
+export interface CloudConfig {
+  apiKey?: string;
+  projectId?: string;
+}
+
+export interface OutreachSession {
+  date?: string;
+  status?: string;
+  sessionType?: string;
+  outcome?: string;
+  assignedMemberIds?: string[];
+  visitedMemberIds?: string[];
+  id: string;
+}
+export interface PrayerSlot {
+  date?: string;
+  isCompleted?: boolean;
+  assignedMemberIds?: string[];
+  durationMins?: number;
+  id: string;
 }
 
 export interface AppData {
   members: Member[];
   attendance: AttendanceRecord[];
-  transactions: Transaction[];
-  notifications: Notification[];
+  settings: AppSettings;
+  notifications?: Notification[];
+  targets?: any;
+  transactions?: Transaction[];
   outreachSessions?: OutreachSession[];
   prayerSchedule?: PrayerSlot[];
-  targets?: Record<string, number>;
-  settings: AppSettings; // Centralized Configuration
-  lastUpdated?: number;
-}
-
-export interface CloudConfig {
-  enabled: boolean;
-  apiKey: string;
-  binId: string;
-  url: string;
+  lastUpdated?: string | number;
 }
