@@ -1,6 +1,6 @@
+import { generatePrayerSchedule, generateOutreachSchedule } from "../services/storageService";
 import React, { useState, useMemo, useEffect } from "react";
-import {
-  AppData,
+import { AppData,
   Member,
   OutreachSession,
   PrayerSlot,
@@ -9,8 +9,8 @@ import {
   Church,
 } from "../types";
 import {
-  generateOutreachSchedule,
-  generatePrayerSchedule,
+  
+  
   saveOutreachSession,
   deleteOutreachSession,
   savePrayerSlot,
@@ -348,7 +348,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
   // --- AUTO GENERATION FOR CURRENT WEEK ---
   useEffect(() => {
-    const checkAndAutoGenerate = () => {
+    const checkAndAutoGenerate = async () => {
       if (!data.members || data.members.length === 0) return;
 
       const today = new Date();
@@ -374,7 +374,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             !["Teacher", "Helper", "Volunteer"].includes(m.type),
         );
         if (targetMembers.length > 0) {
-          const res = generatePrayerSchedule(startOfCurrentWeek, targetMembers);
+          const res = await generatePrayerSchedule(startOfCurrentWeek, targetMembers);
           if (res.success) {
             if (res.data) {
               setLocalPrayerSlots(JSON.parse(JSON.stringify(res.data)));
@@ -417,13 +417,13 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     setSelectedDates(selectedDates.filter((d) => d !== date));
   };
 
-  const handleGenerateSchedule = () => {
+  const handleGenerateSchedule = async () => {
     const ujMembers = data.members.filter(
       (m) =>
         m.assignedChurch === "UJ" &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type),
     );
-    const res = generateOutreachSchedule(selectedDates, ujMembers);
+    const res = await generateOutreachSchedule(ujMembers, selectedDates);
     if (res.success) {
       if (res.data) {
         setLocalSessions(JSON.parse(JSON.stringify(res.data)));
@@ -660,13 +660,13 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
   // --- PRAYER LOGIC ---
 
-  const handleGeneratePrayer = () => {
+  const handleGeneratePrayer = async () => {
     const targetMembers = data.members.filter(
       (m) =>
         isMemberInActiveChurch(m) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type),
     );
-    const res = generatePrayerSchedule(prayerWeek, targetMembers);
+    const res = await generatePrayerSchedule(prayerWeek, targetMembers);
 
     if (res.success) {
       if (res.data) {
@@ -905,7 +905,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         type: MemberType.MEMBER,
         status: MemberStatus.ACTIVE,
       };
-      await updateMember(updated);
+      await updateMember(updated.id, updated);
       setGenMsg({
         type: "success",
         text: `🎉 ${member.name} promoted to full Member!`,
@@ -1003,7 +1003,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               className="w-full text-sm font-bold bg-slate-50 border-none rounded-xl px-4 py-2.5 text-slate-700 outline-none hover:bg-slate-100 cursor-pointer transition-colors"
             >
               <option value="ALL">All Churches</option>
-              {data.settings.churches.map((church) => (
+              {Array.isArray(data.settings?.churches) ? data.settings?.churches : ["UJ", "LJ", "K", "I", "N"].map((church) => (
                 <option key={church} value={church}>
                   {church}
                 </option>

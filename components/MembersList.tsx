@@ -12,7 +12,7 @@ import {
   User,
   Users,
   Edit2,
-  Archive,
+  Archive, Calendar,
   X,
   Save,
   GraduationCap,
@@ -38,20 +38,13 @@ import {
   PartyPopper,
   Phone,
   MapPin,
-  Calendar,
   Smartphone,
   UserCircle,
   BadgeCheck,
   CheckCircle,
   Sparkles,
 } from "lucide-react";
-import {
-  updateMember,
-  bulkArchiveMembers,
-  bulkDeleteMembers,
-  addMember,
-  deleteMember,
-} from "../services/storageService";
+import { updateMember, addMember, deleteMember, bulkArchiveMembers, bulkDeleteMembers } from "../services/storageService";
 import { sanitizeInput } from "../services/securityService";
 import {
   BarChart,
@@ -89,7 +82,7 @@ const MembersList: React.FC<MembersListProps> = ({
     isAdmin || (isTeacher && activeChurch === currentUser.assignedChurch);
 
   // Dynamic list of churches
-  const availableChurches = data.settings.churches;
+  const availableChurches = Array.isArray(data.settings?.churches) ? data.settings?.churches : ["UJ", "LJ", "K", "I", "N"];
 
   // Tabs for the Central Hub
   const [hubTab, setHubTab] = useState<"MEMBERS" | "TEACHERS">(
@@ -181,6 +174,9 @@ const MembersList: React.FC<MembersListProps> = ({
     zoneId: currentUser.zoneId || "",
   });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [vacationMember, setVacationMember] = useState<Member | null>(null);
+  const [vacationStart, setVacationStart] = useState("");
+  const [vacationEnd, setVacationEnd] = useState("");
 
   const openEditModal = (member: Member) => {
     setEditingId(member.id);
@@ -238,19 +234,15 @@ const MembersList: React.FC<MembersListProps> = ({
 
     let addedCount = 0;
     for (const name of names) {
-      const newMember = addMember(
-        name,
-        MemberType.MEMBER,
-        activeChurch === "CM" ? "UJ" : activeChurch,
-        "",
-        MemberStatus.ACTIVE,
-      );
+      const mId = crypto.randomUUID();
+      const newMember = { id: mId, name: name, type: MemberType.MEMBER, churchId: activeChurch === "CM" ? "UJ" : activeChurch, passcode: "", status: MemberStatus.ACTIVE, addedAt: Date.now() };
+      await addMember(newMember);
       // Ensure branch and zone are attached
-      await updateMember({
+      await updateMember(newMember.id, { 
         ...newMember,
         branchId: activeBranchId === "ALL" ? "" : activeBranchId,
         zoneId: currentUser.zoneId || "",
-      });
+       });
       addedCount++;
     }
 
@@ -271,11 +263,9 @@ const MembersList: React.FC<MembersListProps> = ({
     for (const id of selectedIds) {
       const member = data.members.find((m) => m.id === id);
       if (member) {
-        await updateMember({
-          ...member,
-          zoneId: bulkAssignData.zoneId,
+        await updateMember(id, { ...member, zoneId: bulkAssignData.zoneId,
           branchId: bulkAssignData.branchId,
-        });
+         });
         updatedCount++;
       }
     }
@@ -298,10 +288,8 @@ const MembersList: React.FC<MembersListProps> = ({
     for (const id of selectedIds) {
       const member = data.members.find((m) => m.id === id);
       if (member) {
-        await updateMember({
-          ...member,
-          gender: bulkGenderValue as "MALE" | "FEMALE",
-        });
+        await updateMember(id, { ...member, gender: bulkGenderValue as "MALE" | "FEMALE",
+         });
         updatedCount++;
       }
     }
@@ -351,21 +339,16 @@ const MembersList: React.FC<MembersListProps> = ({
           updatedMember.lastActivationDate = new Date().toISOString();
         }
 
-        await updateMember(updatedMember);
+        await updateMember(editingId, updatedMember);
       }
       setIsEditModalOpen(false);
     } else {
       // CREATE NEW
-      const newMember = addMember(
-        cleanName,
-        formData.type!,
-        formData.assignedChurch!,
-        formData.birthDate!,
-        formData.status!,
-      );
+      const mId = crypto.randomUUID();
+      const newMember = { id: mId, name: cleanName, type: formData.type!, churchId: formData.assignedChurch!, passcode: formData.birthDate!, status: formData.status!, addedAt: Date.now() };
+      await addMember(newMember as Member);
       // Update with extra fields that addMember doesn't support by default args
-      await updateMember({
-        ...newMember,
+      await updateMember(mId, { ...newMember,
         ...formData,
         name: cleanName,
       } as Member);
@@ -381,7 +364,7 @@ const MembersList: React.FC<MembersListProps> = ({
 
   const confirmArchiveSingle = async () => {
     if (memberToArchive) {
-      await updateMember({ ...memberToArchive, status: MemberStatus.ARCHIVED });
+      await updateMember(memberToArchive.id, { ...memberToArchive, status: MemberStatus.ARCHIVED  });
       setMemberToArchive(null);
       onUpdate();
     }
@@ -415,14 +398,14 @@ const MembersList: React.FC<MembersListProps> = ({
       };
       const updatedMember = {
         ...transferMember,
-        assignedChurch: transferTarget === "ARCHIVED" ? transferMember.assignedChurch : transferTarget,
-        status: transferTarget === "ARCHIVED" ? MemberStatus.ARCHIVED : transferMember.status,
+        assignedChurch: transferTarget === ("ARCHIVED" as any) ? transferMember.assignedChurch : transferTarget,
+        status: transferTarget === ("ARCHIVED" as any) ? MemberStatus.ARCHIVED : transferMember.status,
         promotionHistory: [
           ...(transferMember.promotionHistory || []),
           promotion,
         ],
       };
-      await updateMember(updatedMember as Member);
+      await updateMember(transferMember.id, updatedMember as Member);
       setTransferMember(null);
       setTransferTarget("");
       onUpdate();
@@ -431,16 +414,26 @@ const MembersList: React.FC<MembersListProps> = ({
       setTransferTarget("");
     }
   };
-
   const restoreMember = async (member: Member) => {
-    await updateMember({ ...member, status: MemberStatus.ACTIVE });
+    await updateMember(member.id, {  ...member, status: MemberStatus.ACTIVE  });
     onUpdate();
+  };
+  
+  const handleVacationSave = async () => {
+    if (vacationMember) {
+      await updateMember(vacationMember.id, {
+        ...vacationMember,
+        vacationStartDate: vacationStart,
+        vacationEndDate: vacationEnd
+      });
+      setVacationMember(null);
+      onUpdate();
+    }
   };
 
   const handleDeletePermanent = (member: Member) => {
     setMemberToDelete(member);
   };
-
   const confirmDeleteSingle = () => {
     if (memberToDelete) {
       deleteMember(memberToDelete.id);
@@ -486,7 +479,7 @@ const MembersList: React.FC<MembersListProps> = ({
 
   const confirmBulkDelete = () => {
     if (selectedIds.size > 0) {
-      bulkDeleteMembers(Array.from(selectedIds));
+      bulkArchiveMembers(Array.from(selectedIds));
       setSelectedIds(new Set());
       setIsBulkDeleteConfirming(false);
       onUpdate();
@@ -647,14 +640,30 @@ const MembersList: React.FC<MembersListProps> = ({
     }
     startDate.setHours(0, 0, 0, 0);
 
+    
     const churchAttendance = data.attendance.filter((r) => {
       const recordDate = new Date(r.date);
       recordDate.setHours(0, 0, 0, 0);
+
+      // Check if on vacation during this record
+      let isVacation = false;
+      if (member.vacationStartDate && member.vacationEndDate) {
+        const vStart = new Date(member.vacationStartDate).getTime();
+        const vEnd = new Date(member.vacationEndDate).getTime();
+        const rTime = recordDate.getTime();
+        if (rTime >= vStart && rTime <= vEnd) {
+          isVacation = true;
+        }
+      }
+
+      // Include if it's the current church AND on or after the calculated start date AND not on vacation
       return (
         r.churchId === member.assignedChurch &&
-        recordDate.getTime() >= startDate.getTime()
+        recordDate.getTime() >= startDate.getTime() &&
+        !isVacation
       );
     });
+
 
     return churchAttendance.filter((r) =>
       r.presentMemberIds.includes(member.id),
@@ -678,10 +687,23 @@ const MembersList: React.FC<MembersListProps> = ({
     const churchAttendance = data.attendance.filter((r) => {
       const recordDate = new Date(r.date);
       recordDate.setHours(0, 0, 0, 0);
-      // Include if it's the current church AND on or after the calculated start date
+      
+      // Check if on vacation during this record
+      let isVacation = false;
+      if (member.vacationStartDate && member.vacationEndDate) {
+        const vStart = new Date(member.vacationStartDate).getTime();
+        const vEnd = new Date(member.vacationEndDate).getTime();
+        const rTime = recordDate.getTime();
+        if (rTime >= vStart && rTime <= vEnd) {
+          isVacation = true;
+        }
+      }
+
+      // Include if it's the current church AND on or after the calculated start date AND not on vacation
       return (
         r.churchId === member.assignedChurch &&
-        recordDate.getTime() >= startDate.getTime()
+        recordDate.getTime() >= startDate.getTime() &&
+        !isVacation
       );
     });
 
@@ -889,7 +911,7 @@ const MembersList: React.FC<MembersListProps> = ({
                 <tbody className="divide-y divide-gray-50">
                   {members.map((member: Member) => {
                     const isSelected = selectedIds.has(member.id);
-                    const promoStatus = getPromotionStatus(member.assignedChurch, member.birthDate);
+                    const promoStatus = getPromotionStatus(member.assignedChurch as Church, member.birthDate);
                     const bdayWeek = isBirthdayThisWeek(member.birthDate);
 
                     return (
@@ -1089,15 +1111,24 @@ const MembersList: React.FC<MembersListProps> = ({
                                   </button>
                                 </>
                               ) : (
-                                <button
-                                  onClick={() => archiveMember(member)}
-                                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+<>
+<button onClick={() => { setVacationMember(member);
+                              setVacationStart(member.vacationStartDate || "");
+                              setVacationEnd(member.vacationEndDate || "");
+                            }}
+                            className="p-2 text-indigo-400 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors shadow-sm"
+                            title="Manage Leave/Vacation"
+                          >
+                            <Calendar size={18} />
+                          </button>
+                          <button onClick={() => archiveMember(member)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                   title="Archive"
                                 >
                                   <Archive size={16} />
-                                </button>
-                              )}
-                            </div>
+</button>
+</>
+)}
+</div>
                           </td>
                         )}
                       </tr>
@@ -1110,7 +1141,7 @@ const MembersList: React.FC<MembersListProps> = ({
             {/* MOBILE CARD VIEW */}
             <div className="md:hidden p-2 space-y-3">
               {members.map((member: Member) => {
-                const promoStatus = getPromotionStatus(member.assignedChurch, member.birthDate);
+                const promoStatus = getPromotionStatus(member.assignedChurch as Church, member.birthDate);
                 const bdayWeek = isBirthdayThisWeek(member.birthDate);
                 return (
                   <div
@@ -2480,6 +2511,38 @@ const MembersList: React.FC<MembersListProps> = ({
         </div>
       )}
 
+      
+      {vacationMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
+            <h3 className="text-lg font-bold text-gray-800 text-center mb-2">
+              Manage Leave / Vacation
+            </h3>
+            <p className="text-gray-500 text-center text-sm mb-6">
+              Set an excused absence period for {vacationMember.name}. Their expected attendance will be paused during this time.
+            </p>
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Start Date</label>
+                <input type="date" className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3" value={vacationStart} onChange={e => setVacationStart(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">End Date</label>
+                <input type="date" className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3" value={vacationEnd} onChange={e => setVacationEnd(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setVacationMember(null)} className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleVacationSave} className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200">
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CONFIRMATION DIALOG - ARCHIVE */}
       {(memberToArchive || isBulkArchiveConfirming) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
@@ -2585,7 +2648,7 @@ const MembersList: React.FC<MembersListProps> = ({
                     value={c}
                     disabled={c === transferMember.assignedChurch}
                   >
-                    {c === "ARCHIVED" ? "Archive (Teen)" : c} {c === transferMember.assignedChurch ? "(Current)" : ""}
+                    {c as string === "ARCHIVED" ? "Archive (Teen)" : c} {c === transferMember.assignedChurch ? "(Current)" : ""}
                   </option>
                 ))}
               </select>

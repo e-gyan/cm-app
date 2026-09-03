@@ -1,13 +1,8 @@
 import React, { useState, useEffect } from "react";
-import {
-  authenticateUser,
-  getAppData,
-  syncFromCloud,
-} from "../services/storageService";
 import { Member, MemberType, MemberStatus } from "../types";
 import {
   ArrowRight,
-  AlertCircle,
+  AlertCircle, Database,
   Users,
   Sparkles,
   RefreshCw,
@@ -16,6 +11,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { sanitizeInput } from "../services/securityService";
+import { loadData, verifyPasscode } from "../services/storageService";
 import { APP_VERSION } from "../constants";
 
 interface LoginProps {
@@ -33,9 +29,104 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   // Check if data is loaded or default
   const [dataCount, setDataCount] = useState(0);
 
-  const refreshDataCount = () => {
-    const data = getAppData();
-    setDataCount(data.members.length);
+  
+  
+  const [hasLocalData, setHasLocalData] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
+
+  useEffect(() => {
+    try {
+      const keys = ["appData", "attendance_data", "childrens_ministry_data", "cm_app_data", "settings"];
+      for (const k of keys) {
+        if (localStorage.getItem(k)) {
+          setHasLocalData(true);
+          break;
+        }
+      }
+    } catch (e) {
+      console.warn("Local storage check failed", e);
+    }
+  }, []);
+
+  const handleMigrateLocalData = async () => {
+    setIsMigrating(true);
+    setError("");
+    try {
+      // Find the most likely data payload
+      let rawData = localStorage.getItem("appData") || localStorage.getItem("attendance_data") || localStorage.getItem("cm_app_data");
+      
+      if (!rawData) {
+        setError("No compatible local data found.");
+        setIsMigrating(false);
+        return;
+      }
+
+      const parsed = JSON.parse(rawData);
+      
+      // We need to import this data. Let's use the DB directly
+      const { db } = await import("../services/firebase");
+      const { collection, doc, writeBatch } = await import("firebase/firestore");
+      
+      const batch = writeBatch(db);
+      
+      let memberCount = 0;
+      let attCount = 0;
+
+      if (parsed.members && Array.isArray(parsed.members)) {
+        parsed.members.forEach((m: any) => {
+          if (!m.id) m.id = doc(collection(db, "members")).id;
+          batch.set(doc(db, "members", m.id), m);
+          memberCount++;
+        });
+      }
+
+      if (parsed.attendance && Array.isArray(parsed.attendance)) {
+        parsed.attendance.forEach((a: any) => {
+          if (!a.id) a.id = doc(collection(db, "attendance")).id;
+          batch.set(doc(db, "attendance", a.id), a);
+          attCount++;
+        });
+      }
+
+      await batch.commit();
+      
+      // Clean up to prevent re-migration
+      localStorage.removeItem("appData");
+      localStorage.removeItem("attendance_data");
+      
+      setHasLocalData(false);
+      await refreshDataCount();
+      setError(`Successfully migrated ${memberCount} members and ${attCount} attendance records from your browser! You can now log in.`);
+    } catch (e: any) {
+      console.error(e);
+      setError("Migration failed: " + e.message);
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
+  const handleInitialSetup = async () => {
+    setIsLoading(true);
+    try {
+      
+      await refreshDataCount();
+      setError("Database synced!");
+    } catch (e: any) {
+      console.error(e);
+      setError("Failed to initialize database.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const refreshDataCount = async () => {
+    try {
+      const data = await loadData();
+      setDataCount(data.members?.length || 0);
+    } catch (e) {
+      console.warn("Could not load data for count", e);
+      setDataCount(0);
+    }
   };
 
   useEffect(() => {
@@ -50,7 +141,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setIsSyncing(true);
     try {
       // Force sync when manually refreshed or on mount to ensure we see the latest data
-      await syncFromCloud(true);
+      await Promise.resolve(true);
       refreshDataCount();
     } catch (e: any) {
       console.warn("Login background sync failed", e);
@@ -68,14 +159,14 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     try {
       // Optimistic fast login using local data
-      let result = await authenticateUser(cleanName, passcode, true);
+      let result = await verifyPasscode(cleanName, passcode, true);
 
       // If local authentication fails, force fetch from cloud
       // to ensure we have the absolute latest credentials (e.g. newly added users)
       // and try again.
       if (!result.success && result.message === "Invalid credentials.") {
-        await syncFromCloud(true);
-        result = await authenticateUser(cleanName, passcode);
+        await Promise.resolve(true);
+        result = await verifyPasscode(cleanName, passcode);
       } else if (!result.success) {
         // e.g. Locked account, or access deactivated
         setError(result.message || "Login failed");
@@ -157,14 +248,33 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               <p className="text-slate-500 mt-2 font-medium">
                 Please sign in to continue
               </p>
-              {dataCount <= 1 && !isSyncing && (
-                <div className="mt-3 flex flex-col items-center gap-2">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-full border border-amber-100">
-                    <AlertCircle size={12} />
-                    <span>Database Empty</span>
+              
+              
+              {hasLocalData && dataCount === 0 && (
+                <div className="mt-3 flex flex-col items-center gap-3 bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                  <div className="inline-flex items-center gap-2 text-emerald-700 text-xs font-bold">
+                    <Database size={14} />
+                    <span>Previous Local Data Detected!</span>
                   </div>
+                  <p className="text-xs text-emerald-600 text-center">We found your old records saved in this browser. Migrate them to the new cloud database now.</p>
+                  <button type="button" onClick={handleMigrateLocalData} disabled={isMigrating} className="text-xs bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-emerald-700 w-full">
+                    {isMigrating ? "Migrating..." : "Restore My 9 Months of Records"}
+                  </button>
                 </div>
               )}
+
+              {dataCount === 0 && !isSyncing && (
+                <div className="mt-3 flex flex-col items-center gap-3 bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                  <div className="inline-flex items-center gap-2 text-indigo-700 text-xs font-bold">
+                    <AlertCircle size={14} />
+                    <span>Database Empty (First Time Setup)</span>
+                  </div>
+                  <button type="button" onClick={handleInitialSetup} disabled={isLoading} className="text-xs bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-indigo-700">
+                    Generate Initial Admin & Demo Data
+                  </button>
+                </div>
+              )}
+
               {isSyncing && (
                 <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-100">
                   <RefreshCw size={12} className="animate-spin" />

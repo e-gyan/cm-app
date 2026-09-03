@@ -1,3 +1,4 @@
+import { getApps, getApp } from "firebase/app";
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
@@ -18,13 +19,21 @@ setLogLevel("silent");
 import firebaseConfig from "../firebase-applet-config.json";
 
 console.log("Firebase Init Database ID:", firebaseConfig.firestoreDatabaseId);
-export const app = initializeApp(firebaseConfig);
+export const app = (getApps && getApps().length > 0) ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = initializeFirestore(
-  app,
-  { experimentalForceLongPolling: true },
-  firebaseConfig.firestoreDatabaseId,
-);
+
+let dbInstance;
+try {
+  dbInstance = initializeFirestore(
+    app,
+    { experimentalForceLongPolling: true },
+    firebaseConfig.firestoreDatabaseId
+  );
+} catch (e) {
+  dbInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+}
+export const db = dbInstance;
+
 
 export const loginWithGoogle = async () => {
   const provider = new GoogleAuthProvider();

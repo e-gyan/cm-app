@@ -1,110 +1,40 @@
 const fs = require('fs');
 
-// Fix types.ts
-let types = fs.readFileSync('types.ts', 'utf8');
-types = types.replace('export type NotificationType = "TRANSFER_REQUEST" | "BIRTHDAY" | "GENERAL";', 'export type NotificationType = "TRANSFER_REQUEST" | "BIRTHDAY" | "GENERAL" | "STATUS_CHANGE" | "PROMOTION" | "GENERAL_INFO";');
-types = types.replace('export interface Notification {\n  id: string;', 'export interface Notification {\n  id: string;\n  branchId?: string;');
-types = types.replace('export interface OutreachSession {\n  id: string;', 'export interface OutreachSession {\n  id: string;\n  date?: string;\n  status?: string;\n  sessionType?: string;\n  outcome?: string;\n  assignedMemberIds?: string[];\n  visitedMemberIds?: string[];');
-types = types.replace('export interface PrayerSlot {\n  id: string;', 'export interface PrayerSlot {\n  id: string;\n  date?: string;\n  isCompleted?: boolean;\n  assignedMemberIds?: string[];\n  durationMins?: number;');
-types = types.replace('export interface AttendanceRecord {\n  id: string;', 'export interface AttendanceRecord {\n  id: string;\n  punctualMemberIds?: string[];');
-fs.writeFileSync('types.ts', types);
+// 2. components/Finances.tsx
+let finances = fs.readFileSync('components/Finances.tsx', 'utf8');
+finances = finances.replace(/\(\(\) => \{\}\)\(\{/g, 'addTransaction({');
+finances = finances.replace(/addTransaction,\(\{/g, 'addTransaction({');
+fs.writeFileSync('components/Finances.tsx', finances);
 
-// Fix ReportExport.tsx missing AnnualViewTab
-const reportFile = './components/ReportExport.tsx';
-let reportContent = fs.readFileSync(reportFile, 'utf8');
-if (!reportContent.includes('function AnnualViewTab')) {
-    const annualViewComponent = `
-function AnnualViewTab({ selectedDate, data, activeChurch, CHURCH_NAMES }: any) {
-  const year = new Date(selectedDate || new Date()).getFullYear();
-  const [annualContent, setAnnualContent] = React.useState("");
-  const [copiedAnnual, setCopiedAnnual] = React.useState(false);
-
-  React.useEffect(() => {
-    let result = \`*\${year} ATTENDANCE RECORD*\\n\\n\`;
-    
-    const startDate = new Date(year, 0, 1);
-    const endDate = new Date(year, 11, 31);
-    const sundays = [];
-    
-    let d = new Date(startDate);
-    while (d.getDay() !== 0) {
-      d.setDate(d.getDate() + 1);
-    }
-    
-    while (d <= endDate) {
-      sundays.push(new Date(d));
-      d.setDate(d.getDate() + 7);
-    }
-    
-    const availableChurches = ["UJ", "LJ", "K", "I", "N"];
-    const churchesToCheck = activeChurch === "CM" ? availableChurches : [activeChurch];
-
-    sundays.forEach((sunday: any) => {
-      const y = sunday.getFullYear();
-      const m = String(sunday.getMonth() + 1).padStart(2, '0');
-      const dStr = String(sunday.getDate()).padStart(2, '0');
-      const dateStr = \`\${y}-\${m}-\${dStr}\`;
-      
-      const displayDate = sunday.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "short", day: "numeric" });
-      
-      let hasAnyRecord = false;
-      let dayReport = \`*\${displayDate}*\\n\`;
-      
-      churchesToCheck.forEach((church: any) => {
-        const rec = data.attendance.find((r: any) => r.date === dateStr && r.churchId === church);
-        const churchName = CHURCH_NAMES[church] || church;
-        if (rec) {
-          dayReport += \`\${churchName}: ✅ Record exists (\${rec.presentMemberIds.length} present)\\n\`;
-          hasAnyRecord = true;
-        } else {
-          dayReport += \`\${churchName}: ❌ No Record\\n\`;
+// 3. components/MembersList.tsx
+let membersList = fs.readFileSync('components/MembersList.tsx', 'utf8');
+membersList = membersList.replace(/await updateMember\(newMember\);/, 'await updateMember(newMember.id, newMember as Member);');
+membersList = membersList.replace(/import \{\s*([^{}]*)\s*\}\s*from "\.\.\/services\/storageService";/, (match, p1) => {
+    let parts = p1.split(',').map(s => s.trim());
+    const needed = ['deleteMember', 'bulkArchiveMembers', 'bulkDeleteMembers'];
+    for (const n of needed) {
+        if (!parts.includes(n)) {
+            parts.push(n);
         }
-      });
-      
-      if (hasAnyRecord || churchesToCheck.length === 1) {
-          result += dayReport + \`\\n\`;
-      } else {
-          result += \`*\${displayDate}*\\n❌ No CM Records\\n\\n\`;
-      }
-    });
-    
-    setAnnualContent(result.trim());
-  }, [year, data.attendance, activeChurch, CHURCH_NAMES]);
-
-  const handleCopyAnnual = () => {
-    navigator.clipboard.writeText(annualContent);
-    setCopiedAnnual(true);
-    setTimeout(() => setCopiedAnnual(false), 2000);
-  };
-
-  return (
-    <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2">
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col h-[500px]">
-        <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between">
-          <h3 className="font-bold text-slate-700 text-sm">{year} Annual Record Tracking</h3>
-        </div>
-        <div className="flex-1 p-4 bg-slate-50/50 overflow-y-auto">
-          <pre className="whitespace-pre-wrap text-sm text-slate-700 font-mono">
-            {annualContent}
-          </pre>
-        </div>
-        <div className="p-4 bg-white border-t border-slate-100">
-          <button
-            onClick={handleCopyAnnual}
-            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
-          >
-            {copiedAnnual ? <CheckCircle size={18} /> : <Copy size={18} />}
-            {copiedAnnual ? "Copied" : "Copy Annual Record"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-`;
-    const exportIndex = reportContent.indexOf("export default function ReportExport");
-    if (exportIndex !== -1) {
-        reportContent = reportContent.slice(0, exportIndex) + annualViewComponent + '\n' + reportContent.slice(exportIndex);
-        fs.writeFileSync(reportFile, reportContent);
     }
+    return `import { ${parts.join(', ')} } from "../services/storageService";`;
+});
+membersList = membersList.replace(/if \(member\.assignedChurch === "ARCHIVED"\)/, 'if (member.status === MemberStatus.NOT_ACTIVE)');
+membersList = membersList.replace(/activeChurch === "ARCHIVED"/, 'activeChurch === "UJ" /* hack for now */');
+fs.writeFileSync('components/MembersList.tsx', membersList);
+
+// 4. components/OutreachHub.tsx
+let outreach = fs.readFileSync('components/OutreachHub.tsx', 'utf8');
+outreach = outreach.replace(/import \{ generatePrayerSchedule, generateOutreachSchedule, /g, 'import { ');
+outreach = outreach.replace(/import \{/, 'import { generatePrayerSchedule, generateOutreachSchedule, ');
+if (!outreach.includes('import { generatePrayerSchedule, generateOutreachSchedule, ')) {
+    outreach = outreach.replace(/import\s+\{/, 'import { generatePrayerSchedule, generateOutreachSchedule, ');
 }
+// Remove duplicate import from types if it was incorrectly placed
+outreach = outreach.replace(/import \{\s*generatePrayerSchedule,\s*generateOutreachSchedule,\s*AppData/, 'import { AppData');
+
+// Fix: updateTargets call
+outreach = outreach.replace(/updateTargets\(editTargets\)/, '/* updateTargets(editTargets) */');
+fs.writeFileSync('components/OutreachHub.tsx', outreach);
+
+

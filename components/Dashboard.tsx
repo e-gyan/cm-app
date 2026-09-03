@@ -218,7 +218,7 @@ const AdminDashboard: React.FC<{
   onUpdateTargets?: () => void;
 }> = ({ data, onUpdateTargets }) => {
   // Dynamic church list from settings
-  const churches: Church[] = data.settings.churches;
+  const churches: Church[] = Array.isArray(data.settings?.churches) ? data.settings?.churches : ["UJ", "LJ", "K", "I", "N"];
   const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
 
   // Local state for target editing
@@ -460,7 +460,7 @@ const AdminDashboard: React.FC<{
       : Math.round(((totalLastAtt - totalPrevAtt) / totalPrevAtt) * 100);
 
   const globalOutreachStats = useMemo(() => {
-    const isOutreachEnabled = Object.values(data.settings.features || {}).some(f => f.outreach);
+    const isOutreachEnabled = Object.values(data.settings.features || {}).some((f: any) => f.outreach);
     if (!isOutreachEnabled) return null;
 
     const eligibleMembers = data.members.filter(

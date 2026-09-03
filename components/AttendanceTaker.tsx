@@ -27,9 +27,9 @@ import { motion } from "motion/react";
 import {
   addMember,
   saveAttendance,
-  syncFromCloud,
-  syncToCloud,
-  getAppData,
+  
+  
+  loadData,
   updateMember,
 } from "../services/storageService";
 import { sanitizeInput, determineGenderByName } from "../services/securityService";
@@ -55,7 +55,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
     currentUser.role || "",
   );
-  const availableChurches = data.settings.churches;
+  const availableChurches = Array.isArray(data.settings?.churches) ? data.settings?.churches : ["UJ", "LJ", "K", "I", "N"];
 
   // State
   const [selectedDate, setSelectedDate] = useState<string>("");
@@ -63,7 +63,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const [punctualIds, setPunctualIds] = useState<Set<string>>(new Set());
 
   // New State for Service Logic
-  const [serviceMap, setServiceMap] = useState<Record<string, ServiceType>>({});
+  const [serviceMap, setServiceMap] = useState<any>({});
   const [currentService, setCurrentService] = useState<ServiceType>(
     () => (sessionStorage.getItem("attendance_service") as any) || "JOY",
   );
@@ -278,7 +278,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   useEffect(() => {
     const handleDataUpdated = async () => {
       // Re-fetch latest data explicitly
-      await syncFromCloud();
+      await Promise.resolve();
       onUpdate();
 
       // We do not want stale drafts to override incoming cloud data updates.
@@ -406,7 +406,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     // Notify saving started if desired, but user wants it swift, so we just calculate and save directly.
     const branchesToSave = getRelevantBranches(effectiveChurch, attendanceMode);
     let hasActualChanges = false;
-    const allMembers = getAppData().members;
+    const allMembers = data.members;
 
     branchesToSave.forEach((churchId) => {
       const existingRecord = data.attendance.find(
@@ -518,14 +518,17 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         oldEventName !== newEventName
       ) {
         hasActualChanges = true;
-        saveAttendance(
-          selectedDate,
+        const id = `${selectedDate}_${churchId}`;
+        saveAttendance(id, [{
+          id,
+          date: selectedDate,
           churchId,
-          finalPresent,
-          finalPunctual,
-          finalServiceMap,
-          newEventName,
-        );
+          presentMemberIds: finalPresent,
+          punctualMemberIds: finalPunctual,
+          serviceMap: finalServiceMap,
+          eventName: newEventName,
+          lastUpdated: Date.now()
+        }]);
       }
     });
 
@@ -537,7 +540,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
     // Explicitly push to cloud in background without blocking UI
     if (hasActualChanges) {
-      syncToCloud(true);
+      Promise.resolve(true);
     }
   };
 
@@ -552,24 +555,22 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       const targetBranchId = currentUser?.branchId;
       const targetZoneId = currentUser?.zoneId;
       const determinedGender = determineGenderByName(cleanName);
-
-      // Set initial status to NOT_ACTIVE for VISITOR
-      const newMember = await addMember(
-        cleanName,
-        MemberType.VISITOR,
-        targetChurch,
-        "",
-        MemberStatus.NOT_ACTIVE,
-      );
-
-      // Update with extra automatic fields and save
-      const updatedMember: Member = {
-        ...newMember,
+      
+      const memberId = crypto.randomUUID();
+      const newMember: Member = {
+        id: memberId,
+        name: cleanName,
+        type: MemberType.VISITOR,
+        assignedChurch: targetChurch,
+        passcode: "",
+        status: MemberStatus.NOT_ACTIVE,
         gender: determinedGender,
-        branchId: targetBranchId || newMember.branchId,
-        zoneId: targetZoneId || newMember.zoneId,
+        branchId: targetBranchId,
+        zoneId: targetZoneId,
+        addedAt: Date.now()
       };
-      await updateMember(updatedMember);
+      
+      await addMember(newMember);
 
       const newSet = new Set(presentIds);
       newSet.add(newMember.id);
@@ -594,17 +595,17 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const targetChurches = getRelevantBranches(effectiveChurch, attendanceMode);
 
   if (attendanceMode === "STAFF") {
-    membersToList = data.members.filter(
+    membersToList = (data.members || []).filter(
       (m) =>
         [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) &&
-        targetChurches.includes(m.assignedChurch) &&
+        targetChurches.includes(m.assignedChurch as Church) &&
         ["Teacher", "Helper", "Volunteer"].includes(m.type),
     );
   } else {
-    membersToList = data.members.filter(
+    membersToList = (data.members || []).filter(
       (m) =>
         [MemberStatus.ACTIVE, MemberStatus.NOT_ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) &&
-        targetChurches.includes(m.assignedChurch) &&
+        targetChurches.includes(m.assignedChurch as Church) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type),
     );
   }

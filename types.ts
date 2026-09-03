@@ -13,7 +13,8 @@ export enum MemberStatus {
   ARCHIVED = "Archived",
   TRANSFERRED = "Transferred",
   INCONSISTENT = "Inconsistent",
-  NOT_ACTIVE = "Not Active"
+  NOT_ACTIVE = "Not Active",
+  VACATION = "Vacation"
 }
 
 export type Church = "UJ" | "LJ" | "K" | "I" | "N" | "All" | "CM";
@@ -21,7 +22,14 @@ export type Role = "BRANCH_COORDINATOR" | "DIRECTORATE_HEAD" | "ZONAL_HEAD" | "A
 export type ServiceType = "JOY" | "ENLARGEMENT" | "SPECIAL";
 export type NotificationType = "TRANSFER_REQUEST" | "BIRTHDAY" | "GENERAL" | "STATUS_CHANGE" | "PROMOTION" | "GENERAL_INFO";
 
+export interface PromotionRecord {
+  date: string;
+  fromChurch: string;
+  toChurch: string;
+}
+
 export interface Member {
+  addedAt?: number;
   id: string;
   name: string;
   role?: string;
@@ -40,6 +48,10 @@ export interface Member {
   passcode?: string;
   isAccessActive?: boolean;
   transferPendingDate?: string;
+  promotionHistory?: PromotionRecord[];
+  lastActivationDate?: string;
+  vacationStartDate?: string;
+  vacationEndDate?: string;
 }
 
 export interface Notification {
@@ -82,7 +94,8 @@ export interface AttendanceRecord {
   branchId?: string;
   eventName?: string;
   presentMemberIds: string[];
-  serviceMap?: Record<string, string>;
+  serviceMap?: any;
+  lastUpdated?: number | string;
 }
 
 export interface CloudConfig {
@@ -98,6 +111,11 @@ export interface OutreachSession {
   assignedMemberIds?: string[];
   visitedMemberIds?: string[];
   id: string;
+  completedBy?: string;
+  startTime?: string;
+  endTime?: string;
+  notes?: string;
+  branchId?: string;
 }
 export interface PrayerSlot {
   date?: string;
@@ -105,6 +123,8 @@ export interface PrayerSlot {
   assignedMemberIds?: string[];
   durationMins?: number;
   id: string;
+  dayOfWeek?: string;
+  branchId?: string;
 }
 
 export interface AppData {

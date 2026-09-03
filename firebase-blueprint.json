@@ -1,28 +1,188 @@
 {
   "entities": {
-    "AppData": {
-      "title": "AppData",
-      "description": "Monolithic application state",
+    "Member": {
+      "title": "Member",
+      "description": "A person affiliated with the ministry (children, teachers, etc)",
       "type": "object",
       "properties": {
-        "userId": { "type": "string" },
-        "members": { "type": "array" },
-        "attendance": { "type": "array" },
-        "transactions": { "type": "array" },
-        "notifications": { "type": "array" },
-        "outreachSessions": { "type": "array" },
-        "prayerSchedule": { "type": "array" },
-        "settings": { "type": "object" },
-        "targets": { "type": "object" },
-        "lastUpdated": { "type": "number" },
-        "ownerId": { "type": "string" }
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "Member",
+            "FNF",
+            "Visitor",
+            "Teacher",
+            "Helper",
+            "Volunteer",
+            "Not Member"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Active",
+            "Archived",
+            "Transferred",
+            "Inconsistent",
+            "Not Active"
+          ]
+        },
+        "assignedChurch": {
+          "type": "string"
+        },
+        "branchId": {
+          "type": "string"
+        },
+        "zoneId": {
+          "type": "string"
+        },
+        "gender": {
+          "type": "string"
+        },
+        "phone": {
+          "type": "string"
+        },
+        "parentPhone": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "joinedDate": {
+          "type": "string"
+        },
+        "birthDate": {
+          "type": "string"
+        }
+      }
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Check-in data for a specific day and church",
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string"
+        },
+        "churchId": {
+          "type": "string"
+        },
+        "branchId": {
+          "type": "string"
+        },
+        "eventName": {
+          "type": "string"
+        },
+        "presentMemberIds": {
+          "type": "array"
+        }
+      }
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial records (income/expense)",
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "number"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "INCOME",
+            "EXPENSE"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "churchId": {
+          "type": "string"
+        }
+      }
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System or user notifications",
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "isRead": {
+          "type": "boolean"
+        }
+      }
+    },
+    "OutreachSession": {
+      "title": "OutreachSession",
+      "description": "Outreach event tracking",
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "sessionType": {
+          "type": "string"
+        }
       }
     }
   },
   "firestore": {
-    "/appData/{userId}": {
-      "schema": { "$ref": "#/entities/AppData" },
-      "description": "User specific app state. We store data per user because Firebase requires auth to secure data."
+    "members/{memberId}": {
+      "schema": {
+        "$ref": "#/entities/Member"
+      },
+      "description": "Ministry members directory"
+    },
+    "attendance/{recordId}": {
+      "schema": {
+        "$ref": "#/entities/AttendanceRecord"
+      },
+      "description": "Daily check-in records"
+    },
+    "transactions/{transactionId}": {
+      "schema": {
+        "$ref": "#/entities/Transaction"
+      },
+      "description": "Financial accounting"
+    },
+    "notifications/{notificationId}": {
+      "schema": {
+        "$ref": "#/entities/Notification"
+      },
+      "description": "User notification inbox"
+    },
+    "outreach/{sessionId}": {
+      "schema": {
+        "$ref": "#/entities/OutreachSession"
+      },
+      "description": "Outreach activity logs"
+    },
+    "settings/global": {
+      "schema": {
+        "type": "object",
+        "properties": {}
+      },
+      "description": "Global app configuration"
     }
   }
 }

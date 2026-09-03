@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { AppData, Transaction, Church, Member } from "../types";
-import { addTransaction, deleteTransaction } from "../services/storageService";
+import { deleteTransaction, addTransaction } from "../services/storageService";
 import {
   Plus,
   Trash2,
@@ -42,7 +42,7 @@ const Finances: React.FC<FinancesProps> = ({
   const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
     currentUser.role || "",
   );
-  const availableChurches = data.settings.churches;
+  const availableChurches = Array.isArray(data.settings?.churches) ? data.settings?.churches : ["UJ", "LJ", "K", "I", "N"];
 
   // State
   const [filterChurch, setFilterChurch] = useState<Church | "All">(

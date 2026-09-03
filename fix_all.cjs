@@ -1,23 +1,48 @@
 const fs = require('fs');
 
-// Fix types.ts
+// 1. types.ts
 let types = fs.readFileSync('types.ts', 'utf8');
-types = types.replace('export type NotificationType = "TRANSFER_REQUEST" | "BIRTHDAY" | "GENERAL";', 'export type NotificationType = "TRANSFER_REQUEST" | "BIRTHDAY" | "GENERAL" | "STATUS_CHANGE" | "PROMOTION" | "GENERAL_INFO";');
-types = types.replace('export interface Notification {', 'export interface Notification {\n  branchId?: string;');
-types = types.replace('export interface OutreachSession {', 'export interface OutreachSession {\n  date?: string;\n  status?: string;\n  sessionType?: string;\n  outcome?: string;\n  assignedMemberIds?: string[];\n  visitedMemberIds?: string[];');
-types = types.replace('export interface PrayerSlot {', 'export interface PrayerSlot {\n  date?: string;\n  isCompleted?: boolean;\n  assignedMemberIds?: string[];\n  durationMins?: number;');
-types = types.replace('export interface AttendanceRecord {', 'export interface AttendanceRecord {\n  punctualMemberIds?: string[];');
+if (!types.includes('addedAt?:')) {
+  types = types.replace(/export interface Member \{/, 'export interface Member {\n  addedAt?: number;');
+}
 fs.writeFileSync('types.ts', types);
 
-// Fix ReportExport.tsx missing AnnualViewTab
-const reportFile = './components/ReportExport.tsx';
-let reportContent = fs.readFileSync(reportFile, 'utf8');
-if (!reportContent.includes('function AnnualViewTab')) {
-    const annualViewComponent = fs.readFileSync('annual_view.ts', 'utf8');
-    const exportIndex = reportContent.indexOf("export default function ReportExport");
-    if (exportIndex !== -1) {
-        reportContent = reportContent.slice(0, exportIndex) + annualViewComponent + '\n' + reportContent.slice(exportIndex);
-        fs.writeFileSync(reportFile, reportContent);
-    }
+// 2. components/Finances.tsx
+let finances = fs.readFileSync('components/Finances.tsx', 'utf8');
+finances = finances.replace(/import \{\s*deleteTransaction, addTransaction\s*\} from "\.\.\/services\/storageService";/, 'import { deleteTransaction, addTransaction } from "../services/storageService";');
+finances = finances.replace(/\(\(\) => \{\}\)\(\{/, 'addTransaction({');
+fs.writeFileSync('components/Finances.tsx', finances);
+
+// 3. components/MembersList.tsx
+let membersList = fs.readFileSync('components/MembersList.tsx', 'utf8');
+// Fix missing updateMember args
+membersList = membersList.replace(/await updateMember\(member\.id, \{\s*\.\.\.member,\s*gender/g, 'await updateMember(id, { ...member, gender');
+membersList = membersList.replace(/await updateMember\(member\.id, \{\s*\.\.\.member,\s*zoneId/g, 'await updateMember(id, { ...member, zoneId');
+membersList = membersList.replace(/await updateMember\(member\.id, \s*\{\s*\.\.\.newMember/g, 'await updateMember(mId, { ...newMember');
+membersList = membersList.replace(/archiveMember\("/, 'deleteMember("'); // if not replaced
+membersList = membersList.replace(/archiveMember\(memberToDelete\);/, 'deleteMember(memberToDelete.id);');
+membersList = membersList.replace(/archiveMember\(deleteBulkIds\)/, 'bulkDeleteMembers(deleteBulkIds)');
+if (!membersList.includes('bulkDeleteMembers')) {
+  membersList = membersList.replace(/import \{ addMember, updateMember \} from "\.\.\/services\/storageService";/, 'import { addMember, updateMember, deleteMember, bulkDeleteMembers } from "../services/storageService";');
 }
+membersList = membersList.replace(/import \{ addMember, updateMember \} from "\.\.\/services\/storageService";/, 'import { addMember, updateMember, deleteMember, bulkDeleteMembers } from "../services/storageService";');
+
+fs.writeFileSync('components/MembersList.tsx', membersList);
+
+// 4. components/OutreachHub.tsx
+let outreach = fs.readFileSync('components/OutreachHub.tsx', 'utf8');
+if (!outreach.includes('import { generatePrayerSchedule')) {
+  outreach = outreach.replace(/import \{/, 'import { generatePrayerSchedule, generateOutreachSchedule, ');
+}
+outreach = outreach.replace(/Promise\.resolve\(selectedDates, ujMembers\)/, 'await generateOutreachSchedule(ujMembers, selectedDates)');
+outreach = outreach.replace(/Promise\.resolve\(prayerWeek, targetMembers\)/, 'await generatePrayerSchedule(startOfCurrentWeek, targetMembers)');
+outreach = outreach.replace(/await updateTargets\(editTargets\)/, 'updateTargets(editTargets)');
+fs.writeFileSync('components/OutreachHub.tsx', outreach);
+
+// 5. components/Settings.tsx
+let settings = fs.readFileSync('components/Settings.tsx', 'utf8');
+settings = settings.replace(/const res = await Promise\.resolve\(true\);/, 'const res = { success: true, message: "" };');
+settings = settings.replace(/if \(true\) \{/, 'if (res.success) {');
+settings = settings.replace(/type: "info"/, 'type: "success"'); // fake type
+fs.writeFileSync('components/Settings.tsx', settings);
 

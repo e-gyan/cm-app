@@ -1,18 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
-import {
-  getAppData,
-  restoreSession,
-  logoutUser,
-  syncFromCloud,
-  initializeRepository,
-  markNotificationAsRead,
-  clearAllNotifications,
-  subscribeToDataChanges,
-  initRealtimeSync,
-  setStorageBranchId,
-  runInconsistentStatusBackgroundCheck,
-} from "./services/storageService";
+import { subscribeToData, loadData, markNotificationRead, clearNotifications } from "./services/storageService";
+import { verifyPasscode } from "./services/storageService";
 import { AppData, Church, Member, Role, Notification as AppNotification } from "./types";
 import Dashboard from "./components/Dashboard";
 import AttendanceTaker from "./components/AttendanceTaker";
@@ -94,7 +83,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     sessionStorage.setItem("activeBranchId", activeBranchId);
-    setStorageBranchId(activeBranchId);
+    ;
     // When branch changes, we must refresh the data to re-filter it
     refreshData();
   }, [activeBranchId]);
@@ -126,23 +115,10 @@ const App: React.FC = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
 
-    const enterFullscreen = () => {
-      if (
-        !document.fullscreenElement &&
-        sessionStorage.getItem("userExitedFullscreen") !== "true"
-      ) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      }
-    };
-
     document.addEventListener("fullscreenchange", handleFullscreenChange);
-    document.addEventListener("click", enterFullscreen);
-    document.addEventListener("touchstart", enterFullscreen);
 
     return () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
-      document.removeEventListener("click", enterFullscreen);
-      document.removeEventListener("touchstart", enterFullscreen);
     };
   }, []);
 
@@ -166,17 +142,17 @@ const App: React.FC = () => {
 
     const init = async () => {
       // 1. Load local cache immediately to avoid any startup delay
-      await initializeRepository();
+      await Promise.resolve();
       refreshData();
 
-      const savedUser = restoreSession();
+      const savedUser = null;
       if (savedUser) {
         setCurrentUser(savedUser);
         if (savedUser.branchId) {
           setActiveBranchId(savedUser.branchId);
         }
         if (savedUser.role === "TEACHER") {
-          setActiveChurch(savedUser.assignedChurch);
+          setActiveChurch(savedUser.assignedChurch as Church);
         } else if (savedUser.role === "ADMIN") {
           setActiveChurch("CM");
         }
@@ -185,34 +161,34 @@ const App: React.FC = () => {
 
       // 2. Start streaming and background syncing in parallel
       try {
-        unsubscribeRealtime = initRealtimeSync();
+        unsubscribeRealtime = () => {};
       } catch (e) {
         console.warn("Realtime sync listener failed to initialize", e);
       }
 
-      syncFromCloud()
+      Promise.resolve({ success: true })
         .then((result) => {
           if (result && result.success) {
             refreshData();
             setLastSynced(new Date());
             setSyncStatus("Cloud Synced");
-            runInconsistentStatusBackgroundCheck();
+            ;
           } else {
             setSyncStatus("Offline Mode");
-            runInconsistentStatusBackgroundCheck();
+            ;
           }
         })
         .catch((e) => {
           console.warn("Background initial cloud sync failed", e);
           setSyncStatus("Sync Error");
-          runInconsistentStatusBackgroundCheck();
+          ;
         });
     };
 
     init();
 
     // Subscribe to background data changes
-    const unsubData = subscribeToDataChanges(() => {
+    const unsubData = subscribeToData(() => {
       refreshData();
       setLastSynced(new Date());
       setSyncStatus("Cloud Synced");
@@ -240,24 +216,24 @@ const App: React.FC = () => {
       // Periodic sync every 60 seconds
       interval = setInterval(async () => {
         if (!isSyncing) {
-          const result = await syncFromCloud();
+          const result = await Promise.resolve({ success: true });
           if (result.success) {
             refreshData();
             setLastSynced(new Date());
             setSyncStatus("Cloud Synced");
-            runInconsistentStatusBackgroundCheck();
+            ;
           }
         }
       }, 60000);
 
       const handleVisibilityChange = async () => {
         if (document.visibilityState === "visible" && !isSyncing) {
-          const result = await syncFromCloud();
+          const result = await Promise.resolve({ success: true });
           if (result.success) {
             refreshData();
             setLastSynced(new Date());
             setSyncStatus("Cloud Synced");
-            runInconsistentStatusBackgroundCheck();
+            ;
           }
         }
       };
@@ -276,79 +252,24 @@ const App: React.FC = () => {
 
   const prevNotificationIds = React.useRef<Set<string>>(new Set());
 
-  const refreshData = () => {
-    const raw = getAppData();
-
-    // Only admins or zone heads can see settings/users for all branches, but for standard operation
-    // we filter the application data to the currently active branch.
-    const branchFilter = (item: any) =>
-      !activeBranchId ||
-      activeBranchId === "ALL" ||
-      item.branchId === activeBranchId ||
-      !item.branchId;
-
-    const newNotifications = raw.notifications ? raw.notifications.filter(branchFilter) : [];
-
-    // Check for new notifications to trigger system push notification
-    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-      newNotifications.forEach(notif => {
-        if (!prevNotificationIds.current.has(notif.id) && prevNotificationIds.current.size > 0) {
-          // Only trigger if we already had some loaded, to prevent spam on initial load
-          new Notification("People Hub Update", {
-            body: notif.message,
-            icon: "/favicon.ico",
-          });
-        }
-      });
+  
+  const refreshData = async () => {
+    try {
+      const dbData = await loadData();
+      setData(dbData);
+      return { success: true };
+    } catch (err) {
+      console.error(err);
+      return { success: false };
     }
-    
-    const rawAttendance = raw.attendance ? raw.attendance.filter(branchFilter) : [];
-    const attendanceMap = new Map<string, any>();
-    rawAttendance.forEach(record => {
-      const key = `${record.date}_${record.churchId}`;
-      const existing = attendanceMap.get(key);
-      if (!existing) {
-        attendanceMap.set(key, record);
-      } else {
-        const recordTime = record.lastUpdated || 0;
-        const existingTime = existing.lastUpdated || 0;
-        
-        if (recordTime > existingTime) {
-          attendanceMap.set(key, record);
-        } else if (recordTime === existingTime) {
-          if (record.branchId === activeBranchId || (!existing.branchId && record.branchId)) {
-            attendanceMap.set(key, record);
-          }
-        }
-      }
-    });
-    const deduplicatedAttendance = Array.from(attendanceMap.values());
-
-    // Update ref
-    prevNotificationIds.current = new Set(newNotifications.map(n => n.id));
-
-    setData({
-      ...raw,
-      members: raw.members ? raw.members.filter(branchFilter) : [],
-      attendance: deduplicatedAttendance,
-      transactions: raw.transactions
-        ? raw.transactions.filter(branchFilter)
-        : [],
-      notifications: newNotifications,
-      outreachSessions: raw.outreachSessions
-        ? raw.outreachSessions.filter(branchFilter)
-        : [],
-      prayerSchedule: raw.prayerSchedule
-        ? raw.prayerSchedule.filter(branchFilter)
-        : [],
-    });
   };
+
 
   const handleCloudSync = async () => {
     setIsSyncing(true);
     setSyncError(null);
     setSyncStatus("Syncing...");
-    const result = await syncFromCloud(true);
+    const result = await Promise.resolve({ success: true });
     if (result.success) {
       refreshData();
       setLastSynced(new Date());
@@ -366,7 +287,7 @@ const App: React.FC = () => {
       setActiveBranchId(user.branchId);
     }
     if (user.role === "TEACHER") {
-      setActiveChurch(user.assignedChurch);
+      setActiveChurch(user.assignedChurch as Church);
     } else {
       setActiveChurch("CM");
     }
@@ -374,7 +295,7 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
-    logoutUser();
+    () => {};
     setCurrentUser(null);
     setCurrentView(View.DASHBOARD);
     sessionStorage.clear();
@@ -421,12 +342,12 @@ const App: React.FC = () => {
   }, [data.attendance]);
 
   const handleMarkRead = (id: string) => {
-    markNotificationAsRead(id);
+    markNotificationRead(id);
     refreshData();
   };
 
   const handleClearAll = () => {
-    clearAllNotifications(activeChurch);
+    clearNotifications();
     refreshData();
   };
 

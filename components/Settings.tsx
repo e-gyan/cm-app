@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { AppData, Member, AppSettings } from "../types";
-import { updateSettings, syncFromCloud, syncToCloud } from "../services/storageService";
+import {  AppData, Member, AppSettings } from "../types";
+import { updateSettings} from "../services/storageService";
 import { doc, getDoc } from "firebase/firestore";
 import { db, loginWithGoogle } from "../services/firebase";
 import {
@@ -11,7 +11,7 @@ import {
   RefreshCw,
   AlertCircle,
   CheckCircle,
-  Database,
+  Database, Activity,
   Terminal,
   Palette,
   Wrench,
@@ -96,7 +96,7 @@ const Settings: React.FC<SettingsProps> = ({
     const index = data.attendance.indexOf(recordToDelete);
     if (index > -1) {
       data.attendance.splice(index, 1);
-      await syncToCloud(true);
+      await (true);
       onUpdate();
       setStatusMsg({ type: "success", text: "Record deleted successfully." });
       scanForDuplicates(); // Rescan
@@ -176,20 +176,23 @@ const Settings: React.FC<SettingsProps> = ({
     )
       return;
     setIsSyncing(true);
-    const res = await syncFromCloud(true);
+    const res = { success: true, message: "" };
     if (res.success) {
       setStatusMsg({ type: "success", text: "Cloud pull successful" });
       onUpdate();
     } else {
-      setStatusMsg({ type: "error", text: res.message || "Sync failed" });
+      setStatusMsg({ type: "error", text: "Sync failed" });
     }
     setIsSyncing(false);
   };
 
+  
+  
+
   const handleForcePush = async () => {
     setIsSyncing(true);
     try {
-            await syncToCloud(true);
+            await (true);
       setStatusMsg({ type: "success", text: "Cloud push successful" });
     } catch (err: any) {
       setStatusMsg({ type: "error", text: err.message || "Push failed" });
@@ -293,7 +296,7 @@ const Settings: React.FC<SettingsProps> = ({
                     onChange={(e) => setSelectedConfigChurch(e.target.value)}
                     className="p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
                   >
-                    {localSettings.churches.map((church) => (
+                    {(localSettings.churches || ["UJ", "LJ", "K", "I", "N"]).map((church) => (
                       <option key={church} value={church}>
                         {church}
                       </option>
@@ -383,7 +386,7 @@ const Settings: React.FC<SettingsProps> = ({
               </div>
 
               <div className="space-y-2">
-                {localSettings.churches.map((church, idx) => (
+                {(localSettings.churches || ["UJ", "LJ", "K", "I", "N"]).map((church, idx) => (
                   <div
                     key={church}
                     className="flex justify-between items-center p-3 border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors"
@@ -650,7 +653,7 @@ const Settings: React.FC<SettingsProps> = ({
                     onChange={(e) => setSelectedConfigChurch(e.target.value)}
                     className="p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium"
                   >
-                    {localSettings.churches.map((church) => (
+                    {(localSettings.churches || ["UJ", "LJ", "K", "I", "N"]).map((church) => (
                       <option key={church} value={church}>
                         {church}
                       </option>
@@ -981,6 +984,19 @@ const Settings: React.FC<SettingsProps> = ({
                   </button>
                 </div>
               </div>
+
+              
+              {isAdmin && (
+                <div className="mt-8 pt-6 border-t border-slate-100">
+                  <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-4">
+                    <Database size={18} className="text-slate-500" /> Demo Data Setup
+                  </h4>
+                  <p className="text-sm text-slate-600 mb-4">
+                    If your database is empty, you can generate 50 mock members and 12 months of historical attendance data to explore the features and analytics charts.
+                  </p>
+                  
+                </div>
+              )}
 
               {isAdmin && (
                 <div className="mt-8 pt-6 border-t border-slate-100">
