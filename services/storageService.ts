@@ -282,18 +282,76 @@ export const generateOutreachSchedule = async (targetMembers: any[], dates: stri
       return { success: false, message: "No members available to assign for visitation." };
     }
 
-    const assignedMemberIds = targetMembers.map(m => m.id);
+    // Calculate past visit counts to prioritize those who haven't been visited
+    const visitCounts = new Map<string, number>();
+    targetMembers.forEach(m => visitCounts.set(m.id, 0));
+    
+    existingSessions.forEach(s => {
+      if (s.status === "COMPLETED" && (s.sessionType === "VISITATION" || s.sessionType === "VISIT" || !s.sessionType)) {
+        s.visitedMemberIds?.forEach(id => {
+          if (visitCounts.has(id)) {
+            visitCounts.set(id, visitCounts.get(id)! + 1);
+          }
+        });
+      }
+    });
+
     const newSessions: any[] = [];
 
     for (const dateStr of dates) {
-      // Check if session for this exact group already exists on this date to prevent duplicates
-      // (Optional, but usually good practice. For now, just generate)
+      const shuffleAndSort = (membersList: any[]) => {
+        return membersList
+          .map(m => ({ m, sortKey: visitCounts.get(m.id)! + Math.random() }))
+          .sort((a, b) => a.sortKey - b.sortKey)
+          .map(x => x.m);
+      };
+
+      const membersOnly = targetMembers.filter(m => m.type === "Member");
+      const fnfsOnly = targetMembers.filter(m => m.type === "FNF");
+      const visitorsOnly = targetMembers.filter(m => m.type === "Visitor" || m.type === "Not Member");
+
+      const sortedMembers = shuffleAndSort(membersOnly);
+      const sortedFnfs = shuffleAndSort(fnfsOnly);
+      const sortedVisitors = shuffleAndSort(visitorsOnly);
+
+      const selectedIds = [];
+      
+      // Target: 2 Members, 1 FNF, 1 Visitor (4 total)
+      selectedIds.push(...sortedMembers.slice(0, 2).map(m => m.id));
+      selectedIds.push(...sortedFnfs.slice(0, 1).map(m => m.id));
+      selectedIds.push(...sortedVisitors.slice(0, 1).map(m => m.id));
+
+      // Backfill if we don't have enough FNFs or Visitors
+      const needed = 4 - selectedIds.length;
+      if (needed > 0) {
+        const remainingMembers = sortedMembers.filter(m => !selectedIds.includes(m.id));
+        selectedIds.push(...remainingMembers.slice(0, needed).map(m => m.id));
+      }
+      
+      // If still short, backfill with whatever is left from FNF or Visitors
+      const stillNeeded = 4 - selectedIds.length;
+      if (stillNeeded > 0) {
+        const remainingFnfs = sortedFnfs.filter(m => !selectedIds.includes(m.id));
+        selectedIds.push(...remainingFnfs.slice(0, stillNeeded).map(m => m.id));
+      }
+
+      const evenStillNeeded = 4 - selectedIds.length;
+      if (evenStillNeeded > 0) {
+        const remainingVisitors = sortedVisitors.filter(m => !selectedIds.includes(m.id));
+        selectedIds.push(...remainingVisitors.slice(0, evenStillNeeded).map(m => m.id));
+      }
+
+      // Update the local visitCounts to ensure we don't pick the same people for the next date in the loop!
+      selectedIds.forEach(id => {
+        visitCounts.set(id, (visitCounts.get(id) || 0) + 1);
+      });
+
       newSessions.push({
         id: crypto.randomUUID(),
         date: dateStr,
         status: "PENDING",
         sessionType: "VISITATION",
-        assignedMemberIds,
+        assignedMemberIds: selectedIds,
         visitedMemberIds: [],
         branchId: targetMembers[0]?.assignedChurch || "ALL"
       });
