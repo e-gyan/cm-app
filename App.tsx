@@ -392,7 +392,7 @@ const App: React.FC = () => {
     normalizedName.includes("maxeen") ||
     isOutreachEnabledForUser;
   const showFinances = hasPermission("Finances");
-  const showAnalytics = hasPermission("Analytics");
+  const showAnalytics = hasPermission("Analytics") || currentUser.role === "TEACHER" || currentUser.type === "Teacher";
   const showSettings = isSuperAdminUser;
 
   const NavItem = ({

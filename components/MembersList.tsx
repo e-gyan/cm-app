@@ -935,7 +935,7 @@ const MembersList: React.FC<MembersListProps> = ({
                                 )}
                                 {member.type === MemberType.VISITOR && (
                                   <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1">
-                                    <Sparkles size={8} /> Visitor
+                                    <Sparkles size={8} /> First Timer
                                   </span>
                                 )}
                               </div>
@@ -980,7 +980,7 @@ const MembersList: React.FC<MembersListProps> = ({
                           <span
                             className={`px-2 py-1 rounded-lg text-xs font-semibold ${badgeClass}`}
                           >
-                            {member.type}
+                            {member.type === "Visitor" ? "First Timer" : member.type}
                           </span>
                         </td>
 
@@ -1155,7 +1155,7 @@ const MembersList: React.FC<MembersListProps> = ({
                             )}
                             {member.type === MemberType.VISITOR && (
                               <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1">
-                                <Sparkles size={10} /> Visitor
+                                <Sparkles size={10} /> First Timer
                               </span>
                             )}
                             {bdayWeek && (
@@ -1446,7 +1446,7 @@ const MembersList: React.FC<MembersListProps> = ({
             badgeClass: "bg-amber-100 text-amber-700",
           })}
           {renderMemberTableSection({
-            title: "Visitors",
+            title: "First Timers",
             members: membersToShow.filter((m) => m.type === MemberType.VISITOR),
             icon: Sparkles,
             colorClass: "text-teal-600",
@@ -1609,7 +1609,7 @@ const MembersList: React.FC<MembersListProps> = ({
               >
                 {getCreationRoleOptions().map((t) => (
                   <option key={t} value={t}>
-                    {t}
+                    {t === "Visitor" ? "First Timer" : t}
                   </option>
                 ))}
               </select>
@@ -2025,7 +2025,7 @@ const MembersList: React.FC<MembersListProps> = ({
                 }}
                 className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${filter === f ? "bg-white text-indigo-600 shadow-sm ring-1 ring-black/5" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
               >
-                {f === "CM" ? "All Active" : f === "MISSING_GENDER" ? "Missing Gender" : f === "UNASSIGNED_BRANCH" ? "Unassigned Branch" : f === "ARCHIVED" ? "Archived" : f}
+                {f === "CM" ? "All Active" : f === "MISSING_GENDER" ? "Missing Gender" : f === "UNASSIGNED_BRANCH" ? "Unassigned Branch" : f === "ARCHIVED" ? "Archived" : f === "Visitor" ? "First Timer" : f}
               </button>
             ))}
           </div>
@@ -2046,7 +2046,7 @@ const MembersList: React.FC<MembersListProps> = ({
               <option value="CM">All Active</option>
               {getCreationRoleOptions().map((f) => (
                 <option key={f} value={f}>
-                  {f}
+                  {f === "Visitor" ? "First Timer" : f}
                 </option>
               ))}
               <option value="MISSING_GENDER">Missing Gender</option>

@@ -1012,7 +1012,7 @@ const UpcomingBirthdays: React.FC<{ members: Member[] }> = ({ members }) => {
                 <Calendar size={12} />
                 {member.birthDate} 
                 <span className="text-[10px] bg-white px-2 py-0.5 rounded-full border border-pink-100 text-pink-500 uppercase tracking-wider font-bold">
-                  {member.type}
+                  {member.type === "Visitor" ? "First Timer" : member.type}
                 </span>
               </p>
             </div>
@@ -1372,7 +1372,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
     if (fnfCount > 0) {
       tips.push({
         id: tips.length + 1,
-        text: `You have ${fnfCount} recent visitor${fnfCount > 1 ? 's' : ''} or FNF.`,
+        text: `You have ${fnfCount} recent First Timer${fnfCount > 1 ? 's' : ''} or FNF.`,
         action: "Review their attendance in the People Hub to help them transition to full members."
       });
     }
@@ -1382,7 +1382,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
       tips.push({ id: 1, text: "Great job! All your members are active.", action: "Use the Punctual toggle for early arrivals to gamify the experience." });
     }
     if (tips.length < 2) {
-      tips.push({ id: tips.length + 1, text: "Ensure accurate tracking.", action: "Mark new visitors as FNF to track outreach separately." });
+      tips.push({ id: tips.length + 1, text: "Ensure accurate tracking.", action: "Mark new First Timers as FNF to track outreach separately." });
     }
     if (tips.length < 3) {
       tips.push({ id: tips.length + 1, text: "Keep members engaged.", action: "Regularly check the Outreach Hub to schedule follow-ups." });

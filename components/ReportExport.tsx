@@ -590,7 +590,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       else report += `*MEMBERS (0)*\n_None_\n\n`;
 
       if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNF", record);
-      if (visitors.length > 0) report += renderListWithServices(visitors, "VISITORS", record);
+      if (visitors.length > 0) report += renderListWithServices(visitors, "FIRST TIMERS", record);
       if (notMembers.length > 0) report += renderListWithServices(notMembers, "NOT A MEMBER", record);
 
       if (teachers.length > 0) {
@@ -1326,7 +1326,7 @@ function AnnualViewTab({ selectedDate, data, activeChurch, CHURCH_NAMES }: any) 
                 else report += `*MEMBERS (0)*\n_None_\n\n`;
 
                 if (fnfs.length > 0) report += renderList(fnfs, "FNF");
-                if (visitors.length > 0) report += renderList(visitors, "VISITORS");
+                if (visitors.length > 0) report += renderList(visitors, "FIRST TIMERS");
                 if (notMembers.length > 0) report += renderList(notMembers, "NOT A MEMBER");
 
                 if (teachers.length > 0) {

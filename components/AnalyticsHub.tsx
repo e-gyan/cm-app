@@ -504,6 +504,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
         dateObj: Date;
         Member: number;
         FNF: number;
+        Visitor: number;
         Inconsistent: number;
         Total: number;
         Male: number;
@@ -526,6 +527,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
           dateObj: new Date(r.date),
           Member: 0,
           FNF: 0,
+          Visitor: 0,
           Inconsistent: 0,
           Total: 0,
           Male: 0,
@@ -548,8 +550,8 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
             m.type === MemberType.TEACHER;
           if (m.status === MemberStatus.INCONSISTENT) entry.Inconsistent++;
           else if (m.type === MemberType.MEMBER || isTeacher) entry.Member++;
-          else if (m.type === MemberType.FNF || m.type === MemberType.VISITOR)
-            entry.FNF++;
+          else if (m.type === MemberType.FNF) entry.FNF++;
+          else if (m.type === MemberType.VISITOR) entry.Visitor++;
 
           if ([MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)) {
             if (m.gender === "MALE") entry.Male++;
@@ -670,6 +672,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
         year: d.getFullYear(),
       };
       availableChurches.forEach(c => mObj[c] = 0);
+      mObj["Unassigned"] = 0;
       months.push(mObj);
     }
 
@@ -679,8 +682,12 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       const recordYear = d.getFullYear();
       
       const monthObj = months.find(m => m.month === recordMonth && m.year === recordYear);
-      if (monthObj && availableChurches.includes(r.churchId)) {
-        monthObj[r.churchId] += r.presentMemberIds.length;
+      if (monthObj) {
+        if (availableChurches.includes(r.churchId)) {
+          monthObj[r.churchId] += r.presentMemberIds.length;
+        } else {
+          monthObj["Unassigned"] += r.presentMemberIds.length;
+        }
       }
     });
 
@@ -706,7 +713,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
         - Average Attendance: ${stats.avg}
         - Growth vs previous half of period: ${stats.growth}%
         - Retention Rate: ${stats.retention}%
-        - New Visitors avg: ${stats.newFaces}
+        - New First Timers avg: ${stats.newFaces}
         - Data Points: ${JSON.stringify(chartData.map((d) => ({ date: d.date, total: d.Total })))}
 
         Instructions:
@@ -1006,25 +1013,28 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       teachers: Math.round(latest4.reduce((acc, s) => acc + s.teachersCount, 0) / (latest4.length || 1)),
     };
 
-    const membersPred = Math.round(avg2W.members * 0.6 + avg1M.members * 0.4);
-    const fnfPred = Math.round(avg2W.fnf * 0.6 + avg1M.fnf * 0.4);
-    const visitorsPred = Math.round(avg2W.visitors * 0.6 + avg1M.visitors * 0.4);
-    const teachersPred = Math.round(avg2W.teachers * 0.6 + avg1M.teachers * 0.4);
-    const predict = {
-      members: membersPred,
-      fnf: fnfPred,
-      visitors: visitorsPred,
-      teachers: teachersPred,
-      total: membersPred + fnfPred + visitorsPred + teachersPred
+    // Calculate targets: 5% growth over the highest of the two rolling averages
+    const calcTarget = (a, b) => Math.ceil(Math.max(a, b) * 1.05);
+    const membersTarget = calcTarget(avg2W.members, avg1M.members);
+    const fnfTarget = calcTarget(avg2W.fnf, avg1M.fnf);
+    const visitorsTarget = calcTarget(avg2W.visitors, avg1M.visitors);
+    const teachersTarget = Math.max(avg2W.teachers, avg1M.teachers); // Teachers don't need arbitrary growth
+
+    const target = {
+      members: membersTarget,
+      fnf: fnfTarget,
+      visitors: visitorsTarget,
+      teachers: teachersTarget,
+      total: membersTarget + fnfTarget + visitorsTarget + teachersTarget
     };
 
-    const trend = predict.total >= (dateStats[0]?.total || 0) ? "UP" : "DOWN";
-    const growthRate = dateStats[0]?.total ? ((predict.total - dateStats[0].total) / dateStats[0].total) * 100 : 0;
+    const trend = target.total >= (dateStats[0]?.total || 0) ? "UP" : "DOWN";
+    const growthRate = dateStats[0]?.total ? ((target.total - dateStats[0].total) / dateStats[0].total) * 100 : 0;
 
     return {
       avg2W,
       avg1M,
-      predict,
+      target,
       trend,
       growthRate,
       baseCount: dateStats.length
@@ -1103,7 +1113,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
         </div>
       </div>
 
-      {/* PREDICTION WIDGET */}
+            {/* PREDICTION WIDGET */}
       {predictionModel && (
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
@@ -1113,39 +1123,55 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
           <div className="absolute top-0 right-0 p-8 opacity-10">
             <Sparkles size={160} />
           </div>
-          <div className="relative z-10 flex flex-col md:flex-row gap-8 justify-between items-start md:items-center">
-            <div className="max-w-md">
+          <div className="relative z-10 flex flex-col xl:flex-row gap-8 justify-between items-start xl:items-center">
+            <div className="max-w-lg">
               <div className="flex items-center gap-2 mb-3">
                 <div className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles size={12} className="text-amber-300" /> AI Forecast
+                  <Sparkles size={12} className="text-amber-300" /> Attendance Targets
                 </div>
-                <span className="text-xs font-medium text-indigo-200">Next Sunday Projection</span>
+                <span className="text-xs font-medium text-indigo-200">Next Sunday Goal</span>
               </div>
               <h3 className="text-3xl font-extrabold mb-2">
-                Expected: {predictionModel.predict.total} Attendees
+                Target: {predictionModel.target.total} Attendees
               </h3>
               <p className="text-sm text-indigo-200 leading-relaxed">
-                Based on a weighted blend of your last 2 weeks and 1 month data, 
-                we project a <strong className={predictionModel.trend === "UP" ? "text-emerald-400" : "text-rose-400"}>{Math.abs(predictionModel.growthRate).toFixed(1)}% {predictionModel.trend === "UP" ? "increase" : "decrease"}</strong> compared to your most recent gathering.
+                Calculated based on the rolling average of your last 2 weeks and 1 month. The targets below represent a <strong className="text-emerald-400">5% growth goal</strong> over your highest recent average to encourage consistent outreach and retention.
               </p>
             </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 w-full md:w-auto">
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center">
-                <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">Members</div>
-                <div className="text-2xl font-bold">{predictionModel.predict.members}</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center">
-                <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">FNF</div>
-                <div className="text-2xl font-bold">{predictionModel.predict.fnf}</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center">
-                <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">Visitors</div>
-                <div className="text-2xl font-bold">{predictionModel.predict.visitors}</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 text-center">
-                <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">Teachers</div>
-                <div className="text-2xl font-bold text-emerald-300">{predictionModel.predict.teachers}</div>
+            <div className="w-full xl:w-auto">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center">
+                  <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">Members</div>
+                  <div className="text-2xl font-bold text-white mb-2">{predictionModel.target.members}</div>
+                  <div className="flex gap-2 text-[9px] text-indigo-300/80">
+                    <span title="2-Week Avg">2W: {predictionModel.avg2W.members}</span>
+                    <span title="1-Month Avg">1M: {predictionModel.avg1M.members}</span>
+                  </div>
+                </div>
+                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center">
+                  <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">FNF</div>
+                  <div className="text-2xl font-bold text-white mb-2">{predictionModel.target.fnf}</div>
+                  <div className="flex gap-2 text-[9px] text-indigo-300/80">
+                    <span title="2-Week Avg">2W: {predictionModel.avg2W.fnf}</span>
+                    <span title="1-Month Avg">1M: {predictionModel.avg1M.fnf}</span>
+                  </div>
+                </div>
+                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center">
+                  <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">First Timers</div>
+                  <div className="text-2xl font-bold text-white mb-2">{predictionModel.target.visitors}</div>
+                  <div className="flex gap-2 text-[9px] text-indigo-300/80">
+                    <span title="2-Week Avg">2W: {predictionModel.avg2W.visitors}</span>
+                    <span title="1-Month Avg">1M: {predictionModel.avg1M.visitors}</span>
+                  </div>
+                </div>
+                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center">
+                  <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">Teachers</div>
+                  <div className="text-2xl font-bold text-emerald-300 mb-2">{predictionModel.target.teachers}</div>
+                  <div className="flex gap-2 text-[9px] text-indigo-300/80">
+                    <span title="2-Week Avg">2W: {predictionModel.avg2W.teachers}</span>
+                    <span title="1-Month Avg">1M: {predictionModel.avg1M.teachers}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1317,8 +1343,11 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                   <div className="flex items-center gap-1 text-amber-600">
                     <div className="w-2 h-2 rounded-full bg-amber-500"></div> FNF
                   </div>
+                  <div className="flex items-center gap-1 text-pink-600">
+                    <div className="w-2 h-2 rounded-full bg-pink-500"></div> First Timers
+                  </div>
                   <div className="flex items-center gap-1 text-rose-600">
-                    <div className="w-2 h-2 rounded-full bg-rose-500"></div> Other
+                    <div className="w-2 h-2 rounded-full bg-rose-500"></div> Inconsistent
                   </div>
                 </div>
               ) : (
@@ -1410,9 +1439,19 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                         <Area
                           type="monotone"
                           dataKey="FNF"
+                          name="FNF"
                           stackId="1"
                           stroke="#f59e0b"
                           fill="url(#colorFnf)"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="Visitor"
+                          name="First Timers"
+                          stackId="1"
+                          stroke="#ec4899"
+                          fill="#ec4899"
+                          fillOpacity={0.6}
                         />
                         <Area
                           type="monotone"
@@ -1524,6 +1563,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                   {availableChurches.includes("K") && <Area type="monotone" dataKey="K" stroke="#f59e0b" fillOpacity={1} fill="url(#colorK)" strokeWidth={2} />}
                   {availableChurches.includes("I") && <Area type="monotone" dataKey="I" stroke="#10b981" fillOpacity={1} fill="url(#colorI)" strokeWidth={2} />}
                   {availableChurches.includes("N") && <Area type="monotone" dataKey="N" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorN)" strokeWidth={2} />}
+                  <Area type="monotone" dataKey="Unassigned" stroke="#94a3b8" fillOpacity={1} fill="transparent" strokeWidth={2} strokeDasharray="3 3" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -1724,6 +1764,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       )}
 
       {/* SECTION C: FINANCIAL INTELLIGENCE */}
+      {hasManagementView && (
       <div className="space-y-4">
         <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2 px-1">
           <Wallet size={20} className="text-emerald-600" /> Financial
@@ -1837,6 +1878,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
         </div>
       </div>
 
+      )}
       {/* SECTION D: MEMBER EXPORT */}
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
         <div className="flex items-center justify-between mb-6">

@@ -871,7 +871,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               <button
                 onClick={() => setIsAddingFNF(!isAddingFNF)}
                 className="p-3 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-100"
-                title="Add Visitor"
+                title="Add First Timer"
               >
                 <UserPlus size={20} />
               </button>
@@ -935,7 +935,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   onClick={() => setFilterType(type)}
                   className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterType === type ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
                 >
-                  {type}
+                  {type === MemberType.VISITOR ? "First Timer" : type}
                 </button>
               ))}
 
@@ -984,15 +984,15 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             
             <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
               <UserPlus className="text-indigo-600" size={22} />
-              Add New Visitor
+              Add New First Timer
             </h3>
             <p className="text-xs text-slate-500 mb-4">
-              Add a new visitor to the directory and mark them present for this Sunday ({formatDateDDMMYYYY(selectedDate)}).
+              Add a new First Timer to the directory and mark them present for this Sunday ({formatDateDDMMYYYY(selectedDate)}).
             </p>
             
             <input
               type="text"
-              placeholder="Visitor's Full Name"
+              placeholder="First Timer's Full Name"
               value={newMemberName}
               onChange={(e) => setNewMemberName(e.target.value)}
               className="w-full p-3 border border-slate-200 rounded-xl mb-4 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium text-slate-700 bg-slate-50 placeholder:text-slate-400"
@@ -1079,7 +1079,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                       <p
                         className={`text-xs font-medium uppercase tracking-wider ${isPresent ? "opacity-80" : "text-slate-400"}`}
                       >
-                        {member.type}
+                        {member.type === "Visitor" ? "First Timer" : member.type}
                       </p>
                       {(isCombinedView || effectiveChurch === "CM") && (
                         <span

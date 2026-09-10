@@ -1502,7 +1502,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             <div>
               <p className="font-bold text-slate-800">Members Directory & Connect</p>
               <p className="text-xs text-slate-500">
-                Contact and check in on registered church members. Visitors and follow-ups are in the dedicated Follow Up tab.
+                Contact and check in on registered church members. First Timers and follow-ups are in the dedicated Follow Up tab.
               </p>
             </div>
           </div>
@@ -1534,7 +1534,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         </div>
       )}
 
-      {/* FOLLOW UP TAB (Exclusively for Visitors, FNF, Not-Members) */}
+      {/* FOLLOW UP TAB (Exclusively for First Timers, FNF, Not-Members) */}
       {activeTab === "FOLLOW_UP" && (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
           {/* Header Banner */}
@@ -1546,10 +1546,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 </span>
                 <div>
                   <h3 className="text-lg font-extrabold tracking-tight">
-                    Visitor & Follow-Up Care
+                    First Timer & Follow-Up Care
                   </h3>
                   <p className="text-teal-200 text-xs font-medium">
-                    Dedicated outreach for tracking visitors and FNF, with 1-click promotion to full member status.
+                    Dedicated outreach for tracking First Timers and FNF, with 1-click promotion to full member status.
                   </p>
                 </div>
               </div>
@@ -1558,7 +1558,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             {/* Metrics Chips */}
             <div className="grid grid-cols-3 gap-2 mt-2 pt-3 border-t border-teal-600/40">
               <div className="bg-teal-900/40 p-2.5 rounded-xl text-center">
-                <div className="text-[10px] text-teal-300 font-bold uppercase">Visitors</div>
+                <div className="text-[10px] text-teal-300 font-bold uppercase">First Timers</div>
                 <div className="text-lg font-black text-white">
                   {visitorList.filter((m) => m.type === MemberType.VISITOR).length}
                 </div>
@@ -1589,7 +1589,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 type="text"
                 value={visitorSearch}
                 onChange={(e) => setVisitorSearch(e.target.value)}
-                placeholder="Search visitors by name, phone, or address..."
+                placeholder="Search First Timers by name, phone, or address..."
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-teal-500"
               />
               {visitorSearch && (
@@ -1607,7 +1607,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 { id: "ALL", label: "All Contacts", count: visitorList.length },
                 {
                   id: "VISITOR",
-                  label: "Visitors",
+                  label: "First Timers",
                   count: visitorList.filter((m) => m.type === MemberType.VISITOR).length,
                 },
                 {
@@ -1645,7 +1645,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             </div>
           </div>
 
-          {/* Filtered Visitors List */}
+          {/* Filtered First Timers List */}
           {(() => {
             const filtered = visitorList.filter((m) => {
               if (visitorFilter !== "ALL" && m.type !== visitorFilter) return false;
@@ -1665,11 +1665,11 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                   <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto">
                     <Sparkles size={24} />
                   </div>
-                  <h4 className="font-bold text-slate-700">No visitors found</h4>
+                  <h4 className="font-bold text-slate-700">No First Timers found</h4>
                   <p className="text-xs text-slate-400 max-w-xs mx-auto">
                     {visitorSearch
                       ? "No records matched your search filter."
-                      : "There are currently no visitors or friends & family in this church."}
+                      : "There are currently no First Timers or friends & family in this church."}
                   </p>
                 </div>
               );
@@ -1699,7 +1699,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                               </h4>
                               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-100 uppercase">
-                                  {m.type}
+                                  {m.type === "Visitor" ? "First Timer" : m.type}
                                 </span>
                                 {m.assignedChurch && (
                                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">
@@ -2121,7 +2121,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 color="amber"
               />
               <CollapsibleProgressSection
-                title="Visitors"
+                title="First Timers"
                 members={connectList.filter(
                   (m) => m.type === MemberType.VISITOR,
                 )}
@@ -2958,7 +2958,7 @@ const CollapsibleProgressSection = ({
                       )}
                       {isVisitor && (
                         <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1 shrink-0">
-                          <Sparkles size={8} /> Visitor
+                          <Sparkles size={8} /> First Timer
                         </span>
                       )}
                     </h4>
@@ -3114,7 +3114,7 @@ const CollapsibleContactSection = ({
                       )}
                       {isVisitor && (
                         <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1 shrink-0">
-                          <Sparkles size={8} /> Visitor
+                          <Sparkles size={8} /> First Timer
                         </span>
                       )}
                     </h4>
@@ -3317,7 +3317,7 @@ const SessionChildList = ({
                   <span
                     className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold ${m.type === "Member" ? "bg-indigo-50 text-indigo-600" : "bg-amber-50 text-amber-600"}`}
                   >
-                    {m.type}
+                    {m.type === "Visitor" ? "First Timer" : m.type}
                   </span>
                   {m.address && (
                     <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
@@ -3404,7 +3404,7 @@ const AddMemberModal = ({
               <div>
                 <div className="font-bold text-slate-700">{m.name}</div>
                 <div className="text-[10px] text-slate-400 uppercase font-bold">
-                  {m.type}
+                  {m.type === "Visitor" ? "First Timer" : m.type}
                 </div>
               </div>
               <Plus
