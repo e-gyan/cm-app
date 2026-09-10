@@ -97,26 +97,77 @@ const DemographicsChart = ({
       effectiveChurch === "All" ? true : m.assignedChurch === effectiveChurch,
     );
 
-    let ageData = [
-      { group: "0-5", count: 0 },
-      { group: "6-9", count: 0 },
-      { group: "10-12", count: 0 },
-      { group: "13-15", count: 0 },
-      { group: "16-19", count: 0 },
-      { group: "20+", count: 0 },
-      { group: "Unknown", count: 0 },
-    ];
+    let ageGroups: { group: string; min: number; max: number; count: number }[] = [];
+
+    switch (effectiveChurch) {
+      case "I":
+      case "N":
+        ageGroups = [
+          { group: "0 yrs", min: 0, max: 0, count: 0 },
+          { group: "1 yr", min: 1, max: 1, count: 0 },
+          { group: "2 yrs", min: 2, max: 2, count: 0 },
+          { group: "Outliers (3+)", min: 3, max: 999, count: 0 },
+          { group: "Unknown", min: -1, max: -1, count: 0 },
+        ];
+        break;
+      case "K":
+        ageGroups = [
+          { group: "< 3", min: 0, max: 2, count: 0 },
+          { group: "3 yrs", min: 3, max: 3, count: 0 },
+          { group: "4 yrs", min: 4, max: 4, count: 0 },
+          { group: "5 yrs", min: 5, max: 5, count: 0 },
+          { group: "Outliers (6+)", min: 6, max: 999, count: 0 },
+          { group: "Unknown", min: -1, max: -1, count: 0 },
+        ];
+        break;
+      case "LJ":
+        ageGroups = [
+          { group: "< 6", min: 0, max: 5, count: 0 },
+          { group: "6 yrs", min: 6, max: 6, count: 0 },
+          { group: "7 yrs", min: 7, max: 7, count: 0 },
+          { group: "8 yrs", min: 8, max: 8, count: 0 },
+          { group: "Outliers (9+)", min: 9, max: 999, count: 0 },
+          { group: "Unknown", min: -1, max: -1, count: 0 },
+        ];
+        break;
+      case "UJ":
+        ageGroups = [
+          { group: "< 9", min: 0, max: 8, count: 0 },
+          { group: "9 yrs", min: 9, max: 9, count: 0 },
+          { group: "10 yrs", min: 10, max: 10, count: 0 },
+          { group: "11 yrs", min: 11, max: 11, count: 0 },
+          { group: "12 yrs", min: 12, max: 12, count: 0 },
+          { group: "Outliers (13+)", min: 13, max: 999, count: 0 },
+          { group: "Unknown", min: -1, max: -1, count: 0 },
+        ];
+        break;
+      default: // "All" or unknown
+        ageGroups = [
+          { group: "I (0-2)", min: 0, max: 2, count: 0 },
+          { group: "K (3-5)", min: 3, max: 5, count: 0 },
+          { group: "LJ (6-8)", min: 6, max: 8, count: 0 },
+          { group: "UJ (9-12)", min: 9, max: 12, count: 0 },
+          { group: "Teens (13+)", min: 13, max: 999, count: 0 },
+          { group: "Unknown", min: -1, max: -1, count: 0 },
+        ];
+        break;
+    }
 
     filtered.forEach((m) => {
       const age = calculateAge(m.birthDate);
-      if (age === null) ageData[6].count++;
-      else if (age <= 5) ageData[0].count++;
-      else if (age <= 9) ageData[1].count++;
-      else if (age <= 12) ageData[2].count++;
-      else if (age <= 15) ageData[3].count++;
-      else if (age <= 19) ageData[4].count++;
-      else ageData[5].count++;
+      if (age === null) {
+        ageGroups[ageGroups.length - 1].count++;
+      } else {
+        for (let i = 0; i < ageGroups.length - 1; i++) {
+          if (age >= ageGroups[i].min && age <= ageGroups[i].max) {
+            ageGroups[i].count++;
+            break;
+          }
+        }
+      }
     });
+
+    const ageData = ageGroups.map(g => ({ group: g.group, count: g.count }));
 
     const margin = { top: 20, right: 20, bottom: 40, left: 40 };
     const width = dimensions.width - margin.left - margin.right;
