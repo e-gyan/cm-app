@@ -274,5 +274,48 @@ export const updateTargets = async (targets: any) => {
 };
 
 export const generateOutreachSchedule = async (m: any, d: any) => { return { success: true, data: [] as string[], message: "" }; };
-export const generatePrayerSchedule = async (m: any, d: any) => { return { success: true, data: [] as Date[], message: "" }; };
+export const generatePrayerSchedule = async (prayerWeek: Date, targetMembers: Member[]) => {
+  try {
+    const data = await loadData();
+    const existingSchedule = data.prayerSchedule || [];
+    
+    const newSlots: PrayerSlot[] = [];
+    const members = [...targetMembers];
+    
+    if (members.length === 0) {
+      return { success: false, message: "No members available to generate schedule." };
+    }
+
+    for (let i = 0; i < 5; i++) {
+      const slotDate = new Date(prayerWeek);
+      slotDate.setDate(slotDate.getDate() + i);
+      const dateStr = slotDate.toISOString().split('T')[0];
+      const dayOfWeek = slotDate.toLocaleDateString("en-GB", { weekday: "long" });
+
+      const assignedMemberIds = [];
+      const shuffled = [...members].sort(() => 0.5 - Math.random());
+      for (let j = 0; j < Math.min(5, shuffled.length); j++) {
+        assignedMemberIds.push(shuffled[j].id);
+      }
+
+      newSlots.push({
+        id: crypto.randomUUID(),
+        date: dateStr,
+        dayOfWeek: dayOfWeek,
+        isCompleted: false,
+        assignedMemberIds,
+        durationMins: 0,
+        branchId: members[0].branchId || "ALL"
+      });
+    }
+
+    const updatedSchedule = [...existingSchedule, ...newSlots];
+    await updateMainDoc({ prayerSchedule: updatedSchedule });
+
+    return { success: true, data: updatedSchedule, message: "Generated weekly prayer schedule!" };
+  } catch (err) {
+    console.error(err);
+    return { success: false, message: "Failed to generate schedule." };
+  }
+};
 export const authenticateUser = async (u: string, p: string) => { return { success: true, member: null as any, message: "" }; };

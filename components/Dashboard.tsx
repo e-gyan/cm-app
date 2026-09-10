@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { AppData, MemberType, MemberStatus, Church, Member } from "../types";
+import { calculateChurchDivisions } from "../lib/teacherDivision";
 import { updateTargets } from "../services/storageService";
 
 const containerVariants = {
@@ -1023,11 +1024,47 @@ const UpcomingBirthdays: React.FC<{ members: Member[] }> = ({ members }) => {
 };
 
 // --- CHURCH DASHBOARD ---
-const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church }> = ({
+const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUser: Member }> = ({
   data,
   activeChurch,
+  currentUser,
 }) => {
   // ... existing stats calculation ...
+    const isTeacherUser = currentUser.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(currentUser.type) || (currentUser.role && currentUser.role !== "NONE");
+  
+  const teacherSummary = useMemo(() => {
+    let completedPrayers = 0;
+    let completedVisits = 0;
+    let divisionTarget = 0;
+    
+    if (isTeacherUser) {
+      const divisions = calculateChurchDivisions(data.members, [activeChurch]);
+      const myDiv = divisions[activeChurch];
+      if (myDiv) {
+        const myAssignment = myDiv.assignments.find(a => a.teacher.id === currentUser.id);
+        if (myAssignment) {
+          divisionTarget = myAssignment.members.length;
+          const assignedIds = new Set(myAssignment.members.map(m => m.id));
+          const todayStr = new Date().toISOString().split("T")[0];
+          
+          completedPrayers = (data.prayerSchedule || []).filter(s => 
+            s.isCompleted && 
+            s.date === todayStr && 
+            s.assignedMemberIds?.some(id => assignedIds.has(id))
+          ).length;
+
+          completedVisits = (data.outreachSessions || []).filter(s => 
+            s.status === "COMPLETED" && 
+            (s.sessionType === "VISIT" || !s.sessionType) && 
+            s.date === todayStr && 
+            s.assignedMemberIds?.some(id => assignedIds.has(id))
+          ).length;
+        }
+      }
+    }
+    return { completedPrayers, completedVisits, divisionTarget };
+  }, [data.members, data.prayerSchedule, data.outreachSessions, activeChurch, currentUser, isTeacherUser]);
+
   const stats = useMemo(() => {
     // ... (existing code for population, members, attendance) ...
     const membersInChurch = data.members.filter(
@@ -1676,7 +1713,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       {showAdminView ? (
         <AdminDashboard data={data} />
       ) : (
-        <ChurchDashboard data={data} activeChurch={activeChurch} />
+        <ChurchDashboard data={data} activeChurch={activeChurch} currentUser={currentUser} />
       )}
     </div>
   );

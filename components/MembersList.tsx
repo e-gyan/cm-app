@@ -632,12 +632,6 @@ const MembersList: React.FC<MembersListProps> = ({
 
   const getMemberAttendanceCount = (member: Member) => {
     let startDate = new Date(member.joinedDate);
-    if (
-      member.lastActivationDate &&
-      new Date(member.lastActivationDate) > startDate
-    ) {
-      startDate = new Date(member.lastActivationDate);
-    }
     startDate.setHours(0, 0, 0, 0);
 
     
@@ -656,11 +650,12 @@ const MembersList: React.FC<MembersListProps> = ({
         }
       }
 
-      // Include if it's the current church AND on or after the calculated start date AND not on vacation
+      const isPresent = r.presentMemberIds.includes(member.id);
+      // Include if it's the current church AND on or after the calculated start date AND not on vacation (UNLESS they were present)
       return (
         r.churchId === member.assignedChurch &&
         recordDate.getTime() >= startDate.getTime() &&
-        !isVacation
+        (!isVacation || isPresent)
       );
     });
 
@@ -674,12 +669,6 @@ const MembersList: React.FC<MembersListProps> = ({
     // Determine the start date for attendance calculation
     // Priority: Last Activation Date > Joined Date
     let startDate = new Date(member.joinedDate);
-    if (
-      member.lastActivationDate &&
-      new Date(member.lastActivationDate) > startDate
-    ) {
-      startDate = new Date(member.lastActivationDate);
-    }
 
     // Normalize to midnight to ensure inclusive comparison regardless of time
     startDate.setHours(0, 0, 0, 0);
@@ -699,11 +688,12 @@ const MembersList: React.FC<MembersListProps> = ({
         }
       }
 
-      // Include if it's the current church AND on or after the calculated start date AND not on vacation
+      const isPresent = r.presentMemberIds.includes(member.id);
+      // Include if it's the current church AND on or after the calculated start date AND not on vacation (UNLESS they were present)
       return (
         r.churchId === member.assignedChurch &&
         recordDate.getTime() >= startDate.getTime() &&
-        !isVacation
+        (!isVacation || isPresent)
       );
     });
 

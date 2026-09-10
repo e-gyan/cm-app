@@ -228,48 +228,48 @@ const Settings: React.FC<SettingsProps> = ({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {/* Sidebar */}
+                {/* Sidebar */}
         <div className="md:col-span-1 space-y-2">
           <button
             onClick={() => setActiveTab("GENERAL")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === "GENERAL"? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab === "GENERAL"? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
           >
-            General
+            <SettingsIcon size={16} /> General
           </button>
           <button
             onClick={() => setActiveTab("CHURCHES")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab ==="GENERAL"? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab === "CHURCHES"? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
           >
-            Church Branches
+            <Database size={16} /> Church Branches
           </button>
           <button
             onClick={() => setActiveTab("ORGANIZATION")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab ==="GENERAL"? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab === "ORGANIZATION"? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
           >
-            Organization Structure
+            <List size={16} /> Organization Structure
           </button>
           <button
             onClick={() => setActiveTab("THEME")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab ==="GENERAL"? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab === "THEME"? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
           >
-            Theme Colors
+            <Palette size={16} /> Theme Colors
           </button>
           <button
             onClick={() => setActiveTab("PERMISSIONS")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab ==="PERMISSIONS" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab ==="PERMISSIONS" ? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
           >
-            Role Permissions
+            <CheckCircle size={16} /> Role Permissions
           </button>
           <button
             onClick={() => setActiveTab("CLOUD")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab ==="GENERAL"? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab === "CLOUD"? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
           >
-            Cloud Sync
+            <Cloud size={16} /> Cloud Sync
           </button>
           {isAdmin && (
             <button
               onClick={() => setActiveTab("MAINTENANCE")}
-              className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === "MAINTENANCE" ? "bg-indigo-600 text-white shadow-md" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+              className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab === "MAINTENANCE" ? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
             >
               <Wrench size={16} /> Maintenance
             </button>
@@ -358,7 +358,7 @@ const Settings: React.FC<SettingsProps> = ({
           )}
 
           {/* CHURCHES TAB */}
-          {activeTab ==="GENERAL"&& (
+          {activeTab === "CHURCHES"&& (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="font-bold text-lg text-slate-800">
@@ -410,7 +410,7 @@ const Settings: React.FC<SettingsProps> = ({
           )}
 
           {/* ORGANIZATION TAB */}
-          {activeTab ==="GENERAL"&& (
+          {activeTab === "ORGANIZATION"&& (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="font-bold text-lg text-slate-800">
@@ -629,7 +629,7 @@ const Settings: React.FC<SettingsProps> = ({
           )}
 
           {/* THEME TAB */}
-          {activeTab ==="GENERAL"&& (
+          {activeTab === "THEME"&& (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
@@ -753,7 +753,7 @@ const Settings: React.FC<SettingsProps> = ({
           )}
 
           {/* PERMISSIONS TAB */}
-          {activeTab ==="GENERAL" && (
+          {activeTab === "PERMISSIONS" && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
@@ -924,7 +924,7 @@ const Settings: React.FC<SettingsProps> = ({
           )}
 
           {/* CLOUD TAB */}
-          {activeTab ==="GENERAL"&& (
+          {activeTab === "CLOUD"&& (
             <div className="space-y-6">
               <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
                 <Cloud size={20} className="text-indigo-600" /> Firebase Sync

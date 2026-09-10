@@ -1,3 +1,4 @@
+import { calculateChurchDivisions } from "../lib/teacherDivision";
 import { generatePrayerSchedule, generateOutreachSchedule } from "../services/storageService";
 import React, { useState, useMemo, useEffect } from "react";
 import { AppData,
@@ -174,6 +175,23 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   currentUser,
   activeChurch,
 }) => {
+    const divisions = useMemo(() => {
+    return calculateChurchDivisions(data.members, ["UJ"]);
+  }, [data.members]);
+
+  const visitorFnfIds = useMemo(() => {
+    return new Set(
+      data.members
+        .filter(
+          (m) =>
+            m.type === MemberType.VISITOR ||
+            m.type === MemberType.FNF ||
+            m.type === MemberType.NOT_MEMBER,
+        )
+        .map((m) => m.id)
+    );
+  }, [data.members]);
+
   const [activeTab, setActiveTab] = useState<
     "VISIT" | "PRAYER" | "CONNECT" | "FOLLOW_UP" | "TRACK"
   >(() => (sessionStorage.getItem("outreach_activeTab") as any) || "VISIT");
@@ -368,17 +386,27 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       }
 
       if (!hasSlots) {
-        const targetMembers = data.members.filter(
+        let targetMembers = data.members.filter(
           (m) =>
             isMemberInActiveChurch(m) &&
-            !["Teacher", "Helper", "Volunteer"].includes(m.type),
+            !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+            m.status !== MemberStatus.ARCHIVED,
         );
+
+        if (!isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)) {
+          const ujDiv = divisions["UJ"];
+          if (ujDiv) {
+            const assignment = ujDiv.assignments.find((a) => a.teacher.id === currentUser.id);
+            if (assignment) {
+              const assignedIds = new Set(assignment.members.map((m) => m.id));
+              targetMembers = targetMembers.filter(m => assignedIds.has(m.id) || visitorFnfIds.has(m.id));
+            }
+          }
+        }
+
         if (targetMembers.length > 0) {
           const res = await generatePrayerSchedule(startOfCurrentWeek, targetMembers);
           if (res.success) {
-            if (res.data) {
-              setLocalPrayerSlots(JSON.parse(JSON.stringify(res.data)));
-            }
             onUpdate();
             setGenMsg({
               type: "success",
@@ -421,7 +449,8 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     const ujMembers = data.members.filter(
       (m) =>
         m.assignedChurch === "UJ" &&
-        !["Teacher", "Helper", "Volunteer"].includes(m.type),
+        !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+            m.status !== MemberStatus.ARCHIVED,
     );
     const res = await generateOutreachSchedule(ujMembers, selectedDates);
     if (res.success) {
@@ -661,17 +690,41 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   // --- PRAYER LOGIC ---
 
   const handleGeneratePrayer = async () => {
-    const targetMembers = data.members.filter(
+    const startStr = prayerWeek.toISOString().split("T")[0];
+    const endOfWeek = new Date(prayerWeek);
+    endOfWeek.setDate(endOfWeek.getDate() + 7);
+    const endStr = endOfWeek.toISOString().split("T")[0];
+    
+    // Check if there are already slots for this week for this user
+    const teacherHasSlots = filteredLocalPrayerSlots.some(s => s.date >= startStr && s.date < endStr);
+    
+    if (teacherHasSlots) {
+      setGenMsg({ type: "error", text: "You already have a prayer schedule for this week!" });
+      setTimeout(() => setGenMsg(null), 4000);
+      return;
+    }
+
+    let targetMembers = data.members.filter(
       (m) =>
         isMemberInActiveChurch(m) &&
-        !["Teacher", "Helper", "Volunteer"].includes(m.type),
+        !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+            m.status !== MemberStatus.ARCHIVED,
     );
+
+    if (!isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)) {
+      const ujDiv = divisions["UJ"];
+      if (ujDiv) {
+        const assignment = ujDiv.assignments.find((a) => a.teacher.id === currentUser.id);
+        if (assignment) {
+          const assignedIds = new Set(assignment.members.map((m) => m.id));
+          targetMembers = targetMembers.filter(m => assignedIds.has(m.id) || visitorFnfIds.has(m.id));
+        }
+      }
+    }
+
     const res = await generatePrayerSchedule(prayerWeek, targetMembers);
 
     if (res.success) {
-      if (res.data) {
-        setLocalPrayerSlots(JSON.parse(JSON.stringify(res.data)));
-      }
       setGenMsg({ type: "success", text: res.message });
       onUpdate();
     } else {
@@ -767,8 +820,29 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
   // --- DERIVED DATA & EXPORT LOGIC ---
 
+    const filteredLocalSessions = useMemo(() => {
+    let sessions = localSessions || [];
+    if (!isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)) {
+      const ujDiv = divisions["UJ"];
+      if (ujDiv) {
+        const assignment = ujDiv.assignments.find((a) => a.teacher.id === currentUser.id);
+        if (assignment) {
+          const assignedIds = new Set(assignment.members.map((m) => m.id));
+          sessions = sessions.filter(s => 
+            s.assignedMemberIds.some(id => assignedIds.has(id) || visitorFnfIds.has(id))
+          );
+        } else {
+          sessions = sessions.filter(s => 
+            s.assignedMemberIds.some(id => visitorFnfIds.has(id))
+          );
+        }
+      }
+    }
+    return sessions;
+  }, [localSessions, isAdmin, activeChurch, currentUser, divisions, visitorFnfIds]);
+
   const sortedVisits = useMemo(() => {
-    const all = localSessions || [];
+    const all = filteredLocalSessions || [];
     const pending = all
       .filter((s) => s.status === "PENDING")
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -778,14 +852,14 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     const nextUp = pending.length > 0 ? pending[0] : null;
     const otherPending = pending.length > 0 ? pending.slice(1) : [];
     return { nextUp, otherPending, completed };
-  }, [localSessions]);
+  }, [filteredLocalSessions]);
 
   // Derived list of MISSED/INCOMPLETE visits from past sessions
   const incompleteVisits = useMemo(() => {
     const today = new Date().toISOString().split("T")[0];
     const list: { memberId: string; date: string; sessionId: string }[] = [];
 
-    (localSessions || []).forEach((session) => {
+    (filteredLocalSessions || []).forEach((session) => {
       // If session date is past, find unvisited members
       if (session.date < today) {
         session.assignedMemberIds.forEach((mid) => {
@@ -802,14 +876,31 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     return list.sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
     );
-  }, [localSessions]);
+  }, [filteredLocalSessions]);
+
+    const filteredLocalPrayerSlots = useMemo(() => {
+    let slots = localPrayerSlots || [];
+    if (!isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)) {
+      const ujDiv = divisions["UJ"];
+      if (ujDiv) {
+        const assignment = ujDiv.assignments.find((a) => a.teacher.id === currentUser.id);
+        if (assignment) {
+          const assignedIds = new Set(assignment.members.map((m) => m.id));
+          slots = slots.filter(s => s.assignedMemberIds?.some(id => assignedIds.has(id) || visitorFnfIds.has(id)));
+        } else {
+          slots = slots.filter(s => s.assignedMemberIds?.some(id => visitorFnfIds.has(id)));
+        }
+      }
+    }
+    return slots;
+  }, [localPrayerSlots, isAdmin, activeChurch, currentUser, divisions, visitorFnfIds]);
 
   const prayerData = useMemo(() => {
-    if (localPrayerSlots.length === 0)
+    if (filteredLocalPrayerSlots.length === 0)
       return { active: [], expired: [], completed: [] };
     const today = new Date().toISOString().split("T")[0];
 
-    const all = [...localPrayerSlots].sort(
+    const all = [...filteredLocalPrayerSlots].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
     );
     const expired = all.filter((s) => s.date < today && !s.isCompleted);
@@ -817,7 +908,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     const active = all.filter((s) => s.date >= today && !s.isCompleted);
 
     return { active, expired, completed };
-  }, [localPrayerSlots]);
+  }, [filteredLocalPrayerSlots]);
 
   const handleExportVisits = () => {
     const pendingVisits = [
@@ -872,16 +963,29 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   };
 
   // --- CONNECT TAB DATA ---
-  const connectList = useMemo(() => {
-    return data.members
-      .filter(
-        (m) =>
-          isMemberInActiveChurch(m) &&
-          m.type === MemberType.MEMBER &&
-          m.status !== MemberStatus.ARCHIVED,
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [data.members, activeChurch, filterChurch, isAdmin]);
+    const connectList = useMemo(() => {
+    let list = data.members.filter(
+      (m) =>
+        isMemberInActiveChurch(m) &&
+        m.type === MemberType.MEMBER &&
+        m.status !== MemberStatus.ARCHIVED,
+    );
+
+    if (!isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)) {
+      const ujDiv = divisions["UJ"];
+      if (ujDiv) {
+        const assignment = ujDiv.assignments.find((a) => a.teacher.id === currentUser.id);
+        if (assignment) {
+          const assignedIds = new Set(assignment.members.map((m) => m.id));
+          list = list.filter((m) => assignedIds.has(m.id));
+        } else {
+          list = [];
+        }
+      }
+    }
+
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  }, [data.members, activeChurch, filterChurch, isAdmin, currentUser, divisions]);
 
   // --- FOLLOW UP (VISITOR / FNF / NOT MEMBER) TAB DATA ---
   const visitorList = useMemo(() => {
@@ -2191,9 +2295,13 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
           onSelect={(mid: string) =>
             handleAddMember(addMemberModal.sessionId, mid)
           }
-          members={data.members}
+          members={
+              !isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)
+                ? data.members.filter(m => connectList.some(cl => cl.id === m.id) || visitorFnfIds.has(m.id))
+                : data.members
+            }
           currentSessionMembers={
-            localSessions.find((s) => s.id === addMemberModal.sessionId)
+            filteredLocalSessions.find((s) => s.id === addMemberModal.sessionId)
               ?.assignedMemberIds || []
           }
           activeChurch={activeChurch}
@@ -3264,7 +3372,8 @@ const AddMemberModal = ({
         (activeChurch === "CM" ||
           activeChurch === "All" ||
           m.assignedChurch === activeChurch) &&
-        !["Teacher", "Helper", "Volunteer"].includes(m.type),
+        !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+            m.status !== MemberStatus.ARCHIVED,
     )
     .filter((m: Member) => m.name.toLowerCase().includes(search.toLowerCase()));
 
