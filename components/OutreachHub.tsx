@@ -446,13 +446,27 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   };
 
   const handleGenerateSchedule = async () => {
-    const ujMembers = data.members.filter(
+    let targetMembers = data.members.filter(
       (m) =>
-        m.assignedChurch === "UJ" &&
+        isMemberInActiveChurch(m) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-            m.status !== MemberStatus.ARCHIVED,
+        m.status !== MemberStatus.ARCHIVED
     );
-    const res = await generateOutreachSchedule(ujMembers, selectedDates);
+
+    if (!isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)) {
+      const ujDiv = divisions["UJ"];
+      if (ujDiv) {
+        const assignment = ujDiv.assignments.find((a) => a.teacher.id === currentUser.id);
+        if (assignment) {
+          const assignedIds = new Set(assignment.members.map((m) => m.id));
+          targetMembers = targetMembers.filter(m => assignedIds.has(m.id) || visitorFnfIds.has(m.id));
+        } else {
+          targetMembers = targetMembers.filter(m => visitorFnfIds.has(m.id));
+        }
+      }
+    }
+
+    const res = await generateOutreachSchedule(targetMembers, selectedDates);
     if (res.success) {
       if (res.data) {
         setLocalSessions(JSON.parse(JSON.stringify(res.data)));
@@ -3099,8 +3113,8 @@ const CollapsibleContactSection = ({
                   key={member.id}
                   className={`p-4 rounded-xl border shadow-sm flex items-center justify-between transition-colors ${cardStyle}`}
                 >
-                  <div>
-                    <h4 className="font-bold text-slate-800 text-sm flex items-center flex-wrap gap-1">
+                  <div className="flex-1 min-w-0 pr-2">
+                    <h4 className="font-bold text-slate-800 text-sm flex items-center flex-wrap gap-1 break-words">
                       {member.name}
                       {member.status === MemberStatus.INCONSISTENT && (
                         <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100 shrink-0">

@@ -1069,9 +1069,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                             `}
               >
                 <div className="flex justify-between items-start">
-                  <div>
+                  <div className="flex-1 min-w-0 pr-2">
                     <h4
-                      className={`font-bold text-lg leading-tight ${textStyle}`}
+                      className={`font-bold text-lg leading-tight break-words ${textStyle}`}
                     >
                       {member.name}
                     </h4>

@@ -1318,7 +1318,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-2 flex flex-col">
           <div className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <h3 className="font-bold text-slate-800">Attendance Breakdown</h3>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-4">
               <div className="flex bg-slate-100 p-1 rounded-xl">
                 <button
                   onClick={() => setChartViewMode("ATTENDANCE")}
@@ -1333,9 +1333,8 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                   Gender
                 </button>
               </div>
-
               {chartViewMode === "ATTENDANCE" ? (
-                <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wide">
+                <div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wide">
                   <div className="flex items-center gap-1 text-indigo-600">
                     <div className="w-2 h-2 rounded-full bg-indigo-500"></div>{" "}
                     Member
@@ -1351,7 +1350,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wide">
+                <div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wide">
                   <div className="flex items-center gap-1 text-blue-600">
                     <div className="w-2 h-2 rounded-full bg-blue-500"></div> Male
                   </div>

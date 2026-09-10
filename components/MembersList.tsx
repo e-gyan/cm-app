@@ -1145,8 +1145,8 @@ const MembersList: React.FC<MembersListProps> = ({
                         >
                           <Icon size={20} />
                         </div>
-                        <div>
-                          <h4 className="font-bold text-gray-900 text-lg flex flex-wrap gap-2 items-center">
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-bold text-gray-900 text-lg flex flex-wrap gap-2 items-center break-words">
                             {member.name}
                             {member.gender && (
                               <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${member.gender === 'MALE' ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-pink-50 text-pink-600 border border-pink-100'}`}>
