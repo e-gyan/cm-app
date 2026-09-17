@@ -25,6 +25,7 @@ export const CHURCH_NAMES: Record<string, string> = {
   LJ: "Lower Junior (LJ)",
   K: "Kingdom (K)",
   I: "Infants (I)",
+  N: "Nursery (N)",
 };
 
 export const isBranchHead = (m: Member): boolean => {
@@ -52,7 +53,7 @@ export const isStaffOrTeacher = (m: Member): boolean => {
 
 export const calculateChurchDivisions = (
   allMembers: Member[],
-  targetChurches: string[] = ["UJ", "LJ", "K", "I"],
+  targetChurches: string[] = ["UJ", "LJ", "K", "I", "N"],
   branchFilter?: string,
 ): Record<string, ChurchDivisionResult> => {
   const results: Record<string, ChurchDivisionResult> = {};
@@ -66,18 +67,55 @@ export const calculateChurchDivisions = (
       return matchChurch && matchBranch;
     });
 
-    // 2. Only people tagged as MEMBER (omit FNF, Visitor, Teacher, etc.)
-    const pureMembers = churchMembers
+    // 2. Separate people into categories so that each teacher receives a fair share of fnf and first timers
+    const fnfList = churchMembers
+      .filter(
+        (m) =>
+          m.type === MemberType.FNF &&
+          m.status !== MemberStatus.ARCHIVED &&
+          m.status !== MemberStatus.TRANSFERRED &&
+          !isStaffOrTeacher(m)
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const visitorList = churchMembers
+      .filter(
+        (m) =>
+          (m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER) &&
+          m.status !== MemberStatus.ARCHIVED &&
+          m.status !== MemberStatus.TRANSFERRED &&
+          !isStaffOrTeacher(m)
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const membersList = churchMembers
       .filter(
         (m) =>
           m.type === MemberType.MEMBER &&
           m.status !== MemberStatus.ARCHIVED &&
-          m.status !== MemberStatus.TRANSFERRED,
+          m.status !== MemberStatus.TRANSFERRED &&
+          !isStaffOrTeacher(m)
       )
       .sort((a, b) => a.name.localeCompare(b.name));
 
+    const otherList = churchMembers
+      .filter(
+        (m) =>
+          m.type !== MemberType.FNF &&
+          m.type !== MemberType.VISITOR &&
+          m.type !== MemberType.NOT_MEMBER &&
+          m.type !== MemberType.MEMBER &&
+          !isStaffOrTeacher(m) &&
+          m.status !== MemberStatus.ARCHIVED &&
+          m.status !== MemberStatus.TRANSFERRED
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const pureMembers = [...fnfList, ...visitorList, ...membersList, ...otherList];
+
     // 3. Find teachers for this church
     const teachersInChurch = allMembers.filter((m) => {
+      if (m.status === MemberStatus.ARCHIVED || m.status === MemberStatus.TRANSFERRED) return false;
       const matchChurch =
         m.assignedChurch === church ||
         (m.assignedChurch === "All" && isStaffOrTeacher(m));
@@ -123,11 +161,37 @@ export const calculateChurchDivisions = (
     const unassignedMembers: Member[] = [];
 
     if (totalEligibleTeachers > 0) {
-      // Divide equally (round-robin distribution ensures max count diff is at most 1)
-      pureMembers.forEach((member, index) => {
-        const teacherIndex = index % totalEligibleTeachers;
+      // 1. Fair share of FNF: distribute round-robin so each teacher gets an equal share
+      fnfList.forEach((member, i) => {
+        const teacherIndex = i % totalEligibleTeachers;
         assignments[teacherIndex].members.push(member);
-        assignments[teacherIndex].count++;
+      });
+
+      // 2. Fair share of First Timers (Visitors): distribute round-robin with offset
+      const visitorOffset = fnfList.length % totalEligibleTeachers;
+      visitorList.forEach((member, i) => {
+        const teacherIndex = (visitorOffset + i) % totalEligibleTeachers;
+        assignments[teacherIndex].members.push(member);
+      });
+
+      // 3. Regular Members: distribute round-robin with offset to keep total count strictly balanced (diff <= 1)
+      const memberOffset = (fnfList.length + visitorList.length) % totalEligibleTeachers;
+      membersList.forEach((member, i) => {
+        const teacherIndex = (memberOffset + i) % totalEligibleTeachers;
+        assignments[teacherIndex].members.push(member);
+      });
+
+      // 4. Any other non-staff children
+      const otherOffset = (fnfList.length + visitorList.length + membersList.length) % totalEligibleTeachers;
+      otherList.forEach((member, i) => {
+        const teacherIndex = (otherOffset + i) % totalEligibleTeachers;
+        assignments[teacherIndex].members.push(member);
+      });
+
+      // Sort each teacher's assigned members alphabetically for clean display and sync count
+      assignments.forEach((asg) => {
+        asg.members.sort((a, b) => a.name.localeCompare(b.name));
+        asg.count = asg.members.length;
       });
     } else {
       unassignedMembers.push(...pureMembers);

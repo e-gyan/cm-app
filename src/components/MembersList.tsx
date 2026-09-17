@@ -43,6 +43,7 @@ import {
   BadgeCheck,
   CheckCircle,
   Sparkles,
+  Search,
 } from "lucide-react";
 import { updateMember, addMember, deleteMember, bulkArchiveMembers, bulkDeleteMembers } from "../services/storageService";
 import { sanitizeInput } from "../services/securityService";
@@ -102,6 +103,7 @@ const MembersList: React.FC<MembersListProps> = ({
   const [sortOrder, setSortOrder] = useState<
     "A-Z" | "ATTENDANCE_HIGH" | "ATTENDANCE_LOW"
   >(() => (sessionStorage.getItem("members_sortOrder") as any) || "A-Z");
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Persist state changes
   React.useEffect(() => {
@@ -1340,6 +1342,28 @@ const MembersList: React.FC<MembersListProps> = ({
       }
     }
 
+    // Apply fuzzy search
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim();
+      baseList = baseList.filter(m => {
+        const matchesName = m.name?.toLowerCase().includes(term);
+        const matchesAgeGroup = m.assignedChurch?.toLowerCase().includes(term);
+        
+        // Calculate age
+        let ageStr = "";
+        if (m.birthDate) {
+          const birth = new Date(m.birthDate);
+          const today = new Date();
+          let age = today.getFullYear() - birth.getFullYear();
+          const md = today.getMonth() - birth.getMonth();
+          if (md < 0 || (md === 0 && today.getDate() < birth.getDate())) age--;
+          ageStr = age.toString();
+        }
+        
+        return matchesName || matchesAgeGroup || (ageStr && ageStr.includes(term));
+      });
+    }
+
     if (filter === "ARCHIVED") {
       const archivedMembers = baseList.filter(
         (m) => m.status === MemberStatus.ARCHIVED,
@@ -1960,6 +1984,20 @@ const MembersList: React.FC<MembersListProps> = ({
       </div>
 
       <div className="space-y-4">
+        {/* Real-time Fuzzy Search */}
+        <div className="bg-white p-3 rounded-2xl shadow-sm border border-gray-100 relative">
+          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
+            <Search size={18} />
+          </div>
+          <input
+            type="text"
+            className="w-full pl-12 pr-4 py-2 bg-transparent border-none text-sm focus:ring-0 placeholder:text-gray-400 font-medium text-gray-800"
+            placeholder="Search by name, age, or class..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+
         {/* Church Filter (Admin Only) */}
         {activeChurch === "CM" && (
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
@@ -2939,4 +2977,4 @@ const MembersList: React.FC<MembersListProps> = ({
   );
 };
 
-export default MembersList;
+export default React.memo(MembersList);

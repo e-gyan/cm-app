@@ -112,6 +112,7 @@ export interface OutreachSession {
   visitedMemberIds?: string[];
   id: string;
   completedBy?: string;
+  teacherId?: string;
   startTime?: string;
   endTime?: string;
   notes?: string;
@@ -124,6 +125,7 @@ export interface PrayerSlot {
   durationMins?: number;
   id: string;
   dayOfWeek?: string;
+  teacherId?: string;
   branchId?: string;
 }
 

@@ -1049,4 +1049,4 @@ const Settings: React.FC<SettingsProps> = ({
   );
 };
 
-export default Settings;
+export default React.memo(Settings);

@@ -362,16 +362,16 @@ const AdminDashboard: React.FC<{
     let maleTeachers = 0, femaleTeachers = 0;
     
     data.members.forEach(m => {
-      if ([MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)) {
-        const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
-        if (isTeacher) {
-          if (m.gender === "MALE") maleTeachers++;
-          else if (m.gender === "FEMALE") femaleTeachers++;
-        } else {
-          if (m.gender === "MALE") maleMembers++;
-          else if (m.gender === "FEMALE") femaleMembers++;
+        if ([MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)) {
+          const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+          if (isTeacher) {
+            if (m.gender === "MALE") maleTeachers++;
+            else if (m.gender === "FEMALE") femaleTeachers++;
+          } else {
+            if (m.gender === "MALE") maleMembers++;
+            else if (m.gender === "FEMALE") femaleMembers++;
+          }
         }
-      }
     });
 
     let memberAttendance = 0;
@@ -464,11 +464,13 @@ const AdminDashboard: React.FC<{
     const isOutreachEnabled = Object.values(data.settings.features || {}).some((f: any) => f.outreach);
     if (!isOutreachEnabled) return null;
 
-    const eligibleMembers = data.members.filter(
+    let eligibleMembers = data.members.filter(
       (m) =>
         ["Member", "FNF"].includes(m.type) &&
         ["Active", "Inconsistent", "Not Active"].includes(m.status),
     );
+
+
     const eligibleKids = eligibleMembers.length;
     const eligibleKidIds = new Set(eligibleMembers.map((m) => m.id));
 
@@ -1029,6 +1031,9 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
   activeChurch,
   currentUser,
 }) => {
+  const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
+    currentUser.role || "",
+  );
   // ... existing stats calculation ...
     const isTeacherUser = currentUser.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(currentUser.type) || (currentUser.role && currentUser.role !== "NONE");
   
@@ -1168,12 +1173,26 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
     const isOutreachEnabled = data.settings.features?.[activeChurch]?.outreach ?? false;
     if (!isOutreachEnabled) return null;
 
-    const eligibleMembers = data.members.filter(
+    let eligibleMembers = data.members.filter(
       (m) =>
         m.assignedChurch === activeChurch &&
         ["Member", "FNF"].includes(m.type) &&
         ["Active", "Inconsistent", "Not Active"].includes(m.status),
     );
+
+    if (!isAdmin && activeChurch !== "All" && activeChurch !== "CM" && (currentUser.type === "Teacher" || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === "Helper")) {
+      const divResult = calculateChurchDivisions(data.members, [activeChurch]);
+      const churchDiv = divResult[activeChurch];
+      if (churchDiv) {
+        const assignment = churchDiv.assignments.find(a => a.teacher.id === currentUser.id);
+        if (assignment) {
+          const assignedIds = new Set(assignment.members.map(m => m.id));
+          eligibleMembers = eligibleMembers.filter(m => assignedIds.has(m.id));
+        } else {
+          eligibleMembers = [];
+        }
+      }
+    }
     const eligibleKids = eligibleMembers.length;
     const eligibleKidIds = new Set(eligibleMembers.map((m) => m.id));
 
@@ -1242,19 +1261,39 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
     };
   }, [data, activeChurch]);
 
-  const { churchGenderBreakdown, churchAttendanceBreakdown } = useMemo(() => {
+  const { churchGenderBreakdown, churchAttendanceBreakdown, statusBreakdown } = useMemo(() => {
     let maleMembers = 0, femaleMembers = 0;
     let maleTeachers = 0, femaleTeachers = 0;
     
+    const statuses = {
+      active: 0,
+      inconsistent: 0,
+      notActive: 0,
+      fnf: 0,
+      firstTimers: 0
+    };
+    
     data.members.forEach(m => {
-      if (m.assignedChurch === activeChurch && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)) {
-        const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
-        if (isTeacher) {
-          if (m.gender === "MALE") maleTeachers++;
-          else if (m.gender === "FEMALE") femaleTeachers++;
-        } else {
-          if (m.gender === "MALE") maleMembers++;
-          else if (m.gender === "FEMALE") femaleMembers++;
+      if (m.assignedChurch === activeChurch && m.status !== MemberStatus.ARCHIVED) {
+        if (m.type === MemberType.MEMBER) {
+          if (m.status === MemberStatus.ACTIVE) statuses.active++;
+          else if (m.status === MemberStatus.INCONSISTENT) statuses.inconsistent++;
+          else if (m.status === MemberStatus.NOT_ACTIVE) statuses.notActive++;
+        } else if (m.type === MemberType.FNF) {
+          statuses.fnf++;
+        } else if (m.type === MemberType.VISITOR) {
+          statuses.firstTimers++;
+        }
+
+        if ([MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)) {
+          const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+          if (isTeacher) {
+            if (m.gender === "MALE") maleTeachers++;
+            else if (m.gender === "FEMALE") femaleTeachers++;
+          } else {
+            if (m.gender === "MALE") maleMembers++;
+            else if (m.gender === "FEMALE") femaleMembers++;
+          }
         }
       }
     });
@@ -1306,6 +1345,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
         members: { male: maleMembers, female: femaleMembers },
         teachers: { male: maleTeachers, female: femaleTeachers }
       },
+      statusBreakdown: statuses,
       churchAttendanceBreakdown: {
         members: memberAttendance,
         teachers: teacherAttendance,
@@ -1322,22 +1362,62 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
   const dynamicTips = useMemo(() => {
     const tips: { id: number; text: string; action?: string; icon?: any }[] = [];
     
-    // 1. Inconsistent Members
-    const inconsistentCount = data.members.filter(m => m.assignedChurch === activeChurch && (m.status === MemberStatus.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE)).length;
-    if (inconsistentCount > 0) {
+    // 1. Attendance Trend
+    const curAtt = churchAttendanceBreakdown.members;
+    const prevAtt = churchAttendanceBreakdown.prevMembers;
+    if (churchAttendanceBreakdown.hasLatestRecord && churchAttendanceBreakdown.hasPrevRecord) {
+        if (curAtt > prevAtt) {
+            tips.push({
+                id: tips.length + 1,
+                text: `Attendance is UP! You had ${curAtt} kids last Sunday vs ${prevAtt} the week before.`,
+                action: "Keep up the momentum and gamify early arrivals!"
+            });
+        } else if (curAtt < prevAtt) {
+            tips.push({
+                id: tips.length + 1,
+                text: `Attendance dipped slightly (${curAtt} vs ${prevAtt} last week).`,
+                action: "Check the Outreach Hub to see who was missing and follow up."
+            });
+        } else {
+            tips.push({
+                id: tips.length + 1,
+                text: `Attendance was steady at ${curAtt} children last Sunday.`,
+                action: "A great foundation! Look for ways to invite new First Timers."
+            });
+        }
+    } else if (churchAttendanceBreakdown.hasLatestRecord) {
+        tips.push({
+            id: tips.length + 1,
+            text: `You recorded ${curAtt} members present last Sunday.`,
+            action: "Make sure all absent members are followed up with."
+        });
+    }
+
+    // 2. Un-converted FNF/First Timers
+    const fnfTotal = statusBreakdown.fnf + statusBreakdown.firstTimers;
+    if (fnfTotal > 0) {
+        tips.push({
+            id: tips.length + 1,
+            text: `You have ${statusBreakdown.firstTimers} First Timer(s) and ${statusBreakdown.fnf} FNF(s).`,
+            action: "Visit the Outreach Hub to easily promote them to full members."
+        });
+    }
+
+    // 3. Inconsistent/Not Active follow-ups
+    const atRiskCount = statusBreakdown.inconsistent + statusBreakdown.notActive;
+    if (atRiskCount > 0) {
       tips.push({
-        id: 1,
-        text: `You have ${inconsistentCount} member${inconsistentCount > 1 ? 's' : ''} marked as Inconsistent or Not Active.`,
-        action: "Check the People Hub to follow up with them."
+        id: tips.length + 1,
+        text: `${atRiskCount} member(s) are currently marked as Inconsistent or Not Active.`,
+        action: "Use the 1-click calls in the Outreach Hub to check in on them."
       });
     }
 
-    // 2. Birthdays This Week
+    // 4. Birthdays This Week
     const today = new Date();
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - today.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
-
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 6);
     endOfWeek.setHours(23, 59, 59, 999);
@@ -1354,26 +1434,17 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
         month = parseInt(parts[1], 10);
       }
       if (isNaN(month) || isNaN(day)) return false;
+
       const bdayThisYear = new Date(today.getFullYear(), month - 1, day);
       return bdayThisYear >= startOfWeek && bdayThisYear <= endOfWeek;
     };
 
-    const bdayCount = data.members.filter(m => m.assignedChurch === activeChurch && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) && isBirthdayThisWeek(m.birthDate)).length;
+    const bdayCount = data.members.filter(m => m.assignedChurch === activeChurch && m.status !== MemberStatus.ARCHIVED && isBirthdayThisWeek(m.birthDate)).length;
     if (bdayCount > 0) {
       tips.push({
         id: tips.length + 1,
         text: `${bdayCount} member${bdayCount > 1 ? 's have' : ' has a'} birthday this week!`,
-        action: "Head over to the People Hub to see who they are."
-      });
-    }
-
-    // 3. FNF/Visitors to convert
-    const fnfCount = data.members.filter(m => m.assignedChurch === activeChurch && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) && (m.type === MemberType.FNF || m.type === MemberType.VISITOR)).length;
-    if (fnfCount > 0) {
-      tips.push({
-        id: tips.length + 1,
-        text: `You have ${fnfCount} recent First Timer${fnfCount > 1 ? 's' : ''} or FNF.`,
-        action: "Review their attendance in the People Hub to help them transition to full members."
+        action: "Wish them a Happy Birthday! Find them in the People Hub."
       });
     }
 
@@ -1382,14 +1453,14 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
       tips.push({ id: 1, text: "Great job! All your members are active.", action: "Use the Punctual toggle for early arrivals to gamify the experience." });
     }
     if (tips.length < 2) {
-      tips.push({ id: tips.length + 1, text: "Ensure accurate tracking.", action: "Mark new First Timers as FNF to track outreach separately." });
+      tips.push({ id: tips.length + 1, text: "Ensure accurate tracking.", action: "Mark new First Timers to track outreach separately." });
     }
     if (tips.length < 3) {
-      tips.push({ id: tips.length + 1, text: "Keep members engaged.", action: "Regularly check the Outreach Hub to schedule follow-ups." });
+      tips.push({ id: tips.length + 1, text: "Keep members engaged.", action: "Regularly check the Outreach Hub to schedule visits and calls." });
     }
 
     return tips.slice(0, 3);
-  }, [data.members, activeChurch]);
+  }, [data.members, activeChurch, churchAttendanceBreakdown, statusBreakdown]);
 
   return (
     <motion.div
@@ -1403,30 +1474,51 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
           <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-6 text-sm uppercase tracking-wider">
             <Users size={16} className="text-indigo-500" /> Demographics ({activeChurch})
           </h3>
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <div>
-              <p className="text-xs font-bold text-slate-500 uppercase mb-3">Members</p>
+              <p className="text-xs font-bold text-slate-500 uppercase mb-3">Gender</p>
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-600">Male</span>
+                  <span className="text-slate-600">Male Members</span>
                   <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{churchGenderBreakdown.members.male}</span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-600">Female</span>
+                  <span className="text-slate-600">Female Members</span>
                   <span className="font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded">{churchGenderBreakdown.members.female}</span>
                 </div>
-              </div>
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-500 uppercase mb-3">Teachers/Staff</p>
-              <div className="flex flex-col gap-2">
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-600">Male</span>
+                <div className="flex justify-between items-center text-sm border-t border-slate-50 pt-2 mt-1">
+                  <span className="text-slate-600">Male Teachers</span>
                   <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{churchGenderBreakdown.teachers.male}</span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-600">Female</span>
+                  <span className="text-slate-600">Female Teachers</span>
                   <span className="font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded">{churchGenderBreakdown.teachers.female}</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="lg:col-span-2">
+              <p className="text-xs font-bold text-slate-500 uppercase mb-3">Live Status Breakdown</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                <div className="flex justify-between items-center text-sm bg-slate-50 p-1.5 rounded-lg">
+                  <span className="text-slate-600 font-medium">Active</span>
+                  <span className="font-bold text-slate-800">{statusBreakdown.active}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm bg-slate-50 p-1.5 rounded-lg">
+                  <span className="text-slate-600 font-medium">Inconsistent</span>
+                  <span className="font-bold text-rose-600">{statusBreakdown.inconsistent}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm bg-slate-50 p-1.5 rounded-lg">
+                  <span className="text-slate-600 font-medium">Not Active</span>
+                  <span className="font-bold text-amber-600">{statusBreakdown.notActive}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm bg-slate-50 p-1.5 rounded-lg">
+                  <span className="text-slate-600 font-medium">FNF</span>
+                  <span className="font-bold text-teal-600">{statusBreakdown.fnf}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm bg-slate-50 p-1.5 rounded-lg col-span-2 mt-1 border border-indigo-100">
+                  <span className="text-indigo-600 font-medium">First Timers (Visitors)</span>
+                  <span className="font-black text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded">{statusBreakdown.firstTimers}</span>
                 </div>
               </div>
             </div>
@@ -1719,4 +1811,4 @@ const Dashboard: React.FC<DashboardProps> = ({
   );
 };
 
-export default Dashboard;
+export default React.memo(Dashboard);

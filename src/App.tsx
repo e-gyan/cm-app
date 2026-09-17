@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 import { subscribeToData, loadData, markNotificationRead, clearNotifications } from "./services/storageService";
 import { verifyPasscode } from "./services/storageService";
@@ -63,8 +63,16 @@ const App: React.FC = () => {
     return (saved as View) || View.DASHBOARD;
   });
 
+  const [visitedViews, setVisitedViews] = useState<Set<View>>(() => new Set([currentView]));
+
   useEffect(() => {
     sessionStorage.setItem("currentView", currentView);
+    setVisitedViews((prev) => {
+      if (prev.has(currentView)) return prev;
+      const next = new Set(prev);
+      next.add(currentView);
+      return next;
+    });
   }, [currentView]);
 
   // GLOBAL CONTEXT STATE
@@ -142,19 +150,25 @@ const App: React.FC = () => {
 
     const init = async () => {
       // 1. Load local cache immediately to avoid any startup delay
-      await Promise.resolve();
       refreshData();
 
-      const savedUser = null;
-      if (savedUser) {
-        setCurrentUser(savedUser);
-        if (savedUser.branchId) {
-          setActiveBranchId(savedUser.branchId);
-        }
-        if (savedUser.role === "TEACHER") {
-          setActiveChurch(savedUser.assignedChurch as Church);
-        } else if (savedUser.role === "ADMIN") {
-          setActiveChurch("CM");
+      const savedUserRaw = sessionStorage.getItem("currentUser") || localStorage.getItem("cmd_current_user");
+      if (savedUserRaw) {
+        try {
+          const savedUser = JSON.parse(savedUserRaw);
+          if (savedUser && savedUser.id) {
+            setCurrentUser(savedUser);
+            if (savedUser.branchId) {
+              setActiveBranchId(savedUser.branchId);
+            }
+            if (savedUser.role === "TEACHER") {
+              setActiveChurch(savedUser.assignedChurch as Church);
+            } else if (savedUser.role === "ADMIN") {
+              setActiveChurch("CM");
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to parse saved user", e);
         }
       }
       setIsLoading(false);
@@ -169,27 +183,23 @@ const App: React.FC = () => {
       Promise.resolve({ success: true })
         .then((result) => {
           if (result && result.success) {
-            refreshData();
             setLastSynced(new Date());
             setSyncStatus("Cloud Synced");
-            ;
           } else {
             setSyncStatus("Offline Mode");
-            ;
           }
         })
         .catch((e) => {
           console.warn("Background initial cloud sync failed", e);
           setSyncStatus("Sync Error");
-          ;
         });
     };
 
     init();
 
-    // Subscribe to background data changes
-    const unsubData = subscribeToData(() => {
-      refreshData();
+    // Subscribe to background data changes and update state directly
+    const unsubData = subscribeToData((freshData) => {
+      setData(freshData);
       setLastSynced(new Date());
       setSyncStatus("Cloud Synced");
     });
@@ -221,7 +231,6 @@ const App: React.FC = () => {
             refreshData();
             setLastSynced(new Date());
             setSyncStatus("Cloud Synced");
-            ;
           }
         }
       }, 60000);
@@ -233,7 +242,6 @@ const App: React.FC = () => {
             refreshData();
             setLastSynced(new Date());
             setSyncStatus("Cloud Synced");
-            ;
           }
         }
       };
@@ -252,8 +260,7 @@ const App: React.FC = () => {
 
   const prevNotificationIds = React.useRef<Set<string>>(new Set());
 
-  
-  const refreshData = async () => {
+  const refreshData = useCallback(async () => {
     try {
       const dbData = await loadData();
       setData(dbData);
@@ -262,8 +269,7 @@ const App: React.FC = () => {
       console.error(err);
       return { success: false };
     }
-  };
-
+  }, []);
 
   const handleCloudSync = async () => {
     setIsSyncing(true);
@@ -271,7 +277,7 @@ const App: React.FC = () => {
     setSyncStatus("Syncing...");
     const result = await Promise.resolve({ success: true });
     if (result.success) {
-      refreshData();
+      await refreshData();
       setLastSynced(new Date());
       setSyncStatus("Cloud Synced");
     } else {
@@ -283,6 +289,12 @@ const App: React.FC = () => {
 
   const handleLogin = (user: Member) => {
     setCurrentUser(user);
+    try {
+      sessionStorage.setItem("currentUser", JSON.stringify(user));
+      localStorage.setItem("cmd_current_user", JSON.stringify(user));
+    } catch (e) {
+      console.warn("Storage quota exceeded", e);
+    }
     if (user.branchId) {
       setActiveBranchId(user.branchId);
     }
@@ -295,10 +307,13 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
-    () => {};
     setCurrentUser(null);
     setCurrentView(View.DASHBOARD);
-    sessionStorage.clear();
+    try {
+      sessionStorage.removeItem("currentUser");
+      localStorage.removeItem("cmd_current_user");
+      sessionStorage.clear();
+    } catch {}
   };
 
   const toggleNotifications = () => {
@@ -907,45 +922,51 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* View Content - State Restoration using display: none */}
+            {/* View Content - State Preservation & Lazy Mount */}
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
-              <div
-                style={{
-                  display: currentView === View.DASHBOARD ? "block" : "none",
-                }}
-              >
-                <Dashboard
-                  data={data}
-                  activeChurch={activeChurch}
-                  currentUser={currentUser}
-                />
-              </div>
-              <div
-                style={{
-                  display: currentView === View.ATTENDANCE ? "block" : "none",
-                }}
-              >
-                <AttendanceTaker
-                  data={data}
-                  onUpdate={refreshData}
-                  activeChurch={activeChurch}
-                  currentUser={currentUser}
-                />
-              </div>
-              <div
-                style={{
-                  display: currentView === View.MEMBERS ? "block" : "none",
-                }}
-              >
-                <MembersList
-                  data={data}
-                  onUpdate={refreshData}
-                  activeChurch={activeChurch}
-                  currentUser={currentUser}
-                  activeBranchId={activeBranchId}
-                />
-              </div>
-              {showAnalytics && (
+              {visitedViews.has(View.DASHBOARD) && (
+                <div
+                  style={{
+                    display: currentView === View.DASHBOARD ? "block" : "none",
+                  }}
+                >
+                  <Dashboard
+                    data={data}
+                    activeChurch={activeChurch}
+                    currentUser={currentUser}
+                  />
+                </div>
+              )}
+              {visitedViews.has(View.ATTENDANCE) && (
+                <div
+                  style={{
+                    display: currentView === View.ATTENDANCE ? "block" : "none",
+                  }}
+                >
+                  <AttendanceTaker
+                    data={data}
+                    onUpdate={refreshData}
+                    activeChurch={activeChurch}
+                    currentUser={currentUser}
+                  />
+                </div>
+              )}
+              {visitedViews.has(View.MEMBERS) && (
+                <div
+                  style={{
+                    display: currentView === View.MEMBERS ? "block" : "none",
+                  }}
+                >
+                  <MembersList
+                    data={data}
+                    onUpdate={refreshData}
+                    activeChurch={activeChurch}
+                    currentUser={currentUser}
+                    activeBranchId={activeBranchId}
+                  />
+                </div>
+              )}
+              {showAnalytics && visitedViews.has(View.ANALYTICS) && (
                 <div
                   style={{
                     display: currentView === View.ANALYTICS ? "block" : "none",
@@ -958,7 +979,7 @@ const App: React.FC = () => {
                   />
                 </div>
               )}
-              {showOutreach && (
+              {showOutreach && visitedViews.has(View.OUTREACH) && (
                 <div
                   style={{
                     display: currentView === View.OUTREACH ? "block" : "none",
@@ -972,7 +993,7 @@ const App: React.FC = () => {
                   />
                 </div>
               )}
-              {showFinances && (
+              {showFinances && visitedViews.has(View.FINANCES) && (
                 <div
                   style={{
                     display: currentView === View.FINANCES ? "block" : "none",
@@ -986,19 +1007,21 @@ const App: React.FC = () => {
                   />
                 </div>
               )}
-              <div
-                style={{
-                  display: currentView === View.EXPORT ? "block" : "none",
-                }}
-              >
-                <ReportExport
-                  data={data}
-                  onUpdate={refreshData}
-                  activeChurch={activeChurch}
-                  currentUser={currentUser}
-                />
-              </div>
-              {showSettings && (
+              {visitedViews.has(View.EXPORT) && (
+                <div
+                  style={{
+                    display: currentView === View.EXPORT ? "block" : "none",
+                  }}
+                >
+                  <ReportExport
+                    data={data}
+                    onUpdate={refreshData}
+                    activeChurch={activeChurch}
+                    currentUser={currentUser}
+                  />
+                </div>
+              )}
+              {showSettings && visitedViews.has(View.SETTINGS) && (
                 <div
                   style={{
                     display: currentView === View.SETTINGS ? "block" : "none",

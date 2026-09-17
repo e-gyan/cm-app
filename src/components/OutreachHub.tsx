@@ -15,6 +15,7 @@ import {
   saveOutreachSession,
   deleteOutreachSession,
   savePrayerSlot,
+  deletePrayerSlot,
   addNotification,
   updateMember,
 } from "../services/storageService";
@@ -51,6 +52,10 @@ import {
   Search,
   Users,
   UserPlus,
+  TrendingUp,
+  Award,
+  Activity,
+  ChevronRight,
 } from "lucide-react";
 import {
   BarChart,
@@ -64,6 +69,10 @@ import {
   PieChart,
   Pie,
   Legend,
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
 } from "recharts";
 
 interface OutreachHubProps {
@@ -175,8 +184,38 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   currentUser,
   activeChurch,
 }) => {
-    const divisions = useMemo(() => {
-    return calculateChurchDivisions(data.members, ["UJ"]);
+  const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [editFormData, setEditFormData] = useState<Partial<Member>>({});
+
+  const handleEditClick = (member: Member) => {
+    setEditingMember(member);
+    setEditFormData({
+      phone: member.phone || "",
+      parentPhone: member.parentPhone || "",
+      address: member.address || "",
+      status: member.status,
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingMember) return;
+    try {
+      await updateMember(editingMember.id, {
+        ...editingMember,
+        ...editFormData,
+      });
+      setEditingMember(null);
+      onUpdate();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const divisions = useMemo(() => {
+    return calculateChurchDivisions(
+      data.members,
+      ["UJ", "LJ", "K", "I"],
+    );
   }, [data.members]);
 
   const visitorFnfIds = useMemo(() => {
@@ -193,18 +232,32 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   }, [data.members]);
 
   const [activeTab, setActiveTab] = useState<
-    "VISIT" | "PRAYER" | "CONNECT" | "FOLLOW_UP" | "TRACK"
-  >(() => (sessionStorage.getItem("outreach_activeTab") as any) || "VISIT");
+    "VISIT" | "PRAYER" | "CONNECT" | "TRACK"
+  >(() => {
+    const saved = sessionStorage.getItem("outreach_activeTab");
+    if (saved === "FOLLOW_UP") return "CONNECT";
+    return (saved as any) || "VISIT";
+  });
 
   useEffect(() => {
     sessionStorage.setItem("outreach_activeTab", activeTab);
   }, [activeTab]);
 
-  const [visitorFilter, setVisitorFilter] = useState<
-    "ALL" | "VISITOR" | "FNF" | "NOT_MEMBER"
+  const [memberSearch, setMemberSearch] = useState<string>("");
+  const [memberCategoryFilter, setMemberCategoryFilter] = useState<
+    "ALL" | "ACTIVE" | "INCONSISTENT" | "NOT_ACTIVE" | "VISITOR" | "FNF"
   >("ALL");
-  const [visitorSearch, setVisitorSearch] = useState<string>("");
   const [promotingId, setPromotingId] = useState<string | null>(null);
+
+  const [selectedProgressChurch, setSelectedProgressChurch] = useState<string>(
+    activeChurch !== "All" && activeChurch !== "CM" ? activeChurch : "UJ"
+  );
+
+  useEffect(() => {
+    if (activeChurch !== "All" && activeChurch !== "CM") {
+      setSelectedProgressChurch(activeChurch);
+    }
+  }, [activeChurch]);
 
   const [messageTarget, setMessageTarget] = useState<Member | null>(null);
   const handleMessageClick = (member: Member) => {
@@ -393,10 +446,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             m.status !== MemberStatus.ARCHIVED,
         );
 
-        if (!isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)) {
-          const ujDiv = divisions["UJ"];
-          if (ujDiv) {
-            const assignment = ujDiv.assignments.find((a) => a.teacher.id === currentUser.id);
+        const isTeacher = !isAdmin && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER);
+
+        if (isTeacher && activeChurch !== "All" && activeChurch !== "CM") {
+          const churchDiv = divisions[activeChurch] || divisions[currentUser.assignedChurch || ""];
+          if (churchDiv) {
+            const assignment = churchDiv.assignments.find((a) => a.teacher.id === currentUser.id);
             if (assignment) {
               const assignedIds = new Set(assignment.members.map((m) => m.id));
               targetMembers = targetMembers.filter(m => assignedIds.has(m.id) || visitorFnfIds.has(m.id));
@@ -405,7 +460,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         }
 
         if (targetMembers.length > 0) {
-          const res = await generatePrayerSchedule(startOfCurrentWeek, targetMembers);
+          const res = await generatePrayerSchedule(startOfCurrentWeek, targetMembers, isTeacher ? currentUser.id : undefined);
           if (res.success) {
             onUpdate();
             setGenMsg({
@@ -453,20 +508,34 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         m.status !== MemberStatus.ARCHIVED
     );
 
-    if (!isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)) {
-      const ujDiv = divisions["UJ"];
-      if (ujDiv) {
-        const assignment = ujDiv.assignments.find((a) => a.teacher.id === currentUser.id);
-        if (assignment) {
+    const isTeacher = !isAdmin && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER);
+
+    if (isTeacher && activeChurch !== "All" && activeChurch !== "CM") {
+      const churchDiv = divisions[activeChurch] || divisions[currentUser.assignedChurch || ""];
+      if (churchDiv) {
+        const assignment = churchDiv.assignments.find((a) => a.teacher.id === currentUser.id);
+        if (assignment && assignment.members.length > 0) {
           const assignedIds = new Set(assignment.members.map((m) => m.id));
-          targetMembers = targetMembers.filter(m => assignedIds.has(m.id) || visitorFnfIds.has(m.id));
-        } else {
-          targetMembers = targetMembers.filter(m => visitorFnfIds.has(m.id));
+          const hasAssignedFnf = assignment.members.some((m) => m.type === MemberType.FNF);
+          const hasAssignedVisitor = assignment.members.some(
+            (m) => m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER,
+          );
+
+          targetMembers = targetMembers.filter((m) => {
+            if (assignedIds.has(m.id)) return true;
+            if (!hasAssignedFnf && m.type === MemberType.FNF) return true;
+            if (
+              !hasAssignedVisitor &&
+              (m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER)
+            )
+              return true;
+            return false;
+          });
         }
       }
     }
 
-    const res = await generateOutreachSchedule(targetMembers, selectedDates);
+    const res = await generateOutreachSchedule(targetMembers, selectedDates, isTeacher ? currentUser.id : undefined);
     if (res.success) {
       if (res.data) {
         setLocalSessions(JSON.parse(JSON.stringify(res.data)));
@@ -496,6 +565,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
           n.delete(id);
           return n;
         });
+        setLocalSessions((prev) => prev.filter(s => s.id !== id));
         onUpdate();
       } catch (err) {
         console.error(err);
@@ -556,9 +626,45 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     setCompletionConfirm(null);
   };
 
-  const handleMoveMember = (targetSessionId: string | "REMOVE") => {
+  const handleRemoveMemberFromSession = async (memberId: string, currentSessionId: string) => {
+    if (!window.confirm("Are you sure you want to remove this child from the schedule?")) return;
+
+    const currentIdx = localSessions.findIndex((s) => s.id === currentSessionId);
+    if (currentIdx === -1) return;
+
+    const currentSession = { ...localSessions[currentIdx] };
+    currentSession.assignedMemberIds = currentSession.assignedMemberIds.filter((id) => id !== memberId);
+    currentSession.visitedMemberIds = (currentSession.visitedMemberIds || []).filter((id) => id !== memberId);
+
+    const newSessions = [...localSessions];
+    newSessions[currentIdx] = currentSession;
+    setLocalSessions(newSessions);
+
+    setLoadingId(currentSessionId);
+    try {
+      await saveOutreachSession(currentSession);
+      setUnsavedChanges((prev) => {
+        const n = new Set(prev);
+        n.delete(currentSessionId);
+        return n;
+      });
+      onUpdate();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleMoveMember = async (targetSessionId: string | "REMOVE") => {
     if (!moveModal) return;
     const { memberId, currentSessionId } = moveModal;
+    
+    if (targetSessionId === "REMOVE") {
+      setMoveModal(null);
+      await handleRemoveMemberFromSession(memberId, currentSessionId);
+      return;
+    }
 
     const currentIdx = localSessions.findIndex(
       (s) => s.id === currentSessionId,
@@ -577,18 +683,16 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       const newSessions = [...localSessions];
       newSessions[currentIdx] = currentSession;
 
-      if (targetSessionId !== "REMOVE") {
-        const targetIdx = localSessions.findIndex(
-          (s) => s.id === targetSessionId,
-        );
-        if (targetIdx !== -1) {
-          const targetSession = { ...localSessions[targetIdx] };
-          if (!targetSession.assignedMemberIds.includes(memberId)) {
-            targetSession.assignedMemberIds.push(memberId);
-          }
-          newSessions[targetIdx] = targetSession;
-          setUnsavedChanges((prev) => new Set(prev).add(targetSessionId));
+      const targetIdx = localSessions.findIndex(
+        (s) => s.id === targetSessionId,
+      );
+      if (targetIdx !== -1) {
+        const targetSession = { ...localSessions[targetIdx] };
+        if (!targetSession.assignedMemberIds.includes(memberId)) {
+          targetSession.assignedMemberIds.push(memberId);
         }
+        newSessions[targetIdx] = targetSession;
+        setUnsavedChanges((prev) => new Set(prev).add(targetSessionId));
       }
 
       setLocalSessions(newSessions);
@@ -604,21 +708,25 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     const session = { ...localSessions[sessionIdx] };
     const currentMemberIds = session.assignedMemberIds;
 
-    // 1. Analyze Composition
+    // 1. Analyze Composition (Strict Goal: 2 Members, 1 FNF, 1 First Timer)
     const currentMembers = currentMemberIds
       .map((id) => data.members.find((m) => m.id === id))
       .filter(Boolean) as Member[];
-    const activeCount = currentMembers.filter(
-      (m) => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE,
+    const memberCount = currentMembers.filter(
+      (m) => m.type === MemberType.MEMBER,
     ).length;
-    const inconsistentCount = currentMembers.filter(
-      (m) => m.type === MemberType.MEMBER && (m.status === MemberStatus.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE),
+    const fnfCount = currentMembers.filter(
+      (m) => m.type === MemberType.FNF,
+    ).length;
+    const visitorCount = currentMembers.filter(
+      (m) => m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER,
     ).length;
 
-    // 2. Determine Need
-    let neededType: MemberType | "INCONSISTENT" | "ANY" = "ANY";
-    if (inconsistentCount < 1) neededType = "INCONSISTENT";
-    else if (activeCount < 3) neededType = MemberType.MEMBER;
+    // 2. Determine Priority Need
+    let neededCategory: "MEMBER" | "FNF" | "VISITOR" | "ANY" = "ANY";
+    if (visitorCount < 1) neededCategory = "VISITOR";
+    else if (fnfCount < 1) neededCategory = "FNF";
+    else if (memberCount < 2) neededCategory = "MEMBER";
 
     // 3. Find Candidate
     const twoMonthsAgo = new Date();
@@ -638,39 +746,44 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         s.assignedMemberIds.forEach((id) => assignedInPending.add(id));
       });
 
-    const candidates = data.members.filter(
-      (m) =>
-        isMemberInActiveChurch(m) &&
-        !currentMemberIds.includes(m.id) &&
-        !recentlyVisited.has(m.id) &&
-        !assignedInPending.has(m.id) &&
-        m.type === MemberType.MEMBER &&
-        m.status !== MemberStatus.ARCHIVED &&
-        (neededType === "ANY" ||
-          (neededType === "INCONSISTENT"
-            ? (m.status === MemberStatus.INCONSISTENT || m.status === MemberStatus.NOT_ACTIVE)
-            : m.status === MemberStatus.ACTIVE)),
-    );
+    const candidates = data.members.filter((m) => {
+      if (!isMemberInActiveChurch(m)) return false;
+      if (currentMemberIds.includes(m.id)) return false;
+      if (recentlyVisited.has(m.id) || assignedInPending.has(m.id)) return false;
+      if (m.status === MemberStatus.ARCHIVED || m.status === MemberStatus.TRANSFERRED) return false;
+      if (["Teacher", "Helper", "Volunteer"].includes(m.type)) return false;
+
+      if (neededCategory === "VISITOR") {
+        return m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER;
+      }
+      if (neededCategory === "FNF") {
+        return m.type === MemberType.FNF;
+      }
+      if (neededCategory === "MEMBER") {
+        return m.type === MemberType.MEMBER;
+      }
+      return true;
+    });
 
     let candidate =
       candidates.length > 0
         ? candidates[Math.floor(Math.random() * candidates.length)]
         : null;
 
-    // Fallback to ANY if specific type not found
-    if (!candidate && neededType !== "ANY") {
-      const anyCandidates = data.members.filter(
+    // Fallback to any unassigned non-staff member in church
+    if (!candidate) {
+      const fallbackCandidates = data.members.filter(
         (m) =>
           isMemberInActiveChurch(m) &&
           !currentMemberIds.includes(m.id) &&
           !recentlyVisited.has(m.id) &&
           !assignedInPending.has(m.id) &&
-          m.type === MemberType.MEMBER &&
+          !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
           m.status !== MemberStatus.ARCHIVED,
       );
-      if (anyCandidates.length > 0)
+      if (fallbackCandidates.length > 0)
         candidate =
-          anyCandidates[Math.floor(Math.random() * anyCandidates.length)];
+          fallbackCandidates[Math.floor(Math.random() * fallbackCandidates.length)];
     }
 
     if (candidate) {
@@ -679,7 +792,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       newSessions[sessionIdx] = session;
       setLocalSessions(newSessions);
       setUnsavedChanges((prev) => new Set(prev).add(sessionId));
-      setGenMsg({ type: "success", text: `Auto-added ${candidate.name}` });
+      setGenMsg({ type: "success", text: `Auto-added ${candidate.name} (${candidate.type})` });
     } else {
       setGenMsg({ type: "error", text: "No suitable candidates found." });
     }
@@ -722,23 +835,42 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       (m) =>
         isMemberInActiveChurch(m) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-            m.status !== MemberStatus.ARCHIVED,
+        m.status !== MemberStatus.ARCHIVED,
     );
 
-    if (!isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)) {
-      const ujDiv = divisions["UJ"];
-      if (ujDiv) {
-        const assignment = ujDiv.assignments.find((a) => a.teacher.id === currentUser.id);
-        if (assignment) {
+    const isTeacher = !isAdmin && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER);
+
+    if (isTeacher && activeChurch !== "All" && activeChurch !== "CM") {
+      const churchDiv = divisions[activeChurch] || divisions[currentUser.assignedChurch || ""];
+      if (churchDiv) {
+        const assignment = churchDiv.assignments.find((a) => a.teacher.id === currentUser.id);
+        if (assignment && assignment.members.length > 0) {
           const assignedIds = new Set(assignment.members.map((m) => m.id));
-          targetMembers = targetMembers.filter(m => assignedIds.has(m.id) || visitorFnfIds.has(m.id));
+          const hasAssignedFnf = assignment.members.some((m) => m.type === MemberType.FNF);
+          const hasAssignedVisitor = assignment.members.some(
+            (m) => m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER,
+          );
+
+          targetMembers = targetMembers.filter((m) => {
+            if (assignedIds.has(m.id)) return true;
+            if (!hasAssignedFnf && m.type === MemberType.FNF) return true;
+            if (
+              !hasAssignedVisitor &&
+              (m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER)
+            )
+              return true;
+            return false;
+          });
         }
       }
     }
 
-    const res = await generatePrayerSchedule(prayerWeek, targetMembers);
+    const res = await generatePrayerSchedule(prayerWeek, targetMembers, isTeacher ? currentUser.id : undefined);
 
     if (res.success) {
+      if (res.data) {
+        setLocalPrayerSlots(JSON.parse(JSON.stringify(res.data)));
+      }
       setGenMsg({ type: "success", text: res.message });
       onUpdate();
     } else {
@@ -814,6 +946,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         const slot = localPrayerSlots.find((s) => s.id === id);
         if (slot) {
           promises.push(savePrayerSlot(slot));
+          return;
+        }
+        if (data.outreachSessions?.find((s) => s.id === id)) {
+          promises.push(deleteOutreachSession(id));
+        } else if (data.prayerSchedule?.find((s) => s.id === id)) {
+          promises.push(deletePrayerSlot(id));
         }
       });
 
@@ -836,24 +974,20 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
     const filteredLocalSessions = useMemo(() => {
     let sessions = localSessions || [];
-    if (!isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)) {
-      const ujDiv = divisions["UJ"];
-      if (ujDiv) {
-        const assignment = ujDiv.assignments.find((a) => a.teacher.id === currentUser.id);
-        if (assignment) {
-          const assignedIds = new Set(assignment.members.map((m) => m.id));
-          sessions = sessions.filter(s => 
-            s.assignedMemberIds.some(id => assignedIds.has(id) || visitorFnfIds.has(id))
-          );
-        } else {
-          sessions = sessions.filter(s => 
-            s.assignedMemberIds.some(id => visitorFnfIds.has(id))
-          );
-        }
-      }
+    const isTeacher = !isAdmin && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER);
+
+    if (isTeacher && activeChurch !== "All" && activeChurch !== "CM") {
+      const churchDiv = divisions[activeChurch] || divisions[currentUser.assignedChurch || ""];
+      const assignment = churchDiv?.assignments.find((a) => a.teacher.id === currentUser.id);
+      const assignedIds = assignment ? new Set(assignment.members.map((m) => m.id)) : new Set<string>();
+
+      sessions = sessions.filter((s) => {
+        if (s.teacherId) return s.teacherId === currentUser.id;
+        return s.assignedMemberIds.some((id) => assignedIds.has(id));
+      });
     }
     return sessions;
-  }, [localSessions, isAdmin, activeChurch, currentUser, divisions, visitorFnfIds]);
+  }, [localSessions, isAdmin, activeChurch, currentUser, divisions]);
 
   const sortedVisits = useMemo(() => {
     const all = filteredLocalSessions || [];
@@ -894,20 +1028,20 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
     const filteredLocalPrayerSlots = useMemo(() => {
     let slots = localPrayerSlots || [];
-    if (!isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)) {
-      const ujDiv = divisions["UJ"];
-      if (ujDiv) {
-        const assignment = ujDiv.assignments.find((a) => a.teacher.id === currentUser.id);
-        if (assignment) {
-          const assignedIds = new Set(assignment.members.map((m) => m.id));
-          slots = slots.filter(s => s.assignedMemberIds?.some(id => assignedIds.has(id) || visitorFnfIds.has(id)));
-        } else {
-          slots = slots.filter(s => s.assignedMemberIds?.some(id => visitorFnfIds.has(id)));
-        }
-      }
+    const isTeacher = !isAdmin && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER);
+
+    if (isTeacher && activeChurch !== "All" && activeChurch !== "CM") {
+      const churchDiv = divisions[activeChurch] || divisions[currentUser.assignedChurch || ""];
+      const assignment = churchDiv?.assignments.find((a) => a.teacher.id === currentUser.id);
+      const assignedIds = assignment ? new Set(assignment.members.map((m) => m.id)) : new Set<string>();
+
+      slots = slots.filter((s) => {
+        if (s.teacherId) return s.teacherId === currentUser.id;
+        return s.assignedMemberIds?.some((id) => assignedIds.has(id));
+      });
     }
     return slots;
-  }, [localPrayerSlots, isAdmin, activeChurch, currentUser, divisions, visitorFnfIds]);
+  }, [localPrayerSlots, isAdmin, activeChurch, currentUser, divisions]);
 
   const prayerData = useMemo(() => {
     if (filteredLocalPrayerSlots.length === 0)
@@ -976,44 +1110,62 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     downloadICS("prayer_schedule.ics", events);
   };
 
-  // --- CONNECT TAB DATA ---
-    const connectList = useMemo(() => {
+  // --- CONNECT TAB DATA (All Outreach Directory: Members, First Timers, FNF) ---
+  const connectList = useMemo(() => {
     let list = data.members.filter(
       (m) =>
         isMemberInActiveChurch(m) &&
-        m.type === MemberType.MEMBER &&
+        !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
         m.status !== MemberStatus.ARCHIVED,
     );
 
-    if (!isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)) {
-      const ujDiv = divisions["UJ"];
-      if (ujDiv) {
-        const assignment = ujDiv.assignments.find((a) => a.teacher.id === currentUser.id);
-        if (assignment) {
+    const isTeacher =
+      !isAdmin &&
+      activeChurch !== "All" &&
+      activeChurch !== "CM" &&
+      (currentUser.type === MemberType.TEACHER ||
+        currentUser.role === "TEACHER" ||
+        currentUser.role === "BRANCH_COORDINATOR" ||
+        currentUser.type === MemberType.HELPER);
+
+    if (isTeacher) {
+      const churchDiv =
+        divisions[activeChurch] ||
+        divisions[currentUser.assignedChurch || ""];
+      if (churchDiv) {
+        const assignment = churchDiv.assignments.find(
+          (a) => a.teacher.id === currentUser.id,
+        );
+        if (assignment && assignment.members.length > 0) {
           const assignedIds = new Set(assignment.members.map((m) => m.id));
           list = list.filter((m) => assignedIds.has(m.id));
-        } else {
-          list = [];
         }
       }
     }
 
-    return list.sort((a, b) => a.name.localeCompare(b.name));
-  }, [data.members, activeChurch, filterChurch, isAdmin, currentUser, divisions]);
-
-  // --- FOLLOW UP (VISITOR / FNF / NOT MEMBER) TAB DATA ---
-  const visitorList = useMemo(() => {
-    return data.members
-      .filter(
+    if (memberSearch.trim()) {
+      const q = memberSearch.toLowerCase();
+      list = list.filter(
         (m) =>
-          isMemberInActiveChurch(m) &&
-          (m.type === MemberType.VISITOR ||
-            m.type === MemberType.FNF ||
-            m.type === MemberType.NOT_MEMBER) &&
-          m.status !== MemberStatus.ARCHIVED,
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [data.members, activeChurch, filterChurch, isAdmin]);
+          m.name.toLowerCase().includes(q) ||
+          (m.phone && m.phone.includes(q)) ||
+          (m.parentPhone && m.parentPhone.includes(q)) ||
+          (m.address && m.address.toLowerCase().includes(q)),
+      );
+    }
+
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  }, [data.members, activeChurch, filterChurch, isAdmin, currentUser, divisions, memberSearch]);
+
+  // --- VISITOR / FIRST TIMER / FNF COUNT POOL ---
+  const visitorList = useMemo(() => {
+    return connectList.filter(
+      (m) =>
+        m.type === MemberType.VISITOR ||
+        m.type === MemberType.FNF ||
+        m.type === MemberType.NOT_MEMBER,
+    );
+  }, [connectList]);
 
   const handlePromoteToMember = async (member: Member) => {
     try {
@@ -1026,7 +1178,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       await updateMember(updated.id, updated);
       setGenMsg({
         type: "success",
-        text: `🎉 ${member.name} promoted to full Member!`,
+        text: `${member.name} promoted to full Member!`,
       });
       setTimeout(() => setGenMsg(null), 3000);
       onUpdate();
@@ -1069,41 +1221,35 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   return (
     <div className="space-y-4 pb-24 relative min-h-screen">
       {/* HEADER TABS */}
-      <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex gap-1 sticky top-0 z-30 overflow-x-auto hide-scrollbar">
+      <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex gap-1.5 sticky top-0 z-30 overflow-x-auto hide-scrollbar">
         <button
           onClick={() => setActiveTab("VISIT")}
-          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "VISIT" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
+          className={`flex-1 min-w-[85px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "VISIT" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
         >
           <MapPin size={16} /> Visits
         </button>
         <button
           onClick={() => setActiveTab("PRAYER")}
-          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "PRAYER" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
+          className={`flex-1 min-w-[85px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "PRAYER" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
         >
           <Heart size={16} /> Prayer
         </button>
         <button
           onClick={() => setActiveTab("CONNECT")}
-          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "CONNECT" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
+          className={`flex-1 min-w-[85px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "CONNECT" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
         >
           <Phone size={16} /> Members
-        </button>
-        <button
-          onClick={() => setActiveTab("FOLLOW_UP")}
-          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "FOLLOW_UP" ? "bg-teal-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
-        >
-          <Sparkles size={16} /> Follow Up
-          {visitorList.length > 0 && (
+          {connectList.length > 0 && (
             <span
-              className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${activeTab === "FOLLOW_UP" ? "bg-teal-700 text-white" : "bg-teal-100 text-teal-700"}`}
+              className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${activeTab === "CONNECT" ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-600"}`}
             >
-              {visitorList.length}
+              {connectList.length}
             </span>
           )}
         </button>
         <button
           onClick={() => setActiveTab("TRACK")}
-          className={`flex-1 min-w-[80px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "TRACK" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
+          className={`flex-1 min-w-[85px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "TRACK" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
         >
           <BarChart2 size={16} /> Progress
         </button>
@@ -1236,6 +1382,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                           currentSessionId: sid,
                         })
                       }
+                      onRemove={handleRemoveMemberFromSession}
                     />
                     <div className="mt-3 flex gap-2">
                       <button
@@ -1370,6 +1517,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                         currentSessionId: sid,
                       })
                     }
+                    onRemove={handleRemoveMemberFromSession}
                   />
                   <div className="mt-3 flex gap-2">
                     <button
@@ -1407,6 +1555,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                       currentSessionId: sid,
                     })
                   }
+                  onRemove={handleRemoveMemberFromSession}
                 />
               </div>
             )}
@@ -1462,7 +1611,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
           {/* Missed & Expired Section */}
           <CollapsibleSection
-            title="Missed & Expired"
+            title="Missed and Expired"
             items={prayerData.expired}
             data={data}
             unsavedChanges={unsavedChanges}
@@ -1508,329 +1657,260 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         </div>
       )}
 
-      {/* CONNECT TAB (Members Only) */}
-      {activeTab === "CONNECT" && (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
-          <div className="p-4 bg-indigo-50/70 rounded-2xl border border-indigo-100 text-indigo-900 text-sm font-medium flex items-start gap-2.5">
-            <Phone size={18} className="shrink-0 mt-0.5 text-indigo-600" />
-            <div>
-              <p className="font-bold text-slate-800">Members Directory & Connect</p>
-              <p className="text-xs text-slate-500">
-                Contact and check in on registered church members. First Timers and follow-ups are in the dedicated Follow Up tab.
-              </p>
-            </div>
-          </div>
+      {/* CONNECT TAB (Members, First Timers & FNF with Categories) */}
+      {activeTab === "CONNECT" && (() => {
+        const activeMembers = connectList.filter(
+          (m) => m.type === MemberType.MEMBER && m.status === MemberStatus.ACTIVE,
+        );
+        const inconsistentMembers = connectList.filter(
+          (m) => m.type === MemberType.MEMBER && m.status === MemberStatus.INCONSISTENT,
+        );
+        const notActiveMembers = connectList.filter(
+          (m) => m.type === MemberType.MEMBER && m.status === MemberStatus.NOT_ACTIVE,
+        );
+        const firstTimers = connectList.filter(
+          (m) => m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER,
+        );
+        const fnfMembers = connectList.filter(
+          (m) => m.type === MemberType.FNF,
+        );
 
-          <CollapsibleContactSection
-            title="Active Members"
-            members={connectList.filter((m) => m.status === MemberStatus.ACTIVE)}
-            color="indigo"
-            icon={User}
-            onTrackCall={handleTrackCall}
-            onMessageClick={handleMessageClick}
-          />
-          <CollapsibleContactSection
-            title="Inconsistent Members"
-            members={connectList.filter((m) => m.status === MemberStatus.INCONSISTENT)}
-            color="rose"
-            icon={AlertCircle}
-            onTrackCall={handleTrackCall}
-            onMessageClick={handleMessageClick}
-          />
-          <CollapsibleContactSection
-            title="Not Active Members"
-            members={connectList.filter((m) => m.status === MemberStatus.NOT_ACTIVE)}
-            color="amber"
-            icon={Clock}
-            onTrackCall={handleTrackCall}
-            onMessageClick={handleMessageClick}
-          />
-        </div>
-      )}
+        return (
+          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+            {/* Search & Category Filter Header */}
+            <div className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm space-y-3">
+              <div className="relative">
+                <Search
+                  size={18}
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  type="text"
+                  placeholder="Search by name, phone, parent phone, or address..."
+                  value={memberSearch}
+                  onChange={(e) => setMemberSearch(e.target.value)}
+                  className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                />
+                {memberSearch && (
+                  <button
+                    onClick={() => setMemberSearch("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-200"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
 
-      {/* FOLLOW UP TAB (Exclusively for First Timers, FNF, Not-Members) */}
-      {activeTab === "FOLLOW_UP" && (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
-          {/* Header Banner */}
-          <div className="bg-gradient-to-br from-teal-800 via-teal-700 to-slate-900 p-5 rounded-3xl text-white shadow-lg">
-            <div className="flex items-center justify-between gap-4 mb-3">
-              <div className="flex items-center gap-2.5">
-                <span className="p-2.5 bg-teal-500/30 rounded-2xl">
-                  <Sparkles size={22} className="text-teal-200" />
-                </span>
-                <div>
-                  <h3 className="text-lg font-extrabold tracking-tight">
-                    First Timer & Follow-Up Care
-                  </h3>
-                  <p className="text-teal-200 text-xs font-medium">
-                    Dedicated outreach for tracking First Timers and FNF, with 1-click promotion to full member status.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Metrics Chips */}
-            <div className="grid grid-cols-3 gap-2 mt-2 pt-3 border-t border-teal-600/40">
-              <div className="bg-teal-900/40 p-2.5 rounded-xl text-center">
-                <div className="text-[10px] text-teal-300 font-bold uppercase">First Timers</div>
-                <div className="text-lg font-black text-white">
-                  {visitorList.filter((m) => m.type === MemberType.VISITOR).length}
-                </div>
-              </div>
-              <div className="bg-teal-900/40 p-2.5 rounded-xl text-center">
-                <div className="text-[10px] text-teal-300 font-bold uppercase">Friends & Family</div>
-                <div className="text-lg font-black text-white">
-                  {visitorList.filter((m) => m.type === MemberType.FNF).length}
-                </div>
-              </div>
-              <div className="bg-teal-900/40 p-2.5 rounded-xl text-center">
-                <div className="text-[10px] text-teal-300 font-bold uppercase">Total Pool</div>
-                <div className="text-lg font-black text-white">
-                  {visitorList.length}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Search & Filter Bar */}
-          <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm space-y-3">
-            <div className="relative">
-              <Search
-                size={16}
-                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                type="text"
-                value={visitorSearch}
-                onChange={(e) => setVisitorSearch(e.target.value)}
-                placeholder="Search First Timers by name, phone, or address..."
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-teal-500"
-              />
-              {visitorSearch && (
+              {/* Category Filter Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar pt-1">
                 <button
-                  onClick={() => setVisitorSearch("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  <X size={16} />
-                </button>
-              )}
-            </div>
-
-            <div className="flex gap-1.5 overflow-x-auto pb-1">
-              {[
-                { id: "ALL", label: "All Contacts", count: visitorList.length },
-                {
-                  id: "VISITOR",
-                  label: "First Timers",
-                  count: visitorList.filter((m) => m.type === MemberType.VISITOR).length,
-                },
-                {
-                  id: "FNF",
-                  label: "Friends & Family",
-                  count: visitorList.filter((m) => m.type === MemberType.FNF).length,
-                },
-                {
-                  id: "NOT_MEMBER",
-                  label: "Not a Member",
-                  count: visitorList.filter((m) => m.type === MemberType.NOT_MEMBER).length,
-                },
-              ].map((filter) => (
-                <button
-                  key={filter.id}
-                  onClick={() => setVisitorFilter(filter.id as any)}
+                  onClick={() => setMemberCategoryFilter("ALL")}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                    visitorFilter === filter.id
-                      ? "bg-teal-600 text-white shadow-sm"
-                      : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                    memberCategoryFilter === "ALL"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
                 >
-                  <span>{filter.label}</span>
-                  <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${
-                      visitorFilter === filter.id
-                        ? "bg-teal-700 text-teal-100"
-                        : "bg-slate-200 text-slate-600"
-                    }`}
-                  >
-                    {filter.count}
+                  <span>All Contacts</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${memberCategoryFilter === "ALL" ? "bg-slate-700 text-slate-100" : "bg-slate-200 text-slate-700"}`}>
+                    {connectList.length}
                   </span>
                 </button>
-              ))}
-            </div>
-          </div>
 
-          {/* Filtered First Timers List */}
-          {(() => {
-            const filtered = visitorList.filter((m) => {
-              if (visitorFilter !== "ALL" && m.type !== visitorFilter) return false;
-              if (visitorSearch.trim()) {
-                const q = visitorSearch.toLowerCase();
-                const matchName = m.name.toLowerCase().includes(q);
-                const matchPhone = (m.phone || "").includes(q) || (m.parentPhone || "").includes(q);
-                const matchAddr = (m.address || "").toLowerCase().includes(q);
-                return matchName || matchPhone || matchAddr;
-              }
-              return true;
-            });
+                <button
+                  onClick={() => setMemberCategoryFilter("ACTIVE")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                    memberCategoryFilter === "ACTIVE"
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                  }`}
+                >
+                  <User size={12} />
+                  <span>Active</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${memberCategoryFilter === "ACTIVE" ? "bg-indigo-700 text-white" : "bg-indigo-200/70 text-indigo-800"}`}>
+                    {activeMembers.length}
+                  </span>
+                </button>
 
-            if (filtered.length === 0) {
-              return (
-                <div className="bg-white rounded-3xl p-8 border border-slate-100 text-center space-y-3">
-                  <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto">
-                    <Sparkles size={24} />
-                  </div>
-                  <h4 className="font-bold text-slate-700">No First Timers found</h4>
-                  <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                    {visitorSearch
-                      ? "No records matched your search filter."
-                      : "There are currently no First Timers or friends & family in this church."}
-                  </p>
-                </div>
-              );
-            }
+                <button
+                  onClick={() => setMemberCategoryFilter("INCONSISTENT")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                    memberCategoryFilter === "INCONSISTENT"
+                      ? "bg-rose-600 text-white shadow-sm"
+                      : "bg-rose-50 text-rose-700 hover:bg-rose-100"
+                  }`}
+                >
+                  <AlertCircle size={12} />
+                  <span>Inconsistent</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${memberCategoryFilter === "INCONSISTENT" ? "bg-rose-700 text-white" : "bg-rose-200/70 text-rose-800"}`}>
+                    {inconsistentMembers.length}
+                  </span>
+                </button>
 
-            return (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {filtered.map((m) => {
-                  const phone = m.parentPhone || m.phone;
-                  const isPromoting = promotingId === m.id;
+                <button
+                  onClick={() => setMemberCategoryFilter("NOT_ACTIVE")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                    memberCategoryFilter === "NOT_ACTIVE"
+                      ? "bg-amber-600 text-white shadow-sm"
+                      : "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                  }`}
+                >
+                  <Clock size={12} />
+                  <span>Not Active</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${memberCategoryFilter === "NOT_ACTIVE" ? "bg-amber-700 text-white" : "bg-amber-200/70 text-amber-800"}`}>
+                    {notActiveMembers.length}
+                  </span>
+                </button>
 
-                  return (
-                    <div
-                      key={m.id}
-                      className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:border-teal-300 transition-all flex flex-col justify-between gap-3"
-                    >
-                      <div>
-                        {/* Header info */}
-                        <div className="flex justify-between items-start gap-2 mb-2">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-700 font-black flex items-center justify-center text-sm shrink-0 border border-teal-100">
-                              {m.name.charAt(0)}
-                            </div>
-                            <div className="min-w-0">
-                              <h4 className="font-extrabold text-slate-800 text-sm truncate">
-                                {m.name}
-                              </h4>
-                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-100 uppercase">
-                                  {m.type === "Visitor" ? "First Timer" : m.type}
-                                </span>
-                                {m.assignedChurch && (
-                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">
-                                    {m.assignedChurch}
-                                  </span>
-                                )}
-                                {m.gender && (
-                                  <span className="text-[9px] font-semibold text-slate-400">
-                                    {m.gender}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                <button
+                  onClick={() => setMemberCategoryFilter("VISITOR")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                    memberCategoryFilter === "VISITOR"
+                      ? "bg-teal-600 text-white shadow-sm"
+                      : "bg-teal-50 text-teal-700 hover:bg-teal-100"
+                  }`}
+                >
+                  <Sparkles size={12} />
+                  <span>First Timers</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${memberCategoryFilter === "VISITOR" ? "bg-teal-700 text-white" : "bg-teal-200/70 text-teal-800"}`}>
+                    {firstTimers.length}
+                  </span>
+                </button>
 
-                        {/* Contact details */}
-                        <div className="space-y-1 mt-2 text-xs text-slate-600 bg-slate-50/70 p-2.5 rounded-xl border border-slate-100">
-                          {phone && (
-                            <div className="flex items-center gap-2">
-                              <Phone size={13} className="text-slate-400 shrink-0" />
-                              <span className="font-mono text-slate-700">{phone}</span>
-                            </div>
-                          )}
-                          {m.address && (
-                            <div className="flex items-center gap-2">
-                              <MapPin size={13} className="text-slate-400 shrink-0" />
-                              <span className="truncate">{m.address}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Action Bar */}
-                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                        <div className="flex items-center gap-1.5">
-                          {phone && (
-                            <>
-                              <button
-                                onClick={() => handleTrackCall(m, "Call")}
-                                title="Call"
-                                className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl transition-colors"
-                              >
-                                <Phone size={15} />
-                              </button>
-                              <button
-                                onClick={() => handleMessageClick(m)}
-                                title="Message (WhatsApp / SMS)"
-                                className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-colors"
-                              >
-                                <MessageSquare size={15} />
-                              </button>
-                            </>
-                          )}
-                          {(m.gpsCoordinates || m.address) && (
-                            <a
-                              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                                m.gpsCoordinates || m.address || "",
-                              )}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              title="Directions"
-                              className="p-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-colors"
-                            >
-                              <MapIcon size={15} />
-                            </a>
-                          )}
-                        </div>
-
-                        {/* Promote to Full Member Button */}
-                        <button
-                          onClick={() => handlePromoteToMember(m)}
-                          disabled={isPromoting}
-                          className="flex items-center gap-1.5 px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-50"
-                        >
-                          {isPromoting ? (
-                            <Loader2 size={13} className="animate-spin" />
-                          ) : (
-                            <UserCheck size={13} />
-                          )}
-                          <span>Promote to Member</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                <button
+                  onClick={() => setMemberCategoryFilter("FNF")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                    memberCategoryFilter === "FNF"
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                  }`}
+                >
+                  <Heart size={12} />
+                  <span>Friends & Family</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${memberCategoryFilter === "FNF" ? "bg-emerald-700 text-white" : "bg-emerald-200/70 text-emerald-800"}`}>
+                    {fnfMembers.length}
+                  </span>
+                </button>
               </div>
-            );
-          })()}
-        </div>
-      )}
+            </div>
+
+            {/* Collapsible Category Sections */}
+            {(memberCategoryFilter === "ALL" || memberCategoryFilter === "ACTIVE") && (
+              <CollapsibleContactSection
+                title="Active Members"
+                members={activeMembers}
+                color="indigo"
+                icon={User}
+                defaultOpen={true}
+                onTrackCall={handleTrackCall}
+                onMessageClick={handleMessageClick}
+                onEditClick={handleEditClick}
+              />
+            )}
+
+            {(memberCategoryFilter === "ALL" || memberCategoryFilter === "INCONSISTENT") && (
+              <CollapsibleContactSection
+                title="Inconsistent Members"
+                members={inconsistentMembers}
+                color="rose"
+                icon={AlertCircle}
+                defaultOpen={memberCategoryFilter === "INCONSISTENT"}
+                onTrackCall={handleTrackCall}
+                onMessageClick={handleMessageClick}
+                onEditClick={handleEditClick}
+              />
+            )}
+
+            {(memberCategoryFilter === "ALL" || memberCategoryFilter === "NOT_ACTIVE") && (
+              <CollapsibleContactSection
+                title="Not Active Members"
+                members={notActiveMembers}
+                color="amber"
+                icon={Clock}
+                defaultOpen={memberCategoryFilter === "NOT_ACTIVE"}
+                onTrackCall={handleTrackCall}
+                onMessageClick={handleMessageClick}
+                onEditClick={handleEditClick}
+              />
+            )}
+
+            {(memberCategoryFilter === "ALL" || memberCategoryFilter === "VISITOR") && (
+              <CollapsibleContactSection
+                title="First Timers (Follow Up)"
+                members={firstTimers}
+                color="teal"
+                icon={Sparkles}
+                defaultOpen={memberCategoryFilter === "VISITOR" || memberCategoryFilter === "ALL"}
+                onTrackCall={handleTrackCall}
+                onMessageClick={handleMessageClick}
+                onEditClick={handleEditClick}
+                onPromoteClick={handlePromoteToMember}
+                promotingId={promotingId}
+              />
+            )}
+
+            {(memberCategoryFilter === "ALL" || memberCategoryFilter === "FNF") && (
+              <CollapsibleContactSection
+                title="(FNF)"
+                members={fnfMembers}
+                color="emerald"
+                icon={Heart}
+                defaultOpen={memberCategoryFilter === "FNF"}
+                onTrackCall={handleTrackCall}
+                onMessageClick={handleMessageClick}
+                onEditClick={handleEditClick}
+                onPromoteClick={handlePromoteToMember}
+                promotingId={promotingId}
+              />
+            )}
+          </div>
+        );
+      })()}
 
       {/* TRACKING TAB */}
       {activeTab === "TRACK" &&
         (() => {
+          const focusChurchId =
+            currentUser.assignedChurch &&
+            currentUser.assignedChurch !== "All" &&
+            currentUser.assignedChurch !== "CM"
+              ? currentUser.assignedChurch
+              : activeChurch !== "All" && activeChurch !== "CM"
+              ? activeChurch
+              : "UJ";
+
+          const churchConfigMap: Record<
+            string,
+            { id: string; name: string; ageRange: string }
+          > = {
+            UJ: { id: "UJ", name: "UJ", ageRange: "Ages 9-12" },
+            LJ: { id: "LJ", name: "LJ", ageRange: "Ages 6-8" },
+            K: { id: "K", name: "K", ageRange: "Ages 2-5" },
+            I: { id: "I", name: "I", ageRange: "Ages 0-1" },
+          };
+
+          const currentChurch =
+            churchConfigMap[focusChurchId] || {
+              id: focusChurchId,
+              name: `${focusChurchId} Church`,
+              ageRange: "",
+            };
+
           const currentYear = new Date().getFullYear();
           let exactlyOnceVisit = 0;
           let multipleTimesVisit = 0;
           let exactlyOnceCall = 0;
           let multipleTimesCall = 0;
 
-          const churchVisitMap = new Map<string, number>();
-          const churchCallMap = new Map<string, number>();
+          // Focus only on the church the teacher is part of per their login
+          const churchKids = data.members.filter(
+            (m) =>
+              m.assignedChurch === focusChurchId &&
+              !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+              m.status !== MemberStatus.ARCHIVED,
+          );
 
-          const teacherStatsMap = new Map<
-            string,
-            { visits: number; calls: number }
-          >();
-
-          data.members.filter(isMemberInActiveChurch).forEach((m) => {
-            if (m.assignedChurch) {
-              if (!churchVisitMap.has(m.assignedChurch))
-                churchVisitMap.set(m.assignedChurch, 0);
-              if (!churchCallMap.has(m.assignedChurch))
-                churchCallMap.set(m.assignedChurch, 0);
-            }
-
+          churchKids.forEach((m) => {
             const visits = localSessions.filter(
               (s) =>
                 s.status === "COMPLETED" &&
@@ -1855,79 +1935,13 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             else if (calls > 1) multipleTimesCall++;
           });
 
-          localSessions.forEach((s) => {
-            if (
-              s.status === "COMPLETED" &&
-              new Date(s.date).getFullYear() === currentYear
-            ) {
-              // Add to teacher stats
-              const teacherName = s.completedBy
-                ? data.members.find((m) => m.id === s.completedBy)?.name ||
-                  s.completedBy
-                : "Unknown Teacher";
-              if (!teacherStatsMap.has(teacherName)) {
-                teacherStatsMap.set(teacherName, { visits: 0, calls: 0 });
-              }
-              const stats = teacherStatsMap.get(teacherName)!;
-
-              const isCall = s.sessionType === "CALL";
-              if (isCall) {
-                stats.calls += s.visitedMemberIds?.length || 0;
-              } else {
-                stats.visits += s.visitedMemberIds?.length || 0;
-              }
-
-              // Add to chart stats (only count reached for calls)
-              if (!isCall || s.outcome === "REACHED") {
-                s.visitedMemberIds?.forEach((id) => {
-                  const member = data.members.find((m) => m.id === id);
-                  if (member && member.assignedChurch) {
-                    if (isCall) {
-                      churchCallMap.set(
-                        member.assignedChurch,
-                        (churchCallMap.get(member.assignedChurch) || 0) + 1,
-                      );
-                    } else {
-                      churchVisitMap.set(
-                        member.assignedChurch,
-                        (churchVisitMap.get(member.assignedChurch) || 0) + 1,
-                      );
-                    }
-                  }
-                });
-              }
-            }
-          });
-
-          const chartData = Array.from(churchVisitMap.entries())
-            .map(([church, visits]) => ({
-              name: church,
-              visits,
-              calls: churchCallMap.get(church) || 0,
-            }))
-            .sort((a, b) => b.visits - a.visits);
-
-          const teacherStats = Array.from(teacherStatsMap.entries())
-            .map(([name, stats]) => ({ name, ...stats }))
-            .sort((a, b) => b.visits + b.calls - (a.visits + a.calls));
-
-          const COLORS = [
-            "#6366f1",
-            "#10b981",
-            "#f59e0b",
-            "#f43f5e",
-            "#8b5cf6",
-            "#ec4899",
-            "#06b6d4",
-          ];
-
           return (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
                 <div className="flex flex-col xl:flex-row items-center justify-between gap-6">
                   <div className="flex-1 text-center xl:text-left">
                     <h3 className="font-bold text-xl text-slate-800 mb-1">
-                      Visits Progress {currentYear}
+                      Visits Progress {currentYear} ({currentChurch.name})
                     </h3>
                     <p className="text-sm text-slate-500">
                       Goal: 2 visits per child per year.
@@ -1970,7 +1984,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 <div className="flex flex-col xl:flex-row items-center justify-between gap-6">
                   <div className="flex-1 text-center xl:text-left">
                     <h3 className="font-bold text-xl text-slate-800 mb-1">
-                      Calls Progress {currentYear}
+                      Calls Progress {currentYear} ({currentChurch.name})
                     </h3>
                     <p className="text-sm text-slate-500">
                       Number of children reached.
@@ -2003,120 +2017,435 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 </div>
               </div>
 
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                <h3 className="font-bold text-slate-800 mb-4">
-                  Teacher Activity (Members Reached)
-                </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr>
-                        <th className="p-3 border-b text-xs font-bold text-slate-500 uppercase tracking-wider">
-                          Teacher
-                        </th>
-                        <th className="p-3 border-b text-xs font-bold text-slate-500 uppercase tracking-wider">
-                          Visits
-                        </th>
-                        <th className="p-3 border-b text-xs font-bold text-slate-500 uppercase tracking-wider">
-                          Calls
-                        </th>
-                        <th className="p-3 border-b text-xs font-bold text-slate-500 uppercase tracking-wider">
-                          Total
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {teacherStats.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={4}
-                            className="p-4 text-center text-slate-400 text-sm"
-                          >
-                            No activity recorded for this year.
-                          </td>
-                        </tr>
-                      ) : (
-                        teacherStats.map((t) => (
-                          <tr key={t.name} className="hover:bg-slate-50">
-                            <td className="p-3 border-b text-sm font-bold text-slate-800">
-                              {t.name}
-                            </td>
-                            <td className="p-3 border-b text-sm text-slate-600">
-                              {t.visits}
-                            </td>
-                            <td className="p-3 border-b text-sm text-slate-600">
-                              {t.calls}
-                            </td>
-                            <td className="p-3 border-b text-sm font-bold text-indigo-600">
-                              {t.visits + t.calls}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              {/* OUTREACH BY AGE GROUP (CHURCH) WITH TEACHER TRENDS & INSIGHTS */}
+              {(() => {
+                const churchConfig = [
+                  { id: "UJ", name: "Upper Junior (UJ)", ageRange: "Ages 9-12" },
+                  { id: "LJ", name: "Lower Junior (LJ)", ageRange: "Ages 6-8" },
+                  { id: "K", name: "Kingdom (K)", ageRange: "Ages 2-5" },
+                  { id: "I", name: "Infants (I)", ageRange: "Ages 0-1" },
+                ];
 
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                <h3 className="font-bold text-slate-800 mb-6">
-                  Outreach by Age Group (Church)
-                </h3>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={chartData}
-                      margin={{ top: 0, right: 0, left: -25, bottom: 0 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        vertical={false}
-                        stroke="#E2E8F0"
-                      />
-                      <XAxis
-                        dataKey="name"
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fontSize: 10, fill: "#64748B" }}
-                        dy={10}
-                      />
-                      <YAxis
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fontSize: 10, fill: "#64748B" }}
-                        dx={-10}
-                        allowDecimals={false}
-                      />
-                      <RechartsTooltip
-                        cursor={{ fill: "#F1F5F9" }}
-                        contentStyle={{
-                          borderRadius: "12px",
-                          border: "1px solid #E2E8F0",
-                          boxShadow:
-                            "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
-                        }}
-                      />
-                      <Legend verticalAlign="top" height={36} />
-                      <Bar
-                        dataKey="visits"
-                        name="Visits"
-                        radius={[4, 4, 0, 0]}
-                        maxBarSize={40}
-                        stackId="a"
-                        fill="#6366f1"
-                      />
-                      <Bar
-                        dataKey="calls"
-                        name="Calls"
-                        radius={[4, 4, 0, 0]}
-                        maxBarSize={40}
-                        stackId="a"
-                        fill="#06b6d4"
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+                const currentChurch =
+                  churchConfig.find((c) => c.id === focusChurchId) ||
+                  churchConfig[0];
+
+                // Children in this church
+                const churchKids = data.members.filter(
+                  (m) =>
+                    m.assignedChurch === focusChurchId &&
+                    !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+                    m.status !== MemberStatus.ARCHIVED,
+                );
+                const churchKidIds = new Set(churchKids.map((m) => m.id));
+
+                // Teachers in this church
+                const churchDivision = divisions[focusChurchId];
+                const teacherAssignments = churchDivision?.assignments || [];
+
+                const churchTeachersMap = new Map<
+                  string,
+                  { teacher: Member; assignedKids: Member[] }
+                >();
+
+                teacherAssignments.forEach((a) => {
+                  churchTeachersMap.set(a.teacher.id, {
+                    teacher: a.teacher,
+                    assignedKids: a.members,
+                  });
+                });
+
+                data.members
+                  .filter(
+                    (m) =>
+                      m.assignedChurch === selectedProgressChurch &&
+                      (m.type === MemberType.TEACHER ||
+                        m.type === MemberType.HELPER ||
+                        m.role === "TEACHER" ||
+                        m.role === "BRANCH_COORDINATOR"),
+                  )
+                  .forEach((t) => {
+                    if (!churchTeachersMap.has(t.id)) {
+                      churchTeachersMap.set(t.id, {
+                        teacher: t,
+                        assignedKids: [],
+                      });
+                    }
+                  });
+
+                // Completed sessions in current year for children in this church
+                const churchSessionsThisYear = localSessions.filter(
+                  (s) =>
+                    s.status === "COMPLETED" &&
+                    new Date(s.date).getFullYear() === currentYear &&
+                    s.visitedMemberIds?.some((id) => churchKidIds.has(id)),
+                );
+
+                // Map teacher metrics within this church
+                const churchTeacherMetrics = Array.from(
+                  churchTeachersMap.values(),
+                )
+                  .map(({ teacher, assignedKids }) => {
+                    const assignedKidIds = new Set(
+                      assignedKids.map((k) => k.id),
+                    );
+
+                    // Visits by this teacher for this church's kids
+                    const teacherVisits = localSessions.filter(
+                      (s) =>
+                        s.status === "COMPLETED" &&
+                        (s.sessionType === "VISIT" || !s.sessionType) &&
+                        new Date(s.date).getFullYear() === currentYear &&
+                        s.completedBy === teacher.id &&
+                        s.visitedMemberIds?.some((id) => churchKidIds.has(id)),
+                    );
+                    const visitTouches = teacherVisits.reduce((acc, s) => {
+                      return (
+                        acc +
+                        (s.visitedMemberIds?.filter((id) => churchKidIds.has(id))
+                          .length || 0)
+                      );
+                    }, 0);
+
+                    // Calls by this teacher for this church's kids
+                    const teacherCalls = localSessions.filter(
+                      (s) =>
+                        s.status === "COMPLETED" &&
+                        s.sessionType === "CALL" &&
+                        s.outcome === "REACHED" &&
+                        new Date(s.date).getFullYear() === currentYear &&
+                        s.completedBy === teacher.id &&
+                        s.visitedMemberIds?.some((id) => churchKidIds.has(id)),
+                    );
+                    const callTouches = teacherCalls.reduce((acc, s) => {
+                      return (
+                        acc +
+                        (s.visitedMemberIds?.filter((id) => churchKidIds.has(id))
+                          .length || 0)
+                      );
+                    }, 0);
+
+                    // Unique kids contacted by this teacher
+                    const contactedKidIds = new Set<string>();
+                    teacherVisits.forEach((s) =>
+                      s.visitedMemberIds?.forEach((id) => {
+                        if (churchKidIds.has(id)) contactedKidIds.add(id);
+                      }),
+                    );
+                    teacherCalls.forEach((s) =>
+                      s.visitedMemberIds?.forEach((id) => {
+                        if (churchKidIds.has(id)) contactedKidIds.add(id);
+                      }),
+                    );
+
+                    let assignedContactedCount = 0;
+                    contactedKidIds.forEach((id) => {
+                      if (assignedKidIds.has(id)) assignedContactedCount++;
+                    });
+
+                    const coveragePercent =
+                      assignedKids.length > 0
+                        ? Math.round(
+                            (assignedContactedCount / assignedKids.length) * 100,
+                          )
+                        : contactedKidIds.size > 0
+                        ? 100
+                        : 0;
+
+                    const allTeacherDates = [
+                      ...teacherVisits,
+                      ...teacherCalls,
+                    ].map((s) => new Date(s.date).getTime());
+                    const lastActiveTimestamp =
+                      allTeacherDates.length > 0
+                        ? Math.max(...allTeacherDates)
+                        : null;
+
+                    return {
+                      id: teacher.id,
+                      name: teacher.name,
+                      role: teacher.role || teacher.type,
+                      assignedCount: assignedKids.length,
+                      visits: visitTouches,
+                      calls: callTouches,
+                      total: visitTouches + callTouches,
+                      uniqueContacted: contactedKidIds.size,
+                      coveragePercent,
+                      lastActive: lastActiveTimestamp
+                        ? new Date(lastActiveTimestamp).toISOString()
+                        : null,
+                    };
+                  })
+                  .sort((a, b) => b.total - a.total);
+
+                // Monthly trend data for this church
+                const monthLabels = [
+                  "Jan",
+                  "Feb",
+                  "Mar",
+                  "Apr",
+                  "May",
+                  "Jun",
+                  "Jul",
+                  "Aug",
+                  "Sep",
+                  "Oct",
+                  "Nov",
+                  "Dec",
+                ];
+                const churchMonthlyTrends = monthLabels.map((mName, mIdx) => {
+                  const mVisits = localSessions
+                    .filter((s) => {
+                      if (
+                        s.status !== "COMPLETED" ||
+                        (s.sessionType !== "VISIT" && s.sessionType)
+                      )
+                        return false;
+                      const d = new Date(s.date);
+                      return (
+                        d.getFullYear() === currentYear &&
+                        d.getMonth() === mIdx &&
+                        s.visitedMemberIds?.some((id) => churchKidIds.has(id))
+                      );
+                    })
+                    .reduce(
+                      (acc, s) =>
+                        acc +
+                        (s.visitedMemberIds?.filter((id) => churchKidIds.has(id))
+                          .length || 0),
+                      0,
+                    );
+
+                  const mCalls = localSessions
+                    .filter((s) => {
+                      if (
+                        s.status !== "COMPLETED" ||
+                        s.sessionType !== "CALL" ||
+                        s.outcome !== "REACHED"
+                      )
+                        return false;
+                      const d = new Date(s.date);
+                      return (
+                        d.getFullYear() === currentYear &&
+                        d.getMonth() === mIdx &&
+                        s.visitedMemberIds?.some((id) => churchKidIds.has(id))
+                      );
+                    })
+                    .reduce(
+                      (acc, s) =>
+                        acc +
+                        (s.visitedMemberIds?.filter((id) => churchKidIds.has(id))
+                          .length || 0),
+                      0,
+                    );
+
+                  return {
+                    month: mName,
+                    visits: mVisits,
+                    calls: mCalls,
+                    total: mVisits + mCalls,
+                  };
+                });
+
+                const totalChurchVisits = churchMonthlyTrends.reduce(
+                  (sum, m) => sum + m.visits,
+                  0,
+                );
+                const totalChurchCalls = churchMonthlyTrends.reduce(
+                  (sum, m) => sum + m.calls,
+                  0,
+                );
+                const totalChurchTouches = totalChurchVisits + totalChurchCalls;
+
+                const allContactedKidsInChurch = new Set<string>();
+                churchSessionsThisYear.forEach((s) => {
+                  if (s.sessionType === "CALL" && s.outcome !== "REACHED") return;
+                  s.visitedMemberIds?.forEach((id) => {
+                    if (churchKidIds.has(id)) allContactedKidsInChurch.add(id);
+                  });
+                });
+                const churchOverallCoverage =
+                  churchKids.length > 0
+                    ? Math.round(
+                        (allContactedKidsInChurch.size / churchKids.length) * 100,
+                      )
+                    : 0;
+
+
+                return (
+                  <div className="space-y-6">
+                    {/* SECTION CONTAINER */}
+                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-6">
+                      {/* HEADER */}
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                              <TrendingUp size={20} />
+                            </span>
+                            <h3 className="font-extrabold text-slate-800 text-lg">
+                              Outreach by Age Group ({currentChurch.name})
+                            </h3>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Trends and insights for calls and visits for teachers within {currentChurch.name}.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* CHARTS GRID: MONTHLY TREND & TEACHER COMPARISON */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+                        {/* CHART 1: MONTHLY TRENDS */}
+                        <div className="bg-slate-50/60 p-4 rounded-2xl border border-slate-100">
+                          <div className="flex items-center justify-between mb-4">
+                            <div>
+                              <h4 className="font-bold text-slate-800 text-sm">
+                                Monthly Outreach Trend ({currentYear})
+                              </h4>
+                              <p className="text-[11px] text-slate-500">
+                                Total calls and visits logged per month in {currentChurch.name}
+                              </p>
+                            </div>
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-white text-slate-600 border border-slate-200">
+                              {currentChurch.id}
+                            </span>
+                          </div>
+
+                          <div className="h-56">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart
+                                data={churchMonthlyTrends}
+                                margin={{ top: 5, right: 10, left: -25, bottom: 0 }}
+                              >
+                                <CartesianGrid
+                                  strokeDasharray="3 3"
+                                  vertical={false}
+                                  stroke="#E2E8F0"
+                                />
+                                <XAxis
+                                  dataKey="month"
+                                  axisLine={false}
+                                  tickLine={false}
+                                  tick={{ fontSize: 10, fill: "#64748B" }}
+                                />
+                                <YAxis
+                                  axisLine={false}
+                                  tickLine={false}
+                                  tick={{ fontSize: 10, fill: "#64748B" }}
+                                  allowDecimals={false}
+                                />
+                                <RechartsTooltip
+                                  cursor={{ fill: "#F1F5F9" }}
+                                  contentStyle={{
+                                    borderRadius: "12px",
+                                    border: "1px solid #E2E8F0",
+                                    boxShadow:
+                                      "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                                  }}
+                                />
+                                <Legend verticalAlign="top" height={30} />
+                                <Bar
+                                  dataKey="visits"
+                                  name="Visits"
+                                  stackId="a"
+                                  fill="#6366f1"
+                                  radius={[0, 0, 0, 0]}
+                                />
+                                <Bar
+                                  dataKey="calls"
+                                  name="Calls"
+                                  stackId="a"
+                                  fill="#06b6d4"
+                                  radius={[4, 4, 0, 0]}
+                                />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* CHART 2: TEACHER OUTREACH */}
+                        <div className="bg-slate-50/60 p-4 rounded-2xl border border-slate-100">
+                          <div className="flex items-center justify-between mb-4">
+                            <div>
+                              <h4 className="font-bold text-slate-800 text-sm">
+                                Teacher Outreach
+                              </h4>
+                              <p className="text-[11px] text-slate-500">
+                                Visits vs calls completed by teachers within {currentChurch.name}
+                              </p>
+                            </div>
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-white text-slate-600 border border-slate-200">
+                              {churchTeacherMetrics.length} Teachers
+                            </span>
+                          </div>
+
+                          <div className="h-56">
+                            {churchTeacherMetrics.length === 0 ? (
+                              <div className="h-full flex items-center justify-center text-slate-400 text-xs">
+                                No teachers assigned to this church yet.
+                              </div>
+                            ) : (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart
+                                  data={churchTeacherMetrics.slice(0, 6).map((t) => ({
+                                    name:
+                                      t.name.length > 12
+                                        ? t.name.substring(0, 11) + "…"
+                                        : t.name,
+                                    visits: t.visits,
+                                    calls: t.calls,
+                                  }))}
+                                  margin={{ top: 5, right: 10, left: -25, bottom: 0 }}
+                                >
+                                  <CartesianGrid
+                                    strokeDasharray="3 3"
+                                    vertical={false}
+                                    stroke="#E2E8F0"
+                                  />
+                                  <XAxis
+                                    dataKey="name"
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fontSize: 10, fill: "#64748B" }}
+                                  />
+                                  <YAxis
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fontSize: 10, fill: "#64748B" }}
+                                    allowDecimals={false}
+                                  />
+                                  <RechartsTooltip
+                                    cursor={{ fill: "#F1F5F9" }}
+                                    contentStyle={{
+                                      borderRadius: "12px",
+                                      border: "1px solid #E2E8F0",
+                                      boxShadow:
+                                        "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                                    }}
+                                  />
+                                  <Legend verticalAlign="top" height={30} />
+                                  <Bar
+                                    dataKey="visits"
+                                    name="Visits"
+                                    fill="#6366f1"
+                                    radius={[4, 4, 0, 0]}
+                                  />
+                                  <Bar
+                                    dataKey="calls"
+                                    name="Calls"
+                                    fill="#06b6d4"
+                                    radius={[4, 4, 0, 0]}
+                                  />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <CollapsibleProgressSection
                 title="Members"
@@ -2310,7 +2639,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             handleAddMember(addMemberModal.sessionId, mid)
           }
           members={
-              !isAdmin && activeChurch === "UJ" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)
+              !isAdmin && activeChurch !== "All" && activeChurch !== "CM" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)
                 ? data.members.filter(m => connectList.some(cl => cl.id === m.id) || visitorFnfIds.has(m.id))
                 : data.members
             }
@@ -2422,6 +2751,76 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 className="mt-2 text-slate-500 text-sm font-medium hover:text-slate-700 py-2"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {editingMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-slate-800">Edit {editingMember.name}</h3>
+              <button
+                onClick={() => setEditingMember(null)}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-200 text-slate-600 hover:bg-slate-300"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Status</label>
+                <select
+                  value={editFormData.status}
+                  onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value as MemberStatus })}
+                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 font-medium"
+                >
+                  <option value={MemberStatus.ACTIVE}>Active</option>
+                  <option value={MemberStatus.INCONSISTENT}>Inconsistent</option>
+                  <option value={MemberStatus.NOT_ACTIVE}>Not Active</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Phone</label>
+                <input
+                  type="text"
+                  value={editFormData.phone || ""}
+                  onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Parent Phone</label>
+                <input
+                  type="text"
+                  value={editFormData.parentPhone || ""}
+                  onChange={(e) => setEditFormData({ ...editFormData, parentPhone: e.target.value })}
+                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Address</label>
+                <input
+                  type="text"
+                  value={editFormData.address || ""}
+                  onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
+                  className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50"
+                />
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-100 flex gap-2">
+              <button
+                onClick={() => setEditingMember(null)}
+                className="flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold transition-colors"
+              >
+                Save
               </button>
             </div>
           </div>
@@ -2547,6 +2946,7 @@ const CollapsibleMissedSection = ({
   items,
   data,
   onReschedule,
+  onRemove,
 }: any) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -2589,12 +2989,21 @@ const CollapsibleMissedSection = ({
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => onReschedule(item.memberId, item.sessionId)}
-                  className="text-xs bg-white border border-red-100 text-red-500 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors shadow-sm font-bold"
-                >
-                  Reschedule
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onReschedule(item.memberId, item.sessionId)}
+                    className="text-xs bg-white border border-red-100 text-red-500 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors shadow-sm font-bold"
+                  >
+                    Reschedule
+                  </button>
+                  <button
+                    onClick={() => onRemove(item.memberId, item.sessionId)}
+                    className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Remove"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -3029,6 +3438,7 @@ const CollapsibleProgressSection = ({
           }))}
         </div>
       )}
+
     </div>
   );
 };
@@ -3038,8 +3448,12 @@ interface CollapsibleContactSectionProps {
   members: Member[];
   icon: React.ElementType;
   color: string;
+  defaultOpen?: boolean;
   onTrackCall?: (member: Member, method: "Call" | "SMS") => void;
   onMessageClick?: (member: Member) => void;
+  onEditClick?: (member: Member) => void;
+  onPromoteClick?: (member: Member) => void;
+  promotingId?: string | null;
 }
 
 const CollapsibleContactSection = ({
@@ -3047,16 +3461,21 @@ const CollapsibleContactSection = ({
   members,
   icon: Icon,
   color,
+  defaultOpen = false,
   onTrackCall,
   onMessageClick,
+  onEditClick,
+  onPromoteClick,
+  promotingId,
 }: CollapsibleContactSectionProps) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
 
   const colorClasses: Record<string, string> = {
     indigo: "text-indigo-600 bg-indigo-50 border-indigo-100",
     amber: "text-amber-600 bg-amber-50 border-amber-100",
     rose: "text-rose-600 bg-rose-50 border-rose-100",
     teal: "text-teal-600 bg-teal-50 border-teal-100",
+    emerald: "text-emerald-600 bg-emerald-50 border-emerald-100",
   };
 
   return (
@@ -3086,7 +3505,7 @@ const CollapsibleContactSection = ({
         <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50/50">
           {members.length === 0 ? (
             <div className="col-span-full p-4 text-center text-xs text-slate-400 font-medium">
-              No members found in this category.
+              No contacts found in this category.
             </div>
           ) : (
             members.map((member: Member) => {
@@ -3099,85 +3518,139 @@ const CollapsibleContactSection = ({
                 ? `https://www.google.com/maps/dir/?api=1&destination=${gps}`
                 : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address || "")}`;
 
-              const isVisitor = member.type === MemberType.VISITOR;
+              const isVisitor = member.type === MemberType.VISITOR || member.type === MemberType.NOT_MEMBER;
+              const isFnf = member.type === MemberType.FNF;
+              const canPromote = isVisitor || isFnf;
+              const isPromoting = promotingId === member.id;
+
               const cardStyle = member.status === MemberStatus.INCONSISTENT
-                ? "border-l-4 border-l-rose-500 bg-rose-50/5 hover:bg-rose-50/10"
+                ? "border-l-4 border-l-rose-500 bg-rose-50/10 hover:bg-rose-50/20"
                 : member.status === MemberStatus.NOT_ACTIVE
-                ? "border-l-4 border-l-yellow-500 bg-yellow-50/5 hover:bg-yellow-50/10"
+                ? "border-l-4 border-l-yellow-500 bg-yellow-50/10 hover:bg-yellow-50/20"
                 : isVisitor
-                ? "border-l-4 border-l-teal-500 bg-teal-50/5 hover:bg-teal-50/10"
-                : "border-slate-100 bg-white";
+                ? "border-l-4 border-l-teal-500 bg-teal-50/10 hover:bg-teal-50/20"
+                : isFnf
+                ? "border-l-4 border-l-emerald-500 bg-emerald-50/10 hover:bg-emerald-50/20"
+                : "border-slate-100 bg-white hover:border-indigo-200";
 
               return (
                 <div
                   key={member.id}
-                  className={`p-4 rounded-xl border shadow-sm flex items-center justify-between transition-colors ${cardStyle}`}
+                  onClick={() => onEditClick?.(member)}
+                  className={`p-4 rounded-xl border shadow-sm flex flex-col justify-between gap-3 transition-colors cursor-pointer ${cardStyle}`}
                 >
-                  <div className="flex-1 min-w-0 pr-2">
-                    <h4 className="font-bold text-slate-800 text-sm flex items-center flex-wrap gap-1 break-words">
-                      {member.name}
-                      {member.status === MemberStatus.INCONSISTENT && (
-                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100 shrink-0">
-                          Inconsistent
-                        </span>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0 pr-2">
+                      <h4 className="font-bold text-slate-800 text-sm flex items-center flex-wrap gap-1.5 break-words">
+                        {member.name}
+                        {member.status === MemberStatus.INCONSISTENT && (
+                          <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100 shrink-0">
+                            Inconsistent
+                          </span>
+                        )}
+                        {member.status === MemberStatus.NOT_ACTIVE && (
+                          <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-600 border border-yellow-100 shrink-0">
+                            Not Active
+                          </span>
+                        )}
+                        {isVisitor && (
+                          <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-100 flex items-center gap-1 shrink-0">
+                            <Sparkles size={10} /> First Timer
+                          </span>
+                        )}
+                        {isFnf && (
+                          <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 flex items-center gap-1 shrink-0">
+                            <Heart size={10} /> FNF
+                          </span>
+                        )}
+                        {member.assignedChurch && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                            {member.assignedChurch}
+                          </span>
+                        )}
+                      </h4>
+                      {phone && (
+                        <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1 font-medium">
+                          <Phone size={11} className="text-slate-400" />
+                          <span>{phone}</span>
+                          {member.parentPhone && member.parentPhone === phone && (
+                            <span className="text-[9px] text-slate-400 font-normal">(Parent)</span>
+                          )}
+                        </div>
                       )}
-                      {member.status === MemberStatus.NOT_ACTIVE && (
-                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-600 border border-yellow-100 shrink-0">
-                          Not Active
-                        </span>
+                      {address && (
+                        <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                          <MapPin size={10} /> {address.substring(0, 26)}...
+                        </div>
                       )}
-                      {isVisitor && (
-                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1 shrink-0">
-                          <Sparkles size={8} /> First Timer
-                        </span>
-                      )}
-                    </h4>
-                  {address && (
-                    <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
-                      <MapPin size={10} /> {address.substring(0, 20)}...
                     </div>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  {hasPhone ? (
-                    <>
-                      <a
-                        href={`tel:${phone}`}
-                        onClick={() => onTrackCall?.(member, "Call")}
-                        className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors"
-                      >
-                        <Phone size={16} />
-                      </a>
+
+                    <div className="flex gap-1.5 shrink-0">
+                      {hasPhone ? (
+                        <>
+                          <a
+                            href={`tel:${phone}`}
+                            onClick={(e) => { e.stopPropagation(); onTrackCall?.(member, "Call"); }}
+                            className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors"
+                            title="Call"
+                          >
+                            <Phone size={15} />
+                          </a>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onMessageClick?.(member); }}
+                            className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                            title="Message"
+                          >
+                            <MessageSquare size={15} />
+                          </button>
+                        </>
+                      ) : (
+                        <div className="p-2 bg-slate-50 text-slate-300 rounded-lg">
+                          <Phone size={15} />
+                        </div>
+                      )}
+                      {hasLoc ? (
+                        <a
+                          href={mapLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"
+                          title="Directions"
+                        >
+                          <MapIcon size={15} />
+                        </a>
+                      ) : (
+                        <div className="p-2 bg-slate-50 text-slate-300 rounded-lg">
+                          <MapIcon size={15} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {canPromote && onPromoteClick && (
+                    <div className="pt-2 border-t border-slate-100 flex justify-end">
                       <button
-                        onClick={() => onMessageClick?.(member)}
-                        className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onPromoteClick(member);
+                        }}
+                        disabled={isPromoting}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-50"
                       >
-                        <MessageSquare size={16} />
+                        {isPromoting ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <UserCheck size={12} />
+                        )}
+                        <span>Promote to Member</span>
                       </button>
-                    </>
-                  ) : (
-                    <div className="p-2 bg-slate-50 text-slate-300 rounded-lg">
-                      <Phone size={16} />
-                    </div>
-                  )}
-                  {hasLoc ? (
-                    <a
-                      href={mapLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"
-                    >
-                      <MapIcon size={16} />
-                    </a>
-                  ) : (
-                    <div className="p-2 bg-slate-50 text-slate-300 rounded-lg">
-                      <MapIcon size={16} />
                     </div>
                   )}
                 </div>
-              </div>
-            );
-          }))}
+              );
+            })
+          )}
         </div>
       )}
     </div>
@@ -3260,11 +3733,13 @@ const SessionChildList = ({
   data,
   onToggle,
   onMove,
+  onRemove,
 }: {
   session: OutreachSession;
   data: AppData;
   onToggle: (sid: string, mid: string) => void;
   onMove: (mid: string, sid: string) => void;
+  onRemove: (mid: string, sid: string) => void;
 }) => {
   return (
     <div className="divide-y divide-slate-50">
@@ -3344,16 +3819,28 @@ const SessionChildList = ({
 
             <div className="flex items-center gap-2">
               {!isVisited && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onMove(id, session.id);
-                  }}
-                  className="p-2 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-colors opacity-0 group-hover:opacity-100"
-                  title="Reschedule or Remove"
-                >
-                  <ArrowRightLeft size={16} />
-                </button>
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMove(id, session.id);
+                    }}
+                    className="p-2 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                    title="Reschedule"
+                  >
+                    <ArrowRightLeft size={16} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemove(id, session.id);
+                    }}
+                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                    title="Remove"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </>
               )}
               <div
                 className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${isVisited ? "bg-green-500 border-green-500 text-white scale-110" : "border-slate-200 text-transparent hover:border-indigo-300"}`}
@@ -3434,8 +3921,9 @@ const AddMemberModal = ({
           )}
         </div>
       </div>
+
     </div>
   );
 };
 
-export default OutreachHub;
+export default React.memo(OutreachHub);

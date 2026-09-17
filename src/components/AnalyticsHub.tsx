@@ -94,7 +94,8 @@ const DemographicsChart = ({
     if (!svgRef.current || dimensions.width === 0) return;
 
     const filtered = members.filter((m) =>
-      effectiveChurch === "All" ? true : m.assignedChurch === effectiveChurch,
+      m.status !== MemberStatus.ARCHIVED &&
+      (effectiveChurch === "All" ? true : m.assignedChurch === effectiveChurch)
     );
 
     let ageGroups: { group: string; min: number; max: number; count: number }[] = [];
@@ -447,7 +448,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
     currentUser.role || "",
   );
   const isCM = currentUser.role === "CM";
-  const isUJTeacher = currentUser.role === "TEACHER" && activeChurch === "UJ";
+
 
   // Use dynamic list from settings
   const availableChurches = Array.isArray(data.settings?.churches) ? data.settings?.churches : ["UJ", "LJ", "K", "I", "N"];
@@ -488,6 +489,8 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
 
   // --- HELPERS ---
   const effectiveChurch = hasManagementView ? adminFilterChurch : activeChurch;
+  const isOutreachEnabled = data.settings.features?.[effectiveChurch]?.outreach ?? false;
+  const isTeacher = (currentUser.type === "Teacher" || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === "Helper");
 
   const getAvailableYears = () => {
     const years = new Set<number>();
@@ -851,14 +854,14 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
     }
   }, [stats, timeRange, effectiveChurch]);
 
-  // 3. UJ Outreach Intelligence
+  // 3. Outreach Intelligence
   const outreachIntel = useMemo(() => {
-    if (!isUJTeacher && effectiveChurch !== "UJ") return null;
+    if (!isOutreachEnabled) return null;
 
     const { start, end } = getDateRange();
     const ujMembers = data.members.filter(
       (m) =>
-        m.assignedChurch === "UJ" &&
+        (effectiveChurch === "All" || effectiveChurch === "CM" || m.assignedChurch === effectiveChurch) &&
         [MemberType.MEMBER, MemberType.FNF].includes(m.type) &&
         [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status),
     );
@@ -907,7 +910,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       notPrayed,
       totalEligible,
     };
-  }, [data, isUJTeacher, effectiveChurch, timeRange, selectedYear]);
+  }, [data, isTeacher, effectiveChurch, timeRange, selectedYear]);
 
   // 4. Financial Intelligence
   const financialIntel = useMemo(() => {
@@ -1557,12 +1560,14 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
               Events and participation density for the selected year
             </div>
           </div>
-          <div className="w-full relative mt-2 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
-            <AttendanceHeatmap
-              year={selectedYear}
-              attendance={data.attendance}
-              effectiveChurch={effectiveChurch}
-            />
+          <div className="w-full relative mt-2 bg-slate-50/50 p-4 rounded-xl border border-slate-100 overflow-x-auto hide-scrollbar">
+            <div className="min-w-[600px]">
+              <AttendanceHeatmap
+                year={selectedYear}
+                attendance={data.attendance}
+                effectiveChurch={effectiveChurch}
+              />
+            </div>
           </div>
         </div>
 
@@ -1717,16 +1722,18 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
           <div className="mb-6 flex justify-between items-center">
             <h3 className="font-bold text-slate-800">Age Demographics</h3>
           </div>
-          <div className="flex-1 min-h-[250px]">
-            <DemographicsChart
-              members={data.members}
-              effectiveChurch={effectiveChurch}
-            />
+          <div className="flex-1 min-h-[250px] overflow-x-auto hide-scrollbar">
+            <div className="min-w-[500px] h-full">
+              <DemographicsChart
+                members={data.members}
+                effectiveChurch={effectiveChurch}
+              />
+            </div>
           </div>
         </div>
       </div>
 
-      {/* SECTION B: OUTREACH INTELLIGENCE (UJ Only) */}
+      {/* SECTION B: OUTREACH INTELLIGENCE */}
       {outreachIntel && (
         <div className="space-y-4">
           <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2 px-1">
@@ -2074,4 +2081,4 @@ const CustomAnalyticsTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-export default AnalyticsHub;
+export default React.memo(AnalyticsHub);

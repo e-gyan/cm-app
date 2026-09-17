@@ -540,4 +540,4 @@ const Finances: React.FC<FinancesProps> = ({
   );
 };
 
-export default Finances;
+export default React.memo(Finances);

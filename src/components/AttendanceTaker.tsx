@@ -92,6 +92,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   >("MONTH");
   const [successMsg, setSuccessMsg] = useState("");
 
+  // Bulk Check-in State
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(new Set());
+
   const [attendanceMode, setAttendanceMode] = useState<"MEMBERS" | "STAFF">(
     () => (sessionStorage.getItem("attendance_mode") as any) || "MEMBERS",
   );
@@ -244,6 +248,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       });
 
       let loadedFromDraft = false;
+      let serviceMapToScan = {};
+
       try {
         const key = `attendance_draft_${effectiveChurch}_${attendanceMode}_${selectedDate}`;
         const draftData = sessionStorage.getItem(key);
@@ -254,6 +260,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           setServiceMap(parsed.serviceMap);
           setSpecialEventName(loadedEventName);
           loadedFromDraft = true;
+          serviceMapToScan = parsed.serviceMap || {};
         }
       } catch (e) {
         console.error("Failed to parse attendance draft", e);
@@ -264,6 +271,25 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         setPunctualIds(combinedPunctual);
         setServiceMap(combinedServices);
         setSpecialEventName(loadedEventName);
+        serviceMapToScan = combinedServices;
+      }
+      
+      let joyCount = 0;
+      let engCount = 0;
+      let specialCount = 0;
+      Object.values(serviceMapToScan).forEach((s) => {
+        if (s === "JOY") joyCount++;
+        else if (s === "ENLARGEMENT") engCount++;
+        else if (s === "SPECIAL") specialCount++;
+      });
+      
+      let autoService = null;
+      if (engCount > 0 && joyCount === 0) autoService = "ENLARGEMENT";
+      else if (specialCount > 0 && joyCount === 0 && engCount === 0) autoService = "SPECIAL";
+      else if (joyCount > 0) autoService = "JOY";
+      
+      if (autoService) {
+        setCurrentService(autoService);
       }
     }
   }, [
@@ -300,6 +326,17 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
   // --- TOGGLE LOGIC ---
   const handleToggle = (id: string) => {
+    if (isBulkMode) {
+      const newBulk = new Set(bulkSelectedIds);
+      if (newBulk.has(id)) {
+        newBulk.delete(id);
+      } else {
+        newBulk.add(id);
+      }
+      setBulkSelectedIds(newBulk);
+      return;
+    }
+
     const newPresent = new Set(presentIds);
     const newServiceMap = { ...serviceMap };
     let nextPunctual = punctualIds;
@@ -379,6 +416,24 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     }
     setPunctualIds(newPunctual);
     saveDraft(nextPresent, newPunctual, nextServiceMap);
+  };
+
+  const handleBulkCheckIn = () => {
+    if (bulkSelectedIds.size === 0) return;
+    const newPresent = new Set(presentIds);
+    const newServiceMap = { ...serviceMap };
+    
+    bulkSelectedIds.forEach(id => {
+      newPresent.add(id);
+      newServiceMap[id] = currentService;
+    });
+    
+    setPresentIds(newPresent);
+    setServiceMap(newServiceMap);
+    saveDraft(newPresent, punctualIds, newServiceMap);
+    
+    setBulkSelectedIds(new Set());
+    setIsBulkMode(false);
   };
 
   const handleSave = async () => {
@@ -585,6 +640,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       setNewMemberName("");
       setIsAddingFNF(false);
       await confirmSave(newSet, newSMap);
+      onUpdate();
     } finally {
       setIsSubmittingVisitor(false);
     }
@@ -889,11 +945,20 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               />
               <input
                 type="text"
-                className="w-full pl-9 pr-4 py-2 bg-transparent border-none text-sm focus:ring-0 placeholder:text-slate-400"
+                className="w-full pl-9 pr-24 py-2 bg-transparent border-none text-sm focus:ring-0 placeholder:text-slate-400"
                 placeholder={`Search ${filteredMembers.length} names...`}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
+              <button
+                onClick={() => {
+                  setIsBulkMode(!isBulkMode);
+                  if (isBulkMode) setBulkSelectedIds(new Set());
+                }}
+                className={`absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded text-[10px] font-bold ${isBulkMode ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
+              >
+                {isBulkMode ? "Cancel Bulk" : "Bulk Check-In"}
+              </button>
             </div>
 
             <div className="flex gap-2 overflow-x-auto pb-1 px-1 hide-scrollbar items-center">
@@ -1066,6 +1131,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                 className={`
                                 relative p-4 rounded-2xl cursor-pointer transition-all duration-200 select-none group border
                                 ${cardStyle}
+                                ${isBulkMode && bulkSelectedIds.has(member.id) ? "ring-2 ring-indigo-500" : ""}
                             `}
               >
                 <div className="flex justify-between items-start">
@@ -1290,8 +1356,34 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           </div>
         </div>
       )}
+
+      {/* Bulk Check-In FAB */}
+      {isBulkMode && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white px-6 py-4 rounded-full shadow-2xl border border-indigo-100 flex items-center gap-4 z-40 animate-in slide-in-from-bottom-5">
+          <span className="font-bold text-slate-700">{bulkSelectedIds.size} Selected</span>
+          <div className="w-px h-6 bg-slate-200"></div>
+          <button
+            onClick={() => {
+              const allVisibleIds = filteredMembers.map(m => m.id);
+              const newSet = new Set(bulkSelectedIds);
+              allVisibleIds.forEach(id => newSet.add(id));
+              setBulkSelectedIds(newSet);
+            }}
+            className="text-sm font-bold text-indigo-600 hover:text-indigo-800"
+          >
+            Select All
+          </button>
+          <button
+            onClick={handleBulkCheckIn}
+            disabled={bulkSelectedIds.size === 0}
+            className="bg-indigo-600 text-white px-5 py-2.5 rounded-full font-bold shadow-md hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            Check In <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs">{currentService}</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
 
-export default AttendanceTaker;
+export default React.memo(AttendanceTaker);

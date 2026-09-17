@@ -245,6 +245,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       const newMembers = data.members.filter(
         (m) =>
           new Date(m.joinedDate) >= startDate &&
+          m.status !== MemberStatus.ARCHIVED &&
           (activeChurch === "CM" || m.assignedChurch === activeChurch),
       ).length;
       const activeMembers = data.members.filter(
@@ -553,11 +554,11 @@ const ReportExport: React.FC<ReportExportProps> = ({
       if (isSummary) {
           report = `*${churchId} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
           if (eventNameToUse) report += `*${eventNameToUse}*\n`;
-          report += `------------------\n`;
+          report += `------------------------------\n`;
       } else {
           report = `*${churchId} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
           if (eventNameToUse) report += `*${eventNameToUse}*\n`;
-          report += `------------------\n`;
+          report += `------------------------------\n`;
       }
 
       report += `*TOTAL PRESENT: ${totalCount}*\n`;
@@ -1288,7 +1289,7 @@ function AnnualViewTab({ selectedDate, data, activeChurch, CHURCH_NAMES }: any) 
                 
                 let report = `*${churchName} CHURCH ATTENDANCE REPORT*\n`;
                 if (eventNameToUse) report += `*${eventNameToUse}*\n`;
-                report += `------------------\n`;
+                report += `--------------------------\n`;
                 report += `*TOTAL PRESENT: ${totalCount}*\n`;
 
                 const splits = [];
@@ -1444,4 +1445,4 @@ function AnnualViewTab({ selectedDate, data, activeChurch, CHURCH_NAMES }: any) 
   );
 }
 
-export default ReportExport;
+export default React.memo(ReportExport);
