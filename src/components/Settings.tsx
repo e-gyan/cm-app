@@ -256,6 +256,11 @@ const Settings: React.FC<SettingsProps> = ({
     return localSettings.permissions?.[role] || [];
   };
 
+  const isRoleFullAdmin = (role: string): boolean => {
+    const perms = getRolePermissions(role);
+    return perms.includes("ALL") || role === "SUPER_ADMIN";
+  };
+
   const hasRoleFeature = (role: string, featureId: string): boolean => {
     const perms = getRolePermissions(role);
     if (perms.includes("ALL")) return true;
