@@ -1,4 +1,4 @@
-import { calculateChurchDivisions } from "../lib/teacherDivision";
+import { calculateChurchDivisions, matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
 import { generatePrayerSchedule, generateOutreachSchedule } from "../services/storageService";
 import React, { useState, useMemo, useEffect } from "react";
 import { AppData,
@@ -80,6 +80,7 @@ interface OutreachHubProps {
   onUpdate: () => void;
   currentUser: Member;
   activeChurch: Church;
+  activeBranchId?: string;
 }
 
 const GOOGLE_CALENDAR_ID =
@@ -183,6 +184,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   onUpdate,
   currentUser,
   activeChurch,
+  activeBranchId,
 }) => {
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<Member>>({});
@@ -277,13 +279,20 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     }
   };
 
-  const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
-    currentUser.role || "",
-  );
+  const isAdmin = [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "ZONAL_HEAD",
+    "DIRECTORATE_HEAD",
+    "BRANCH_COORDINATOR",
+  ].includes(currentUser.role || "");
   
   const [filterChurch, setFilterChurch] = useState<string>("ALL");
 
   const isMemberInActiveChurch = (m: Member) => {
+    const scopeMatch = matchesScope(m, activeBranchId, data.settings?.organization);
+    if (!scopeMatch) return false;
+
     // App-level logic
     let appAllowed = true;
     if (activeChurch !== "CM" && activeChurch !== "All") {
@@ -1211,8 +1220,24 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       .catch(console.error);
   };
 
+  const scopeLabel = useMemo(() => {
+    return getScopeDisplayLabel(activeBranchId, data.settings?.organization);
+  }, [activeBranchId, data.settings?.organization]);
+
   return (
     <div className="space-y-4 pb-24 relative min-h-screen">
+      {connectList.length === 0 && (filteredLocalSessions || []).length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-6 text-center space-y-2 animate-in fade-in">
+          <MapPin className="mx-auto text-amber-500" size={32} />
+          <h3 className="font-extrabold text-amber-900 text-base">
+            No Outreach Records Found {scopeLabel ? `for ${scopeLabel}` : ""}
+          </h3>
+          <p className="text-xs text-amber-700 max-w-md mx-auto">
+            There are currently no outreach sessions or assigned members for this branch/zone. Switch branches above or generate an outreach schedule to begin.
+          </p>
+        </div>
+      )}
+
       {/* HEADER TABS */}
       <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex gap-1.5 sticky top-0 z-30 overflow-x-auto hide-scrollbar">
         <button

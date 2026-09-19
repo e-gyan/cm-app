@@ -33,12 +33,14 @@ import {
   updateMember,
 } from "../services/storageService";
 import { sanitizeInput, determineGenderByName } from "../services/securityService";
+import { matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
 
 interface AttendanceTakerProps {
   data: AppData;
   onUpdate: () => void;
   activeChurch: Church;
   currentUser: Member;
+  activeBranchId?: string;
 }
 
 const formatDateDDMMYYYY = (dateStr: string) => {
@@ -51,10 +53,16 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   onUpdate,
   activeChurch,
   currentUser,
+  activeBranchId,
 }) => {
-  const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
-    currentUser.role || "",
-  );
+  const isLeadership = [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "ZONAL_HEAD",
+    "BRANCH_COORDINATOR",
+    "DIRECTORATE_HEAD",
+  ].includes(currentUser.role || "");
+  const isAdmin = isLeadership;
   const availableChurches = Array.isArray(data.settings?.churches) ? data.settings?.churches : ["UJ", "LJ", "K", "I", "N"];
 
   // State
@@ -116,7 +124,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
   // Determine the effective church context
   const effectiveChurch =
-    activeChurch === "CM" ? internalChurchFilter : activeChurch;
+    (activeChurch === "CM" || activeChurch === "All") ? internalChurchFilter : activeChurch;
   const isCombinedView = effectiveChurch === "COMBINED";
 
   const isPunctualityEnabledForChurch = 
@@ -657,6 +665,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   if (attendanceMode === "STAFF") {
     membersToList = (data.members || []).filter(
       (m) =>
+        matchesScope(m, activeBranchId, data.settings?.organization) &&
         [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) &&
         targetChurches.includes(m.assignedChurch as Church) &&
         ["Teacher", "Helper", "Volunteer"].includes(m.type),
@@ -664,6 +673,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   } else {
     membersToList = (data.members || []).filter(
       (m) =>
+        matchesScope(m, activeBranchId, data.settings?.organization) &&
         [MemberStatus.ACTIVE, MemberStatus.NOT_ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) &&
         targetChurches.includes(m.assignedChurch as Church) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type),
@@ -1084,7 +1094,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-medium">Zone & Branch:</span>
+                <span className="text-slate-500 font-medium">Zone and Branch:</span>
                 <span className="font-semibold text-slate-700">
                   {currentUser?.zoneId || "Central Zone"} &bull; {currentUser?.branchId || "Main Branch"}
                 </span>
@@ -1109,7 +1119,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                 disabled={!newMemberName.trim() || isSubmittingVisitor}
                 className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-colors shadow-lg shadow-indigo-100"
               >
-                {isSubmittingVisitor ? "Adding..." : "Add & Mark Present"}
+                {isSubmittingVisitor ? "Adding..." : "Add and Mark Present"}
               </button>
             </div>
           </div>
@@ -1123,6 +1133,21 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             Viewing All Churches ({filteredMembers.length})
           </div>
         )}
+
+        {filteredMembers.length === 0 && (
+          <div className="p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200 my-4">
+            <div className="w-14 h-14 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
+              <UserPlus size={28} />
+            </div>
+            <h3 className="text-base font-bold text-slate-800">
+              No {attendanceMode === "STAFF" ? "Staff" : "Members"} Found for {getScopeDisplayLabel(activeBranchId, data.settings?.organization)}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto font-medium">
+              No active profiles match this church and branch scope. Switch scope or click "+ First Timer" to record a visitor.
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
           {sortedMembers.map((member) => {
             const isPresent = presentIds.has(member.id);

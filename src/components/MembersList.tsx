@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { updateMember, addMember, deleteMember, bulkArchiveMembers, bulkDeleteMembers } from "../services/storageService";
 import { sanitizeInput } from "../services/securityService";
+import { matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
 import {
   BarChart,
   Bar,
@@ -63,7 +64,7 @@ interface MembersListProps {
   onUpdate: () => void;
   activeChurch: Church;
   currentUser: Member;
-  activeBranchId: string;
+  activeBranchId?: string;
 }
 
 const MembersList: React.FC<MembersListProps> = ({
@@ -71,11 +72,16 @@ const MembersList: React.FC<MembersListProps> = ({
   onUpdate,
   activeChurch,
   currentUser,
-  activeBranchId,
+  activeBranchId = "ALL",
 }) => {
-  const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
-    currentUser.role || "",
-  );
+  const isLeadership = [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "ZONAL_HEAD",
+    "BRANCH_COORDINATOR",
+    "DIRECTORATE_HEAD",
+  ].includes(currentUser.role || "");
+  const isAdmin = isLeadership;
   const isTeacher = currentUser.role === "TEACHER";
 
   // Teachers can edit if they are viewing their own church
@@ -1319,8 +1325,26 @@ const MembersList: React.FC<MembersListProps> = ({
   };
 
   const getFilteredContent = () => {
-    // Determine sorting
-    let baseList = [...data.members];
+    // Determine sorting and filter by active branch/zone scope
+    let baseList = data.members.filter((m) =>
+      matchesScope(m, activeBranchId, data.settings?.organization)
+    );
+
+    if (baseList.length === 0) {
+      return (
+        <div className="p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200 my-4">
+          <div className="w-14 h-14 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
+            <Users size={28} />
+          </div>
+          <h3 className="text-base font-bold text-slate-800">
+            No {hubTab === "TEACHERS" ? "Teachers" : "Members"} Found for {getScopeDisplayLabel(activeBranchId, data.settings?.organization)}
+          </h3>
+          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto font-medium">
+            No records match the current branch scope. Switch branch or zone from the top switcher, or click "Add {hubTab === "TEACHERS" ? "Teacher" : "Member"}" to register someone.
+          </p>
+        </div>
+      );
+    }
 
     if (sortOrder === "A-Z") {
       baseList.sort((a, b) => a.name.localeCompare(b.name));
@@ -1354,15 +1378,15 @@ const MembersList: React.FC<MembersListProps> = ({
       baseList = baseList.filter((m) => !teacherTypes.includes(m.type));
     }
 
-    // Filter by Church: if activeChurch is CM (Admin), show everything unless filtered, otherwise filter by assignment
-    if (activeChurch !== "CM") {
+    // Filter by Church: if activeChurch is CM or All (Leadership), show everything unless filtered, otherwise filter by assignment
+    if (activeChurch !== "CM" && activeChurch !== "All") {
       baseList = baseList.filter(
         (m) =>
           m.assignedChurch === activeChurch ||
           (m.assignedChurch === "All" && isAdmin && hubTab === "TEACHERS"),
       );
     } else {
-      // Admin (CM) View: Filter by selected church from toolbar
+      // Admin/Leadership (CM/All) View: Filter by selected church from toolbar
       if (churchFilter !== "All") {
         baseList = baseList.filter((m) => m.assignedChurch === churchFilter);
       }
@@ -1975,7 +1999,7 @@ const MembersList: React.FC<MembersListProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-800">
-            People Hub: {activeChurch}
+            People Hub: {activeChurch === "All" || activeChurch === "CM" ? getScopeDisplayLabel(activeBranchId, data.settings?.organization) : `${activeChurch} Church`}
           </h2>
           <p className="text-sm text-gray-500">Manage teachers and members.</p>
         </div>
@@ -2024,14 +2048,14 @@ const MembersList: React.FC<MembersListProps> = ({
           />
         </div>
 
-        {/* Church Filter (Admin Only) */}
-        {activeChurch === "CM" && (
+        {/* Church Filter (Admin and Leadership) */}
+        {(activeChurch === "CM" || activeChurch === "All" || isAdmin) && (
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
             <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide flex items-center gap-2">
               <Building2 size={18} /> Church Filter
             </h3>
 
-            {/* Desktop: Horizontal Scroll - Updated Order I, K, LJ, UJ */}
+            {/* Desktop: Horizontal Scroll */}
             <div className="hidden md:flex bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full w-full sm:w-auto hide-scrollbar">
               {["All", ...availableChurches, "CM"].map((c) => (
                 <button
@@ -2042,12 +2066,12 @@ const MembersList: React.FC<MembersListProps> = ({
                   }}
                   className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${churchFilter === c ? "bg-white text-indigo-600 shadow-sm ring-1 ring-black/5" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
                 >
-                  {c === "CM" ? "CM Directorate" : c === "All" ? "All Branches" : `${c} Church`}
+                  {c === "CM" ? "CM Directorate" : c === "All" ? "All Churches" : `${c} Church`}
                 </button>
               ))}
             </div>
 
-            {/* Mobile: Dropdown - Updated Order I, K, LJ, UJ */}
+            {/* Mobile: Dropdown */}
             <div className="md:hidden w-full relative">
               <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500">
                 <ChevronDown size={16} />
@@ -2060,7 +2084,7 @@ const MembersList: React.FC<MembersListProps> = ({
                 }}
                 className="w-full appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-bold rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               >
-                <option value="All">All Branches</option>
+                <option value="All">All Churches</option>
                 {[...availableChurches, "CM"].map((c) => (
                   <option key={c} value={c}>
                     {c === "CM" ? "CM Directorate" : `${c} Church`}

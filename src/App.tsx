@@ -38,6 +38,7 @@ import {
   Minimize,
 } from "lucide-react";
 import { DEFAULT_SETTINGS } from "./constants";
+import { matchesScope, getScopeDisplayLabel } from "./lib/teacherDivision";
 
 enum View {
   DASHBOARD = "Dashboard",
@@ -163,7 +164,9 @@ const App: React.FC = () => {
             }
             if (savedUser.role === "TEACHER") {
               setActiveChurch(savedUser.assignedChurch as Church);
-            } else if (savedUser.role === "ADMIN") {
+            } else if (savedUser.role === "BRANCH_COORDINATOR") {
+              setActiveChurch("All");
+            } else {
               setActiveChurch("CM");
             }
           }
@@ -300,6 +303,8 @@ const App: React.FC = () => {
     }
     if (user.role === "TEACHER") {
       setActiveChurch(user.assignedChurch as Church);
+    } else if (user.role === "BRANCH_COORDINATOR") {
+      setActiveChurch("All");
     } else {
       setActiveChurch("CM");
     }
@@ -341,7 +346,11 @@ const App: React.FC = () => {
   const branchTrendData = useMemo(() => {
     if (!data.attendance || data.attendance.length === 0) return [];
 
-    const grouped = data.attendance.reduce((acc, curr) => {
+    const filtered = data.attendance.filter((r) =>
+      matchesScope(r, activeBranchId, data.settings.organization)
+    );
+
+    const grouped = filtered.reduce((acc, curr) => {
       if (!acc[curr.date]) acc[curr.date] = 0;
       acc[curr.date] += curr.presentMemberIds.length;
       return acc;
@@ -354,7 +363,7 @@ const App: React.FC = () => {
       date,
       count: grouped[date]
     }));
-  }, [data.attendance]);
+  }, [data.attendance, activeBranchId, data.settings.organization]);
 
   const handleMarkRead = (id: string) => {
     markNotificationRead(id);
@@ -565,9 +574,7 @@ const App: React.FC = () => {
                   {activeChurch === "CM" ? "CM Directorate" : `${activeChurch} Church`}
                 </h1>
                 <span className="text-xs text-slate-400 font-medium">
-                  {activeBranchId && activeBranchId !== "ALL" 
-                    ? data.settings.organization?.zones?.flatMap(z => z.branches || []).find(b => b.id === activeBranchId || b.name === activeBranchId)?.name || "CMD Platform"
-                    : "CMD Platform"}
+                  {getScopeDisplayLabel(activeBranchId, data.settings.organization)}
                 </span>
               </div>
             )}
@@ -704,9 +711,7 @@ const App: React.FC = () => {
                 {activeChurch === "CM" ? "CM Directorate" : `${activeChurch} Church`} <span className="text-[9px] font-normal text-slate-400">v1.1.0</span>
               </h1>
               <p className="text-[10px] text-slate-500 font-medium">
-                {activeBranchId && activeBranchId !== "ALL" 
-                  ? data.settings.organization?.zones?.flatMap(z => z.branches || []).find(b => b.id === activeBranchId || b.name === activeBranchId)?.name || "CMD Platform"
-                  : "CMD Platform"}
+                {getScopeDisplayLabel(activeBranchId, data.settings.organization)}
               </p>
             </div>
           </div>
@@ -746,45 +751,63 @@ const App: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-4 md:p-10 scroll-smooth pb-24 md:pb-10">
           <div className="max-w-7xl mx-auto space-y-8">
             
-            {/* Branch Switcher for Mobile (Admins) */}
+            {/* Branch Switcher for Mobile (Grouped by Zones & Branches) */}
             <div className="md:hidden">
               {(currentUser.role === "SUPER_ADMIN" ||
+                currentUser.role === "ADMIN" ||
+                currentUser.role === "DIRECTORATE_HEAD" ||
                 currentUser.role === "ZONAL_HEAD" ||
-                currentUser.role === "ADMIN") &&
+                currentUser.role === "BRANCH_COORDINATOR" ||
+                isSuperAdminUser) &&
                 data.settings.organization?.zones && (
                   <div className="flex items-center bg-white p-2 rounded-2xl shadow-sm border border-slate-100 gap-2">
                     <div className="flex-1 flex items-center">
-                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-2 mr-3">Branch</label>
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-2 mr-3">Scope</label>
                       <select
                         value={activeBranchId}
                         onChange={(e) => setActiveBranchId(e.target.value)}
                         className="flex-1 text-sm font-bold bg-slate-50 border-none rounded-xl px-4 py-2 text-slate-700 outline-none hover:bg-slate-100 cursor-pointer"
                       >
                         {(currentUser.role === "SUPER_ADMIN" ||
-                          currentUser.role === "ZONAL_HEAD") && (
-                          <option value="ALL">All Branches</option>
+                          currentUser.role === "ADMIN" ||
+                          currentUser.role === "DIRECTORATE_HEAD" ||
+                          isSuperAdminUser) && (
+                          <option value="ALL">All Directorate (All Zones and Branches)</option>
                         )}
                         {data.settings.organization.zones
-                          .filter(
-                            (z) =>
-                              currentUser.role === "SUPER_ADMIN" ||
-                              !currentUser.zoneId ||
-                              z.id === currentUser.zoneId,
-                          )
-                          .flatMap((z) => z.branches || [])
-                          .filter(
-                            (b) =>
-                              currentUser.role !== "ADMIN" ||
-                              !currentUser.branchId ||
-                              b.id === currentUser.branchId,
-                          )
-                          .map((b) => (
-                            <option
-                              key={b.id || b.name}
-                              value={b.id || b.name}
-                            >
-                              {b.name}
-                            </option>
+                          .filter((z) => {
+                            if (currentUser.role === "SUPER_ADMIN" || currentUser.role === "ADMIN" || currentUser.role === "DIRECTORATE_HEAD" || isSuperAdminUser) return true;
+                            if (currentUser.role === "ZONAL_HEAD") return !currentUser.zoneId || z.id === currentUser.zoneId;
+                            if (currentUser.role === "BRANCH_COORDINATOR") {
+                              return (
+                                (currentUser.zoneId && z.id === currentUser.zoneId) ||
+                                z.branches?.some((b) => b.id === currentUser.branchId || b.name === currentUser.branchId)
+                              );
+                            }
+                            return true;
+                          })
+                          .map((zone) => (
+                            <optgroup key={zone.id} label={`Zone: ${zone.name}`}>
+                              {currentUser.role !== "BRANCH_COORDINATOR" && (
+                                <option value={`ZONE:${zone.id}`}>All {zone.name} Branches</option>
+                              )}
+                              {(zone.branches || [])
+                                .filter((b) => {
+                                  if (currentUser.role === "BRANCH_COORDINATOR") {
+                                    return (
+                                      !currentUser.branchId ||
+                                      b.id === currentUser.branchId ||
+                                      b.name === currentUser.branchId
+                                    );
+                                  }
+                                  return true;
+                                })
+                                .map((b) => (
+                                  <option key={b.id || b.name} value={b.id || b.name}>
+                                    {b.name}
+                                  </option>
+                                ))}
+                            </optgroup>
                           ))}
                       </select>
                     </div>
@@ -814,10 +837,13 @@ const App: React.FC = () => {
                 <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
                   {currentView}
 
-                  {/* Branch Switcher for Admins (Desktop) */}
+                  {/* Branch Switcher for Desktop (Grouped by Zones & Branches) */}
                   {(currentUser.role === "SUPER_ADMIN" ||
+                    currentUser.role === "ADMIN" ||
+                    currentUser.role === "DIRECTORATE_HEAD" ||
                     currentUser.role === "ZONAL_HEAD" ||
-                    currentUser.role === "ADMIN") &&
+                    currentUser.role === "BRANCH_COORDINATOR" ||
+                    isSuperAdminUser) &&
                     data.settings.organization?.zones && (
                       <div className="ml-4 flex items-center bg-white p-1 pr-2 rounded-xl border border-slate-200 shadow-sm gap-2">
                         <select
@@ -826,30 +852,45 @@ const App: React.FC = () => {
                           className="text-sm font-bold bg-slate-50 border-none rounded-lg px-4 py-2 text-slate-700 outline-none hover:bg-slate-100 cursor-pointer"
                         >
                           {(currentUser.role === "SUPER_ADMIN" ||
-                            currentUser.role === "ZONAL_HEAD") && (
-                            <option value="ALL">All Branches</option>
+                            currentUser.role === "ADMIN" ||
+                            currentUser.role === "DIRECTORATE_HEAD" ||
+                            isSuperAdminUser) && (
+                            <option value="ALL">All Directorate (All Zones and Branches)</option>
                           )}
                           {data.settings.organization.zones
-                            .filter(
-                              (z) =>
-                                currentUser.role === "SUPER_ADMIN" ||
-                                !currentUser.zoneId ||
-                                z.id === currentUser.zoneId,
-                            )
-                            .flatMap((z) => z.branches || [])
-                            .filter(
-                              (b) =>
-                                currentUser.role !== "ADMIN" ||
-                                !currentUser.branchId ||
-                                b.id === currentUser.branchId,
-                            )
-                            .map((b) => (
-                              <option
-                                key={b.id || b.name}
-                                value={b.id || b.name}
-                              >
-                                {b.name}
-                              </option>
+                            .filter((z) => {
+                              if (currentUser.role === "SUPER_ADMIN" || currentUser.role === "ADMIN" || currentUser.role === "DIRECTORATE_HEAD" || isSuperAdminUser) return true;
+                              if (currentUser.role === "ZONAL_HEAD") return !currentUser.zoneId || z.id === currentUser.zoneId;
+                              if (currentUser.role === "BRANCH_COORDINATOR") {
+                                return (
+                                  (currentUser.zoneId && z.id === currentUser.zoneId) ||
+                                  z.branches?.some((b) => b.id === currentUser.branchId || b.name === currentUser.branchId)
+                                );
+                              }
+                              return true;
+                            })
+                            .map((zone) => (
+                              <optgroup key={zone.id} label={`Zone: ${zone.name}`}>
+                                {currentUser.role !== "BRANCH_COORDINATOR" && (
+                                  <option value={`ZONE:${zone.id}`}>All {zone.name} Branches</option>
+                                )}
+                                {(zone.branches || [])
+                                  .filter((b) => {
+                                    if (currentUser.role === "BRANCH_COORDINATOR") {
+                                      return (
+                                        !currentUser.branchId ||
+                                        b.id === currentUser.branchId ||
+                                        b.name === currentUser.branchId
+                                      );
+                                    }
+                                    return true;
+                                  })
+                                  .map((b) => (
+                                    <option key={b.id || b.name} value={b.id || b.name}>
+                                      {b.name}
+                                    </option>
+                                  ))}
+                              </optgroup>
                             ))}
                         </select>
                         {branchTrendData.length > 0 && (
@@ -939,6 +980,7 @@ const App: React.FC = () => {
                     data={data}
                     activeChurch={activeChurch}
                     currentUser={currentUser}
+                    activeBranchId={activeBranchId}
                   />
                 </div>
               )}
@@ -953,6 +995,7 @@ const App: React.FC = () => {
                     onUpdate={refreshData}
                     activeChurch={activeChurch}
                     currentUser={currentUser}
+                    activeBranchId={activeBranchId}
                   />
                 </div>
               )}
@@ -981,6 +1024,7 @@ const App: React.FC = () => {
                     data={data}
                     activeChurch={activeChurch}
                     currentUser={currentUser}
+                    activeBranchId={activeBranchId}
                   />
                 </div>
               )}
@@ -995,6 +1039,7 @@ const App: React.FC = () => {
                     onUpdate={refreshData}
                     currentUser={currentUser}
                     activeChurch={activeChurch}
+                    activeBranchId={activeBranchId}
                   />
                 </div>
               )}
@@ -1009,6 +1054,7 @@ const App: React.FC = () => {
                     onUpdate={refreshData}
                     activeChurch={activeChurch}
                     currentUser={currentUser}
+                    activeBranchId={activeBranchId}
                   />
                 </div>
               )}
@@ -1023,6 +1069,7 @@ const App: React.FC = () => {
                     onUpdate={refreshData}
                     activeChurch={activeChurch}
                     currentUser={currentUser}
+                    activeBranchId={activeBranchId}
                   />
                 </div>
               )}
@@ -1037,6 +1084,7 @@ const App: React.FC = () => {
                     onUpdate={refreshData}
                     currentUser={currentUser}
                     activeChurch={activeChurch}
+                    activeBranchId={activeBranchId}
                   />
                 </div>
               )}

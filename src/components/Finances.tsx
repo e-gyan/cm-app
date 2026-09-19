@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { AppData, Transaction, type Church, Member } from "../types";
 import { deleteTransaction, addTransaction } from "../services/storageService";
+import { matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
 import {
   Plus,
   Trash2,
@@ -10,6 +11,7 @@ import {
   Wallet,
   Calendar,
   X,
+  MapPin,
 } from "lucide-react";
 import {
   BarChart,
@@ -26,6 +28,7 @@ interface FinancesProps {
   onUpdate: () => void;
   activeChurch: Church;
   currentUser: Member;
+  activeBranchId?: string;
 }
 
 const formatDateDDMMYYYY = (dateStr: string) => {
@@ -38,10 +41,15 @@ const Finances: React.FC<FinancesProps> = ({
   onUpdate,
   activeChurch,
   currentUser,
+  activeBranchId,
 }) => {
-  const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
-    currentUser.role || "",
-  );
+  const isAdmin = [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "ZONAL_HEAD",
+    "DIRECTORATE_HEAD",
+    "BRANCH_COORDINATOR",
+  ].includes(currentUser.role || "");
   const availableChurches = Array.isArray(data.settings?.churches) ? data.settings?.churches : ["UJ", "LJ", "K", "I", "N"];
 
   // State
@@ -82,6 +90,11 @@ const Finances: React.FC<FinancesProps> = ({
   const filteredTransactions = useMemo(() => {
     let txns = data.transactions || [];
 
+    // Filter by Scope
+    txns = txns.filter((t) =>
+      matchesScope(t, activeBranchId, data.settings?.organization),
+    );
+
     // Filter by Church
     if (filterChurch !== "All") {
       txns = txns.filter((t) => t.churchId === filterChurch);
@@ -105,7 +118,13 @@ const Finances: React.FC<FinancesProps> = ({
     filterType,
     isAdmin,
     currentUser.assignedChurch,
+    activeBranchId,
+    data.settings?.organization,
   ]);
+
+  const scopeLabel = useMemo(() => {
+    return getScopeDisplayLabel(activeBranchId, data.settings?.organization);
+  }, [activeBranchId, data.settings?.organization]);
 
   const stats = useMemo(() => {
     let income = 0;
@@ -165,6 +184,33 @@ const Finances: React.FC<FinancesProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Scope Banner if active */}
+      {scopeLabel && (
+        <div className="flex items-center justify-between bg-white px-5 py-3 rounded-2xl border border-slate-100 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-400 uppercase">Active Scope:</span>
+            <span className="text-xs font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-full">
+              {scopeLabel}
+            </span>
+          </div>
+          <span className="text-xs font-medium text-slate-500">
+            Showing transactions for {scopeLabel}
+          </span>
+        </div>
+      )}
+
+      {filteredTransactions.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center space-y-2 animate-in fade-in">
+          <Wallet className="mx-auto text-amber-500" size={32} />
+          <h3 className="font-extrabold text-amber-900 text-base">
+            No Financial Records Found {scopeLabel ? `for ${scopeLabel}` : ""}
+          </h3>
+          <p className="text-xs text-amber-700 max-w-md mx-auto">
+            There are currently no income or expense transactions recorded for this branch or zone. Click "+ Add Transaction" to record a new entry.
+          </p>
+        </div>
+      )}
+
       {/* Header Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">

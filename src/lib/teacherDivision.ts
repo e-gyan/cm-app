@@ -1,4 +1,4 @@
-import { Member, MemberType, MemberStatus } from "../types";
+import { Member, MemberType, MemberStatus, AppOrganization } from "../types";
 
 export interface TeacherAssignment {
   teacher: Member;
@@ -358,4 +358,75 @@ export const formatDivisionCSV = (
   });
 
   return rows.join("\n");
+};
+
+/**
+ * Robust hierarchy matching for filtering items (members, attendance, sessions, etc.)
+ * by active branch or active zone.
+ */
+export const matchesScope = (
+  item: { branchId?: string; zoneId?: string },
+  activeBranchId: string | undefined,
+  organization?: AppOrganization
+): boolean => {
+  if (!activeBranchId || activeBranchId === "ALL") return true;
+
+  // 1. Zone Scope: e.g. "ZONE:zone-central"
+  if (activeBranchId.startsWith("ZONE:")) {
+    const targetZoneId = activeBranchId.replace("ZONE:", "");
+    if (item.zoneId && item.zoneId === targetZoneId) return true;
+    const zone = organization?.zones?.find((z) => z.id === targetZoneId);
+    if (!zone) return true;
+    const branchIds = (zone.branches || []).flatMap((b) => [b.id, b.name].filter(Boolean) as string[]);
+    if (item.branchId && branchIds.includes(item.branchId)) return true;
+    return false;
+  }
+
+  // 2. Branch Scope: activeBranchId is a specific branch ID or name
+  if (item.branchId) {
+    if (item.branchId === activeBranchId) return true;
+    // Cross-match branch ID with branch Name in organization
+    const branch = organization?.zones
+      ?.flatMap((z) => z.branches || [])
+      .find((b) => b.id === activeBranchId || b.name === activeBranchId);
+    if (branch && (item.branchId === branch.id || item.branchId === branch.name)) {
+      return true;
+    }
+    return false;
+  }
+
+  // If item has no branchId set (legacy record):
+  // Associate with the primary/main branch so legacy records are not lost
+  const allBranches = organization?.zones?.flatMap((z) => z.branches || []) || [];
+  const primaryBranch = allBranches[0];
+  if (
+    primaryBranch &&
+    (activeBranchId === primaryBranch.id ||
+      activeBranchId === primaryBranch.name ||
+      activeBranchId === "Main" ||
+      activeBranchId === "branch-main")
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+/**
+ * Get human-friendly label for current active scope
+ */
+export const getScopeDisplayLabel = (
+  activeBranchId: string | undefined,
+  organization?: AppOrganization
+): string => {
+  if (!activeBranchId || activeBranchId === "ALL") return "All Zones and Branches";
+  if (activeBranchId.startsWith("ZONE:")) {
+    const targetZoneId = activeBranchId.replace("ZONE:", "");
+    const zone = organization?.zones?.find((z) => z.id === targetZoneId);
+    return zone ? `${zone.name} (All Branches)` : "Zone Scope";
+  }
+  const branch = organization?.zones
+    ?.flatMap((z) => z.branches || [])
+    .find((b) => b.id === activeBranchId || b.name === activeBranchId);
+  return branch ? branch.name : activeBranchId;
 };

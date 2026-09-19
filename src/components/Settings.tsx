@@ -36,6 +36,8 @@ import {
   Share2,
   Lock,
   Unlock,
+  Edit2,
+  X,
 } from "lucide-react";
 import { themeColorPalettes, applyTheme } from "../lib/theme";
 import { APP_FEATURES_REGISTRY, DEFAULT_SETTINGS } from "../constants";
@@ -45,6 +47,7 @@ interface SettingsProps {
   onUpdate: () => void;
   currentUser: Member;
   activeChurch: string;
+  activeBranchId?: string;
 }
 
 const Settings: React.FC<SettingsProps> = ({
@@ -52,6 +55,7 @@ const Settings: React.FC<SettingsProps> = ({
   onUpdate,
   currentUser,
   activeChurch,
+  activeBranchId,
 }) => {
   const isAdmin =
     currentUser.role === "ADMIN" || currentUser.role === "SUPER_ADMIN";
@@ -133,6 +137,10 @@ const Settings: React.FC<SettingsProps> = ({
   const [newZoneName, setNewZoneName] = useState<string>("");
   const [isAddingZone, setIsAddingZone] = useState<boolean>(false);
   const [branchInputByZone, setBranchInputByZone] = useState<Record<string, string>>({});
+  const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
+  const [editingZoneName, setEditingZoneName] = useState<string>("");
+  const [editingBranchId, setEditingBranchId] = useState<string | null>(null);
+  const [editingBranchName, setEditingBranchName] = useState<string>("");
   const [isSyncing, setIsSyncing] = useState(false);
   const [cloudLastUpdated, setCloudLastUpdated] = useState<number | null>(null);
 
@@ -231,10 +239,10 @@ const Settings: React.FC<SettingsProps> = ({
   const ROLES_LIST = [
     { id: "SUPER_ADMIN", label: "Super Admin", color: "purple", desc: "Full unrestricted platform control" },
     { id: "ADMIN", label: "Administrator", color: "indigo", desc: "Full administrative and settings control" },
-    { id: "DIRECTORATE_HEAD", label: "Directorate Head", color: "blue", desc: "Directorate-wide oversight & reporting" },
-    { id: "ZONAL_HEAD", label: "Zonal Head", color: "emerald", desc: "Zonal oversight & campus coordination" },
-    { id: "BRANCH_COORDINATOR", label: "Branch Coordinator", color: "teal", desc: "Branch operations, attendance & roster" },
-    { id: "TEACHER", label: "Teacher", color: "amber", desc: "Attendance taking, outreach & visits" },
+    { id: "DIRECTORATE_HEAD", label: "Directorate Head", color: "blue", desc: "Directorate-wide oversight and reporting" },
+    { id: "ZONAL_HEAD", label: "Zonal Head", color: "emerald", desc: "Zonal oversight and campus coordination" },
+    { id: "BRANCH_COORDINATOR", label: "Branch Coordinator", color: "teal", desc: "Branch operations, attendance and roster" },
+    { id: "TEACHER", label: "Teacher", color: "amber", desc: "Attendance taking, outreach and visits" },
     { id: "VOLUNTEER", label: "Volunteer / Helper", color: "slate", desc: "Basic attendance check-in assistance" },
   ];
 
@@ -264,14 +272,24 @@ const Settings: React.FC<SettingsProps> = ({
   const hasRoleFeature = (role: string, featureId: string): boolean => {
     const perms = getRolePermissions(role);
     if (perms.includes("ALL")) return true;
-    return perms.includes(featureId);
+    if (perms.includes(featureId)) return true;
+    const feature = APP_FEATURES_REGISTRY.find((f) => f.id === featureId);
+    if (feature && feature.subfeatures.some((sf) => perms.includes(`${featureId}.${sf.id}`))) {
+      return true;
+    }
+    return false;
   };
 
   const hasRoleSubfeature = (role: string, featureId: string, subId: string): boolean => {
     const perms = getRolePermissions(role);
     if (perms.includes("ALL")) return true;
     const subKey = `${featureId}.${subId}`;
-    return perms.includes(subKey) || perms.includes(featureId);
+    if (perms.includes(subKey)) return true;
+    const hasAnySubKey = perms.some((p) => p.startsWith(`${featureId}.`));
+    if (perms.includes(featureId) && !hasAnySubKey) {
+      return true;
+    }
+    return false;
   };
 
   const toggleFeatureForRole = (role: string, featureId: string) => {
@@ -281,7 +299,7 @@ const Settings: React.FC<SettingsProps> = ({
     if (!feature) return;
 
     const subKeys = feature.subfeatures.map((sf) => `${featureId}.${sf.id}`);
-    const isCurrentlyActive = rolePerms.includes(featureId) || rolePerms.includes("ALL");
+    const isCurrentlyActive = hasRoleFeature(role, featureId);
 
     if (rolePerms.includes("ALL")) {
       const allOtherPerms: string[] = [];
@@ -316,38 +334,44 @@ const Settings: React.FC<SettingsProps> = ({
   const toggleSubfeatureForRole = (role: string, featureId: string, subId: string) => {
     const permissions = { ...(localSettings.permissions || {}) };
     let rolePerms = [...(permissions[role] || [])];
-    const subKey = `${featureId}.${subId}`;
+    const feature = APP_FEATURES_REGISTRY.find((f) => f.id === featureId);
+    if (!feature) return;
 
-    if (rolePerms.includes("ALL")) {
+    const subKey = `${featureId}.${subId}`;
+    const isAll = rolePerms.includes("ALL");
+
+    if (isAll) {
       const allPerms: string[] = [];
       APP_FEATURES_REGISTRY.forEach((f) => {
         f.subfeatures.forEach((sf) => {
           const k = `${f.id}.${sf.id}`;
           if (k !== subKey) allPerms.push(k);
         });
-        if (f.id !== featureId || f.subfeatures.some((sf) => `${f.id}.${sf.id}` !== subKey)) {
+        if (f.id !== featureId || f.subfeatures.length > 1) {
           allPerms.push(f.id);
         }
       });
       rolePerms = allPerms;
     } else {
-      const isSubActive = rolePerms.includes(subKey) || (rolePerms.includes(featureId) && !rolePerms.some(p => p.startsWith(`${featureId}.`)));
-      if (isSubActive) {
-        rolePerms = rolePerms.filter((p) => p !== subKey && p !== featureId);
-        const feature = APP_FEATURES_REGISTRY.find((f) => f.id === featureId);
-        if (feature) {
-          feature.subfeatures.forEach((sf) => {
-            if (sf.id !== subId && !rolePerms.includes(`${featureId}.${sf.id}`)) {
-              rolePerms.push(`${featureId}.${sf.id}`);
-            }
-          });
-          if (rolePerms.some((p) => p.startsWith(`${featureId}.`))) {
-            if (!rolePerms.includes(featureId)) rolePerms.push(featureId);
-          }
+      const hasAnySubKey = rolePerms.some((p) => p.startsWith(`${featureId}.`));
+      if (rolePerms.includes(featureId) && !hasAnySubKey) {
+        feature.subfeatures.forEach((sf) => {
+          const k = `${featureId}.${sf.id}`;
+          if (!rolePerms.includes(k)) rolePerms.push(k);
+        });
+      }
+
+      if (rolePerms.includes(subKey)) {
+        rolePerms = rolePerms.filter((p) => p !== subKey);
+        const remainingSubs = feature.subfeatures.filter((sf) => rolePerms.includes(`${featureId}.${sf.id}`));
+        if (remainingSubs.length === 0) {
+          rolePerms = rolePerms.filter((p) => p !== featureId);
         }
       } else {
-        if (!rolePerms.includes(subKey)) rolePerms.push(subKey);
-        if (!rolePerms.includes(featureId)) rolePerms.push(featureId);
+        rolePerms.push(subKey);
+        if (!rolePerms.includes(featureId)) {
+          rolePerms.push(featureId);
+        }
       }
     }
 
@@ -424,7 +448,7 @@ const Settings: React.FC<SettingsProps> = ({
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
           <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2">
-            <SettingsIcon size={24} className="text-slate-400" /> Settings &
+            <SettingsIcon size={24} className="text-slate-400" /> Settings and
             Config
           </h2>
           <p className="text-xs text-slate-500 font-medium">
@@ -845,22 +869,67 @@ const Settings: React.FC<SettingsProps> = ({
                           >
                             {/* ZONE HEADER */}
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
-                              <div className="flex items-center gap-3 flex-1">
-                                <span className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <span className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl shrink-0">
                                   <MapPin size={20} />
                                 </span>
-                                <div className="flex-1">
-                                  <input
-                                    type="text"
-                                    value={zone.name}
-                                    onChange={(e) => {
-                                      const updatedZones = [...org.zones];
-                                      updatedZones[zIndex].name = e.target.value;
-                                      updateOrg({ ...org, zones: updatedZones });
-                                    }}
-                                    className="font-extrabold text-base text-slate-800 bg-transparent hover:bg-slate-50 focus:bg-white px-2 py-1 -ml-2 rounded-lg border border-transparent hover:border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none w-full max-w-sm transition-all"
-                                    placeholder="Zone Name"
-                                  />
+                                <div className="flex-1 min-w-0">
+                                  {editingZoneId === (zone.id || `zone-${zIndex}`) ? (
+                                    <div className="flex items-center gap-1.5 w-full max-w-sm">
+                                      <input
+                                        type="text"
+                                        value={editingZoneName}
+                                        onChange={(e) => setEditingZoneName(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") {
+                                            const updatedZones = [...org.zones];
+                                            updatedZones[zIndex] = { ...updatedZones[zIndex], name: editingZoneName.trim() || zone.name };
+                                            updateOrg({ ...org, zones: updatedZones });
+                                            setEditingZoneId(null);
+                                          } else if (e.key === "Escape") {
+                                            setEditingZoneId(null);
+                                          }
+                                        }}
+                                        autoFocus
+                                        className="font-extrabold text-sm sm:text-base text-slate-800 bg-white px-2.5 py-1 rounded-lg border-2 border-indigo-500 focus:outline-none w-full shadow-sm"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updatedZones = [...org.zones];
+                                          updatedZones[zIndex] = { ...updatedZones[zIndex], name: editingZoneName.trim() || zone.name };
+                                          updateOrg({ ...org, zones: updatedZones });
+                                          setEditingZoneId(null);
+                                        }}
+                                        className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors shrink-0"
+                                        title="Save Zone Name"
+                                      >
+                                        <Check size={15} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingZoneId(null)}
+                                        className="p-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition-colors shrink-0"
+                                        title="Cancel"
+                                      >
+                                        <X size={15} />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div
+                                      onClick={() => {
+                                        setEditingZoneId(zone.id || `zone-${zIndex}`);
+                                        setEditingZoneName(zone.name);
+                                      }}
+                                      className="flex items-center gap-2 group cursor-pointer"
+                                      title="Click to rename zone"
+                                    >
+                                      <span className="font-extrabold text-base text-slate-800 group-hover:text-indigo-600 transition-colors truncate">
+                                        {zone.name}
+                                      </span>
+                                      <Edit2 size={13} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 
@@ -894,17 +963,68 @@ const Settings: React.FC<SettingsProps> = ({
                                     <div className="flex items-center justify-between gap-2">
                                       <div className="flex items-center gap-2 flex-1 min-w-0">
                                         <Building2 size={16} className="text-slate-400 shrink-0" />
-                                        <input
-                                          type="text"
-                                          value={branch.name}
-                                          onChange={(e) => {
-                                            const updatedZones = [...org.zones];
-                                            updatedZones[zIndex].branches[bIndex].name = e.target.value;
-                                            updateOrg({ ...org, zones: updatedZones });
-                                          }}
-                                          className="text-xs font-bold text-slate-800 bg-transparent hover:bg-white focus:bg-white px-1.5 py-1 -ml-1 rounded border border-transparent hover:border-slate-200 focus:border-indigo-400 outline-none w-full truncate"
-                                          placeholder="Branch Name"
-                                        />
+                                        {editingBranchId === (branch.id || `branch-${zIndex}-${bIndex}`) ? (
+                                          <div className="flex items-center gap-1 w-full">
+                                            <input
+                                              type="text"
+                                              value={editingBranchName}
+                                              onChange={(e) => setEditingBranchName(e.target.value)}
+                                              onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                  const updatedZones = [...org.zones];
+                                                  updatedZones[zIndex].branches[bIndex] = {
+                                                    ...updatedZones[zIndex].branches[bIndex],
+                                                    name: editingBranchName.trim() || branch.name,
+                                                  };
+                                                  updateOrg({ ...org, zones: updatedZones });
+                                                  setEditingBranchId(null);
+                                                } else if (e.key === "Escape") {
+                                                  setEditingBranchId(null);
+                                                }
+                                              }}
+                                              autoFocus
+                                              className="text-xs font-bold text-slate-800 bg-white px-2 py-1 rounded border-2 border-indigo-500 focus:outline-none w-full shadow-sm"
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const updatedZones = [...org.zones];
+                                                updatedZones[zIndex].branches[bIndex] = {
+                                                  ...updatedZones[zIndex].branches[bIndex],
+                                                  name: editingBranchName.trim() || branch.name,
+                                                };
+                                                updateOrg({ ...org, zones: updatedZones });
+                                                setEditingBranchId(null);
+                                              }}
+                                              className="p-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded transition-colors shrink-0"
+                                              title="Save Branch Name"
+                                            >
+                                              <Check size={13} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setEditingBranchId(null)}
+                                              className="p-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded transition-colors shrink-0"
+                                              title="Cancel"
+                                            >
+                                              <X size={13} />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <div
+                                            onClick={() => {
+                                              setEditingBranchId(branch.id || `branch-${zIndex}-${bIndex}`);
+                                              setEditingBranchName(branch.name);
+                                            }}
+                                            className="flex items-center gap-1.5 flex-1 min-w-0 group cursor-pointer"
+                                            title="Click to rename branch"
+                                          >
+                                            <span className="text-xs font-bold text-slate-800 truncate group-hover:text-indigo-600 transition-colors">
+                                              {branch.name}
+                                            </span>
+                                            <Edit2 size={12} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                                          </div>
+                                        )}
                                       </div>
                                       <button
                                         onClick={() => handleRemoveBranch(zIndex, bIndex, branch.name)}
@@ -1113,7 +1233,7 @@ const Settings: React.FC<SettingsProps> = ({
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-5">
                 <div>
                   <h3 className="font-extrabold text-xl text-slate-800 flex items-center gap-2">
-                    <ShieldCheck size={22} className="text-indigo-600" /> Role Permissions & Access Control
+                    <ShieldCheck size={22} className="text-indigo-600" /> Role Permissions and Access Control
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
                     Manage granular access to all 8 core features and {APP_FEATURES_REGISTRY.reduce((acc, f) => acc + f.subfeatures.length, 0)} subfeatures across ministry roles.
@@ -1345,7 +1465,7 @@ const Settings: React.FC<SettingsProps> = ({
                           {isExpanded && (
                             <div className="px-5 pb-5 pt-2 border-t border-slate-100 bg-slate-50/50 rounded-b-3xl space-y-3">
                               <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">
-                                Subfeatures & Detailed Actions
+                                Subfeatures and Detailed Actions
                               </div>
 
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1409,7 +1529,9 @@ const Settings: React.FC<SettingsProps> = ({
                     <table className="w-full text-left border-collapse">
                       <thead className="bg-slate-50 text-slate-600 text-xs font-extrabold uppercase tracking-wide border-b border-slate-200">
                         <tr>
-                          <th className="px-4 py-3 min-w-[220px]">Feature / Action</th>
+                          <th className="sticky left-0 bg-slate-50 z-20 px-4 py-3 min-w-[240px] border-r border-slate-200 shadow-sm">
+                            Feature / Action
+                          </th>
                           {ROLES_LIST.map((r) => (
                             <th key={r.id} className="px-3 py-3 text-center min-w-[120px]">
                               <div>{r.label}</div>
@@ -1438,11 +1560,11 @@ const Settings: React.FC<SettingsProps> = ({
                           <React.Fragment key={feature.id}>
                             {/* TOP-LEVEL FEATURE ROW */}
                             <tr className="bg-indigo-50/40 font-extrabold text-slate-800 hover:bg-indigo-50/70">
-                              <td className="px-4 py-3 flex items-center gap-2">
-                                <span className="p-1.5 bg-indigo-100 text-indigo-700 rounded-lg">
+                              <td className="sticky left-0 bg-indigo-50/95 z-10 px-4 py-3 min-w-[240px] border-r border-slate-200 shadow-sm flex items-center gap-2">
+                                <span className="p-1.5 bg-indigo-100 text-indigo-700 rounded-lg shrink-0">
                                   {React.createElement(getFeatureIconComponent(feature.iconName), { size: 14 })}
                                 </span>
-                                <span>{feature.name}</span>
+                                <span className="truncate">{feature.name}</span>
                               </td>
                               {ROLES_LIST.map((r) => {
                                 const active = hasRoleFeature(r.id, feature.id);
@@ -1469,7 +1591,7 @@ const Settings: React.FC<SettingsProps> = ({
                               })
                               .map((sf) => (
                                 <tr key={sf.id} className="hover:bg-slate-50 transition-colors">
-                                  <td className="px-4 py-2.5 pl-9 text-slate-600 font-medium">
+                                  <td className="sticky left-0 bg-white z-10 px-4 py-2.5 pl-9 min-w-[240px] border-r border-slate-200 shadow-sm text-slate-600 font-medium truncate">
                                     <span className="text-slate-400 mr-1.5">&bull;</span>
                                     {sf.name}
                                   </td>

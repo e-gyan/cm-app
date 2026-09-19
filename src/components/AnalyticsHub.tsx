@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { AppData, type Church, Member, MemberType, MemberStatus } from "../types";
-import { calculateChurchDivisions } from "../lib/teacherDivision";
+import { calculateChurchDivisions, matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
 import {
   AreaChart,
   Area,
@@ -40,6 +40,7 @@ interface AnalyticsHubProps {
   data: AppData;
   activeChurch: Church;
   currentUser: Member;
+  activeBranchId?: string;
 }
 
 type TimeRange = "2W" | "1M" | "3M" | "YTD" | "1Y";
@@ -359,18 +360,30 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
   data,
   activeChurch,
   currentUser,
+  activeBranchId,
 }) => {
   const hasManagementView = [
     "SUPER_ADMIN",
     "ADMIN",
     "DIRECTORATE_HEAD",
     "ZONAL_HEAD",
+    "BRANCH_COORDINATOR",
     "CM",
   ].includes(currentUser.role || "");
   const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
     currentUser.role || "",
   );
   const isCM = currentUser.role === "CM";
+
+  const scopedMembers = useMemo(() => {
+    return data.members.filter((m) =>
+      matchesScope(m, activeBranchId, data.settings?.organization),
+    );
+  }, [data.members, activeBranchId, data.settings?.organization]);
+
+  const scopeLabel = useMemo(() => {
+    return getScopeDisplayLabel(activeBranchId, data.settings?.organization);
+  }, [activeBranchId, data.settings?.organization]);
 
 
   // Use dynamic list from settings
@@ -467,12 +480,13 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
   const chartData = useMemo(() => {
     const { start, end } = getDateRange();
 
-    // Filter records strictly within range
+    // Filter records strictly within range and scope
     let records = data.attendance.filter((r) => {
       const d = new Date(r.date);
       const churchMatch =
         effectiveChurch === "All" ? true : r.churchId === effectiveChurch;
-      return d >= start && d <= end && churchMatch;
+      const scopeMatch = matchesScope(r, activeBranchId, data.settings?.organization);
+      return d >= start && d <= end && churchMatch && scopeMatch;
     });
 
     // Sort chronological
@@ -525,7 +539,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
 
       // Count all attendees including teachers
       r.presentMemberIds.forEach((id) => {
-        const m = data.members.find((mem) => mem.id === id);
+        const m = scopedMembers.find((mem) => mem.id === id);
         if (m) {
           entry.Total++;
           entry.presentIds.push(id);
@@ -547,7 +561,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
     });
 
     return Array.from(groupedByDate.values());
-  }, [data.attendance, effectiveChurch, timeRange, selectedYear, data.members]);
+  }, [data.attendance, effectiveChurch, timeRange, selectedYear, scopedMembers, activeBranchId, data.settings?.organization]);
 
   // 2. High Level KPI
   const stats = useMemo(() => {
@@ -986,11 +1000,18 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       {/* TOP BAR: Controls */}
       <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
-          <h2 className="text-xl font-extrabold text-slate-800">
-            Analytics Hub
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-extrabold text-slate-800">
+              Analytics Hub
+            </h2>
+            {scopeLabel && (
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                {scopeLabel}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-slate-500 font-medium">
-            Deep dive into data & trends.
+            Deep dive into data and trends.
           </p>
         </div>
 
@@ -1053,7 +1074,19 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
         </div>
       </div>
 
-            {/* PREDICTION WIDGET */}
+      {scopedMembers.length === 0 && chartData.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-6 text-center space-y-2 animate-in fade-in">
+          <MapPin className="mx-auto text-amber-500" size={32} />
+          <h3 className="font-extrabold text-amber-900 text-base">
+            No Records Found {scopeLabel ? `for ${scopeLabel}` : ""}
+          </h3>
+          <p className="text-xs text-amber-700 max-w-md mx-auto">
+            There are currently no attendance or member records associated with this selection. Switch to another branch or add members to view analytics.
+          </p>
+        </div>
+      )}
+
+      {/* PREDICTION WIDGET */}
       {predictionModel && (
         <motion.div 
           initial={{ opacity: 0, y: 10 }}

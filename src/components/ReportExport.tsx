@@ -48,6 +48,8 @@ import {
   formatDivisionReportText,
   formatDivisionCSV,
   CHURCH_NAMES,
+  matchesScope,
+  getScopeDisplayLabel,
 } from "../lib/teacherDivision";
 
 interface ReportExportProps {
@@ -55,6 +57,7 @@ interface ReportExportProps {
   onUpdate: () => void;
   activeChurch: Church;
   currentUser: Member;
+  activeBranchId?: string;
 }
 
 const formatDateDDMMYYYY = (dateStr: string) => {
@@ -71,6 +74,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
   onUpdate,
   activeChurch,
   currentUser,
+  activeBranchId,
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [copiedReport, setCopiedReport] = useState(false);
@@ -446,82 +450,367 @@ const ReportExport: React.FC<ReportExportProps> = ({
       return formatDivisionReportText(divisions);
     }
 
-    if (activeChurch === "CM") {
-      let allowedBranches = [];
-      const availableChurches = ["UJ", "LJ", "K", "I", "N"];
+    const availableChurches = Array.isArray(data.settings?.churches)
+      ? data.settings?.churches
+      : ["UJ", "LJ", "K", "I", "N"];
 
-      if (currentUser.role === "ZONAL_HEAD") {
-        let zone = data.settings.organization?.zones?.find(
-          (z) => z.id === currentUser.zoneId || z.name.toLowerCase() === (currentUser.zoneId || "").toLowerCase()
-        );
-        if (!zone && data.settings.organization?.zones?.length) {
-          zone = data.settings.organization.zones[0];
-        }
-        if (zone) {
-          if (zone.branches && zone.branches.length > 0) {
-            allowedBranches = zone.branches.map((b) => ({
-              id: b.id,
-              name: b.name,
-              churches: b.churches && b.churches.length > 0 ? b.churches : availableChurches,
-            }));
-          } else {
-            allowedBranches = [{ id: zone.id, name: zone.name, churches: availableChurches }];
-          }
-        } else {
-          allowedBranches = [{ name: "Main", churches: availableChurches }];
-        }
-      } else if (currentUser.role === "BRANCH_COORDINATOR" && currentUser.branchId) {
-        const branch = data.settings.organization?.zones?.flatMap(z => z.branches || [])?.find(
-          (b) => b.id === currentUser.branchId || b.name === currentUser.branchId
-        );
-        if (branch) {
-          allowedBranches = [{
-            id: branch.id,
-            name: branch.name,
-            churches: branch.churches && branch.churches.length > 0 ? branch.churches : availableChurches,
-          }];
-        }
-      } else {
-        // ADMIN / SUPER_ADMIN or others
-        const allBranches = data.settings.organization?.zones?.flatMap(z => z.branches || []) || [];
-        const thesaurusBranch = allBranches.find(b => b.name.toLowerCase().includes("thesaurus"));
-        if (thesaurusBranch) {
-          allowedBranches = [{
-            id: thesaurusBranch.id,
-            name: thesaurusBranch.name,
-            churches: thesaurusBranch.churches && thesaurusBranch.churches.length > 0 ? thesaurusBranch.churches : availableChurches,
-          }];
-        } else {
-          allowedBranches = [{ name: "Thesaurus", churches: availableChurches }];
-        }
-      }
+    // Helper for outreach stats on selectedDate
+    const getOutreachCounts = (filterFn: (item: any) => boolean) => {
+      const sessions = (data.outreachSessions || []).filter(
+        (s) => s.date === selectedDate && s.status === "COMPLETED" && filterFn(s)
+      );
+      const visits = sessions
+        .filter((s) => s.sessionType === "VISIT" || !s.sessionType)
+        .reduce((sum, s) => sum + (s.visitedMemberIds?.length || 0), 0);
+      const calls = sessions
+        .filter((s) => s.sessionType === "CALL" && s.outcome === "REACHED")
+        .reduce((sum, s) => sum + (s.visitedMemberIds?.length || 0), 0);
+      return { visits, calls };
+    };
 
-      let reportTitle = "CM ATTENDANCE SUMMARY";
-      let report = `*${reportTitle}*\n============================\n\n`;
+    // Helper for completed prayer count on selectedDate
+    const getPrayerCount = (filterFn: (item: any) => boolean) => {
+      const prayers = (data.prayerSchedule || []).filter(
+        (p) => p.date === selectedDate && p.isCompleted && filterFn(p)
+      );
+      return prayers.length;
+    };
 
+    const userRole = currentUser.role || "";
+
+    // =========================================================================
+    // TIER 4: DIRECTORATE HEAD / ADMIN (Platform-Wide Aggregation Per Zone)
+    // =========================================================================
+    if (
+      (userRole === "DIRECTORATE_HEAD" ||
+        userRole === "SUPER_ADMIN" ||
+        userRole === "ADMIN") &&
+      (!activeBranchId || activeBranchId === "ALL") &&
+      (activeChurch === "CM" || activeChurch === "All")
+    ) {
+      let report = `*CHILDREN'S MINISTRY DIRECTORATE REPORT*\n`;
+      report += `${formattedDate}\n`;
+      report += `============================\n\n`;
+
+      const zones = data.settings.organization?.zones || [];
+      let grandAttendance = 0;
+      let grandFirstTimers = 0;
+      let grandTeachers = 0;
+      let grandVisits = 0;
+      let grandCalls = 0;
+      let grandPrayers = 0;
       let hasData = false;
 
-      allowedBranches.forEach((branch) => {
-        branch.churches.forEach((church) => {
-          const churchReport = renderSingleChurch(church, branch, true);
-          if (churchReport) {
-             hasData = true;
-             report += churchReport + `\n\n`;
-          }
+      zones.forEach((zone) => {
+        let zoneAttendance = 0;
+        let zoneFirstTimers = 0;
+        let zoneTeachers = 0;
+        const branchSummaries: string[] = [];
+
+        (zone.branches || []).forEach((branch) => {
+          let branchAtt = 0;
+          availableChurches.forEach((church) => {
+            const rec = data.attendance.find(
+              (r) =>
+                r.date === selectedDate &&
+                r.churchId === church &&
+                (r.branchId === branch.id || r.branchId === branch.name || (!r.branchId && branch.id === "branch-main"))
+            );
+            if (rec) {
+              branchAtt += rec.presentMemberIds.length;
+              rec.presentMemberIds.forEach((id) => {
+                const m = data.members.find((mem) => mem.id === id);
+                if (m) {
+                  if (m.type === MemberType.VISITOR) zoneFirstTimers++;
+                  if (
+                    ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
+                    m.type === MemberType.TEACHER ||
+                    (m.role && m.role !== "NONE")
+                  ) {
+                    zoneTeachers++;
+                  }
+                }
+              });
+            }
+          });
+          branchSummaries.push(`${branch.name}: ${branchAtt}`);
+          zoneAttendance += branchAtt;
         });
+
+        const zoneOutreach = getOutreachCounts((s) =>
+          (zone.branches || []).some((b) => b.id === s.branchId || b.name === s.branchId)
+        );
+        const zonePrayer = getPrayerCount((p) =>
+          (p.assignedMemberIds || []).some((id) => {
+            const m = data.members.find((mem) => mem.id === id);
+            return m && (m.zoneId === zone.id || (zone.branches || []).some((b) => b.id === m.branchId));
+          })
+        );
+
+        if (zoneAttendance > 0 || zoneOutreach.visits > 0 || zonePrayer > 0) {
+          hasData = true;
+        }
+
+        report += `*ZONE: ${zone.name.toUpperCase()}*\n`;
+        report += `• Total Attendance: ${zoneAttendance}\n`;
+        report += `• Branches: ${branchSummaries.join(" | ") || "No branches"}\n`;
+        report += `• First Timers: ${zoneFirstTimers} | Teachers: ${zoneTeachers}\n`;
+        report += `• Outreach and Prayer: ${zoneOutreach.visits} Visits | ${zoneOutreach.calls} Calls | ${zonePrayer} Prayers\n\n`;
+
+        grandAttendance += zoneAttendance;
+        grandFirstTimers += zoneFirstTimers;
+        grandTeachers += zoneTeachers;
+        grandVisits += zoneOutreach.visits;
+        grandCalls += zoneOutreach.calls;
+        grandPrayers += zonePrayer;
       });
 
-      if (!hasData) {
-        report += `_No attendance data recorded yet for this date._`;
-      }
+      report += `============================\n`;
+      report += `*DIRECTORATE GRAND TOTALS*\n`;
+      report += `• Total Platform Attendance: ${grandAttendance}\n`;
+      report += `• Total First Timers: ${grandFirstTimers}\n`;
+      report += `• Total Active Teachers: ${grandTeachers}\n`;
+      report += `• Total Outreach Activity: ${grandVisits} Visits | ${grandCalls} Calls\n`;
+      report += `• Total Prayers Completed: ${grandPrayers}\n`;
 
+      if (!hasData) {
+        report += `\n_No attendance or outreach data recorded yet for this date._`;
+      }
       return report.trim();
     }
 
-    // --- Helper for Single Branch Report (Names included with Service Split) ---
-    function renderSingleChurch(churchId: string, branchObj?: { id?: string, name: string }, isSummary: boolean = false) {
+    // =========================================================================
+    // TIER 3: ZONAL HEAD (All Branches Under That Zone Aggregated)
+    // =========================================================================
+    if (
+      userRole === "ZONAL_HEAD" ||
+      (activeBranchId && activeBranchId.startsWith("ZONE:"))
+    ) {
+      const targetZoneId = activeBranchId?.startsWith("ZONE:")
+        ? activeBranchId.replace("ZONE:", "")
+        : currentUser.zoneId;
+
+      const zone =
+        data.settings.organization?.zones?.find(
+          (z) => z.id === targetZoneId || z.name.toLowerCase() === (targetZoneId || "").toLowerCase()
+        ) || data.settings.organization?.zones?.[0];
+
+      const zoneName = zone?.name || "Zone";
+      let report = `*${zoneName.toUpperCase()} - ZONAL SUMMARY REPORT*\n`;
+      report += `${formattedDate}\n`;
+      report += `============================\n\n`;
+
+      let zoneTotalAtt = 0;
+      let zoneTotalFT = 0;
+      let zoneTotalVisits = 0;
+      let zoneTotalCalls = 0;
+      let zoneTotalPrayers = 0;
+      let hasData = false;
+
+      (zone?.branches || []).forEach((branch) => {
+        let branchAtt = 0;
+        let branchKids = 0;
+        let branchTeachers = 0;
+        let branchFT = 0;
+        const churchBreakdown: string[] = [];
+
+        availableChurches.forEach((church) => {
+          const rec = data.attendance.find(
+            (r) =>
+              r.date === selectedDate &&
+              r.churchId === church &&
+              (r.branchId === branch.id || r.branchId === branch.name || (!r.branchId && branch.id === "branch-main"))
+          );
+          if (rec) {
+            const count = rec.presentMemberIds.length;
+            branchAtt += count;
+            churchBreakdown.push(`${church}: ${count}`);
+            rec.presentMemberIds.forEach((id) => {
+              const m = data.members.find((mem) => mem.id === id);
+              if (m) {
+                if (m.type === MemberType.VISITOR) branchFT++;
+                if (
+                  ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
+                  m.type === MemberType.TEACHER ||
+                  (m.role && m.role !== "NONE")
+                ) {
+                  branchTeachers++;
+                } else {
+                  branchKids++;
+                }
+              }
+            });
+          }
+        });
+
+        const branchOutreach = getOutreachCounts((s) => s.branchId === branch.id || s.branchId === branch.name);
+        const branchPrayer = getPrayerCount((p) =>
+          (p.assignedMemberIds || []).some((id) => {
+            const m = data.members.find((mem) => mem.id === id);
+            return m && (m.branchId === branch.id || m.branchId === branch.name);
+          })
+        );
+
+        if (branchAtt > 0 || branchOutreach.visits > 0 || branchPrayer > 0) {
+          hasData = true;
+        }
+
+        report += `*BRANCH: ${branch.name}*\n`;
+        report += `• Attendance: ${branchAtt} (Children: ${branchKids} | Teachers: ${branchTeachers})\n`;
+        report += `• Churches: ${churchBreakdown.join(" | ") || "No records"}\n`;
+        report += `• First Timers: ${branchFT}\n`;
+        report += `• Outreach and Prayer: ${branchOutreach.visits} Visits | ${branchOutreach.calls} Calls | ${branchPrayer} Prayers\n\n`;
+
+        zoneTotalAtt += branchAtt;
+        zoneTotalFT += branchFT;
+        zoneTotalVisits += branchOutreach.visits;
+        zoneTotalCalls += branchOutreach.calls;
+        zoneTotalPrayers += branchPrayer;
+      });
+
+      report += `============================\n`;
+      report += `*${zoneName.toUpperCase()} TOTALS*\n`;
+      report += `• Total Attendance: ${zoneTotalAtt}\n`;
+      report += `• Total First Timers: ${zoneTotalFT}\n`;
+      report += `• Total Outreach Activity: ${zoneTotalVisits} Visits | ${zoneTotalCalls} Calls\n`;
+      report += `• Total Prayers Completed: ${zoneTotalPrayers}\n`;
+
+      if (!hasData) {
+        report += `\n_No attendance or outreach data recorded yet for this date._`;
+      }
+      return report.trim();
+    }
+
+    // =========================================================================
+    // TIER 2: BRANCH COORDINATOR (Aggregation Per Church - NO CHILD NAMES!)
+    // =========================================================================
+    if (
+      userRole === "BRANCH_COORDINATOR" ||
+      (activeBranchId && !activeBranchId.startsWith("ZONE:") && activeBranchId !== "ALL") ||
+      (activeChurch === "All" && userRole !== "TEACHER") ||
+      activeChurch === "CM"
+    ) {
+      const branchObj = data.settings.organization?.zones
+        ?.flatMap((z) => z.branches || [])
+        ?.find((b) => b.id === activeBranchId || b.name === activeBranchId || b.id === currentUser.branchId || b.name === currentUser.branchId) || {
+        id: currentUser.branchId || "branch-main",
+        name: currentUser.branchId || "Branch",
+      };
+
+      let report = `*${branchObj.name.toUpperCase()} - BRANCH SUMMARY REPORT*\n`;
+      report += `${formattedDate}\n`;
+      report += `============================\n\n`;
+
+      let branchTotalAtt = 0;
+      let branchTotalFT = 0;
+      let branchTotalMembers = 0;
+      let branchTotalFNF = 0;
+      let branchTotalTeachers = 0;
+      let branchTotalVisits = 0;
+      let branchTotalCalls = 0;
+      let branchTotalPrayers = 0;
+      let hasData = false;
+
+      availableChurches.forEach((churchId) => {
+        const record = data.attendance.find(
+          (r) =>
+            r.date === selectedDate &&
+            r.churchId === churchId &&
+            matchesScope(r, activeBranchId || branchObj.id, data.settings.organization)
+        );
+
+        const getService = (id: string) => record?.serviceMap?.[id] || "JOY";
+
+        let totalJoy = 0;
+        let totalEnlargement = 0;
+        let totalSpecial = 0;
+        let membersCount = 0;
+        let fnfCount = 0;
+        let visitorsCount = 0;
+        let notMembersCount = 0;
+        let teachersCount = 0;
+
+        if (record) {
+          hasData = true;
+          record.presentMemberIds.forEach((id) => {
+            const m = data.members.find((mem) => mem.id === id);
+            if (m) {
+              const isTeacher =
+                ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
+                m.type === MemberType.TEACHER ||
+                (m.role && m.role !== "NONE");
+              if (isTeacher) {
+                teachersCount++;
+              } else {
+                const s = getService(m.id);
+                if (s === "JOY") totalJoy++;
+                else if (s === "ENLARGEMENT") totalEnlargement++;
+                else if (s === "SPECIAL") totalSpecial++;
+
+                if (m.type === MemberType.MEMBER) membersCount++;
+                else if (m.type === MemberType.FNF) fnfCount++;
+                else if (m.type === MemberType.VISITOR) visitorsCount++;
+                else if (m.type === MemberType.NOT_MEMBER) notMembersCount++;
+              }
+            }
+          });
+        }
+
+        const churchTotal = record ? record.presentMemberIds.length : 0;
+
+        const churchOutreach = getOutreachCounts((s) => {
+          return (
+            (s.branchId === branchObj.id || s.branchId === branchObj.name || !s.branchId) &&
+            (s.assignedMemberIds || []).some((id) => {
+              const m = data.members.find((mem) => mem.id === id);
+              return m && m.assignedChurch === churchId;
+            })
+          );
+        });
+
+        const churchPrayer = getPrayerCount((p) => {
+          return (p.assignedMemberIds || []).some((id) => {
+            const m = data.members.find((mem) => mem.id === id);
+            return m && m.assignedChurch === churchId;
+          });
+        });
+
+        report += `*${churchId} CHURCH*\n`;
+        report += `• Total Present: ${churchTotal}\n`;
+        report += `• Breakdown: Members (${membersCount}) | FNF (${fnfCount}) | First Timers (${visitorsCount}) | Teachers (${teachersCount})\n`;
+        report += `• Services: Joy (${totalJoy}) | Enlargement (${totalEnlargement})` + (totalSpecial > 0 ? ` | Special (${totalSpecial})` : "") + `\n`;
+        report += `• Outreach and Prayer: ${churchOutreach.visits} Visits | ${churchOutreach.calls} Calls | ${churchPrayer} Prayers\n\n`;
+
+        branchTotalAtt += churchTotal;
+        branchTotalMembers += membersCount;
+        branchTotalFNF += fnfCount;
+        branchTotalFT += visitorsCount;
+        branchTotalTeachers += teachersCount;
+        branchTotalVisits += churchOutreach.visits;
+        branchTotalCalls += churchOutreach.calls;
+        branchTotalPrayers += churchPrayer;
+      });
+
+      report += `============================\n`;
+      report += `*BRANCH TOTALS*\n`;
+      report += `• Total Present: ${branchTotalAtt}\n`;
+      report += `• Members: ${branchTotalMembers} | FNF: ${branchTotalFNF}\n`;
+      report += `• First Timers: ${branchTotalFT} | Teachers on Duty: ${branchTotalTeachers}\n`;
+      report += `• Total Outreach Activity: ${branchTotalVisits} Visits | ${branchTotalCalls} Calls\n`;
+      report += `• Total Prayers Completed: ${branchTotalPrayers}\n`;
+
+      if (!hasData) {
+        report += `\n_No attendance data recorded yet for this date._`;
+      }
+      return report.trim();
+    }
+
+    // =========================================================================
+    // TIER 1: TEACHER / SINGLE CHURCH (Child names included in full detail)
+    // =========================================================================
+    function renderSingleChurch(churchId: string, branchObj?: { id?: string, name: string }) {
       const record = data.attendance.find(
-        (r) => r.date === selectedDate && r.churchId === churchId && (!branchObj || r.branchId === branchObj.id || r.branchId === branchObj.name || (!r.branchId))
+        (r) => r.date === selectedDate && r.churchId === churchId && matchesScope(r, activeBranchId, data.settings.organization)
       );
       if (!record) return "";
 
@@ -531,13 +820,15 @@ const ReportExport: React.FC<ReportExportProps> = ({
       const teachers = presentMembers.filter(
         (m) =>
           ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
-          m.type === MemberType.TEACHER,
+          m.type === MemberType.TEACHER ||
+          (m.role && m.role !== "NONE"),
       );
 
       const allChildren = presentMembers.filter(
         (m) =>
           !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-          m.type !== MemberType.TEACHER,
+          m.type !== MemberType.TEACHER &&
+          (!m.role || m.role === "NONE"),
       );
       
       const globalEventName = data.attendance.find((r) => r.date === selectedDate && r.eventName)?.eventName;
@@ -550,28 +841,19 @@ const ReportExport: React.FC<ReportExportProps> = ({
       const teachersCount = teachers.length;
       const totalCount = allChildren.length + teachersCount;
       
-      let report = "";
-      if (isSummary) {
-          report = `*${churchId} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
-          if (eventNameToUse) report += `*${eventNameToUse}*\n`;
-          report += `------------------------------\n`;
-      } else {
-          report = `*${churchId} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
-          if (eventNameToUse) report += `*${eventNameToUse}*\n`;
-          report += `------------------------------\n`;
-      }
-
+      let report = `*${churchId} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
+      if (eventNameToUse) report += `*${eventNameToUse}*\n`;
+      report += `------------------------------\n`;
       report += `*TOTAL PRESENT: ${totalCount}*\n`;
       
       const splits = [];
       if (eventNameToUse === "Joint Service") {
-          // If it's a Joint Service event, we usually group the children together.
-          const totalChildren = totalJoy + totalEnlargement + totalSpecial;
-          if (totalChildren > 0) splits.push(`Joint Service: ${totalChildren}`);
+        const totalChildren = totalJoy + totalEnlargement + totalSpecial;
+        if (totalChildren > 0) splits.push(`Joint Service: ${totalChildren}`);
       } else {
-          if (totalJoy > 0) splits.push(`Joy Service: ${totalJoy}`);
-          if (totalEnlargement > 0) splits.push(`Enlargement Service: ${totalEnlargement}`);
-          if (totalSpecial > 0) splits.push(`${eventNameToUse || "Special"}: ${totalSpecial}`);
+        if (totalJoy > 0) splits.push(`Joy Service: ${totalJoy}`);
+        if (totalEnlargement > 0) splits.push(`Enlargement Service: ${totalEnlargement}`);
+        if (totalSpecial > 0) splits.push(`${eventNameToUse || "Special"}: ${totalSpecial}`);
       }
       
       if (teachersCount > 0) splits.push(`Teachers: ${teachersCount}`);
@@ -603,24 +885,39 @@ const ReportExport: React.FC<ReportExportProps> = ({
       return report.trim();
     }
 
-    if (activeChurch as string !== "CM") {
-      let currentBranchObj = undefined;
-      if (currentUser.branchId) {
-        currentBranchObj = { id: currentUser.branchId, name: currentUser.branchId };
-      }
-      
-      let churchReport = renderSingleChurch(activeChurch, currentBranchObj, false);
-      if (!churchReport) return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
-      let finalReport = churchReport;
-      
-      if (includeDivisionsInReport && ["UJ", "LJ", "K", "I"].includes(activeChurch)) {
-        const divisionsData = calculateChurchDivisions(data.members, [activeChurch]);
-        finalReport += `\n\n============================\n\n` + formatDivisionReportText(divisionsData);
-      }
-      return finalReport;
-    }
+    const currentBranchObj = currentUser.branchId
+      ? { id: currentUser.branchId, name: currentUser.branchId }
+      : undefined;
 
-    return "";
+    let churchReport = renderSingleChurch(activeChurch, currentBranchObj);
+    if (!churchReport)
+      return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
+    let finalReport = churchReport;
+
+    // Add Church Outreach and Prayer Summary
+    const churchOutreach = getOutreachCounts((s) =>
+      (s.assignedMemberIds || []).some((id) => {
+        const m = data.members.find((mem) => mem.id === id);
+        return m && m.assignedChurch === activeChurch;
+      })
+    );
+    const churchPrayer = getPrayerCount((p) =>
+      (p.assignedMemberIds || []).some((id) => {
+        const m = data.members.find((mem) => mem.id === id);
+        return m && m.assignedChurch === activeChurch;
+      })
+    );
+
+    finalReport += `\n*OUTREACH AND PRAYER SUMMARY*\n`;
+    finalReport += `• Pastoral Visits: ${churchOutreach.visits}\n`;
+    finalReport += `• Pastoral Calls Reached: ${churchOutreach.calls}\n`;
+    finalReport += `• Prayer Sessions Completed: ${churchPrayer}\n`;
+
+    if (includeDivisionsInReport && ["UJ", "LJ", "K", "I"].includes(activeChurch)) {
+      const divisionsData = calculateChurchDivisions(data.members, [activeChurch]);
+      finalReport += `\n\n============================\n\n` + formatDivisionReportText(divisionsData);
+    }
+    return finalReport;
   };
 
   const divisions = useMemo(() => {
@@ -1058,7 +1355,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
             <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight">
-              Reports & Insights
+              Reports and Insights
             </h2>
             <p className="text-slate-500 font-medium">
               Generate updates and manage system data.

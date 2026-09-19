@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { AppData, MemberType, MemberStatus, type Church, Member } from "../types";
-import { calculateChurchDivisions } from "../lib/teacherDivision";
+import { calculateChurchDivisions, matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
 import { updateTargets } from "../services/storageService";
 
 const containerVariants = {
@@ -58,6 +58,7 @@ interface DashboardProps {
   data: AppData;
   activeChurch: Church;
   currentUser: Member;
+  activeBranchId?: string;
 }
 
 const formatDateDDMMYYYY = (dateStr: string) => {
@@ -216,8 +217,9 @@ const CustomChartTooltip = ({ active, payload, label }: any) => {
 // --- ADMIN DASHBOARD ---
 const AdminDashboard: React.FC<{
   data: AppData;
+  activeBranchId?: string;
   onUpdateTargets?: () => void;
-}> = ({ data, onUpdateTargets }) => {
+}> = ({ data, activeBranchId, onUpdateTargets }) => {
   // Dynamic church list from settings
   const churches: Church[] = Array.isArray(data.settings?.churches) ? data.settings?.churches : ["UJ", "LJ", "K", "I", "N"];
   const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
@@ -239,6 +241,7 @@ const AdminDashboard: React.FC<{
       const membersInChurch = data.members.filter(
         (m) =>
           m.assignedChurch === church &&
+          matchesScope(m, activeBranchId, data.settings?.organization) &&
           [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) &&
           (m.type === MemberType.MEMBER ||
             m.type === MemberType.FNF ||
@@ -258,7 +261,9 @@ const AdminDashboard: React.FC<{
         }
       });
 
-      const attendance = data.attendance.filter((r) => r.churchId === church);
+      const attendance = data.attendance.filter(
+        (r) => r.churchId === church && matchesScope(r, activeBranchId, data.settings?.organization)
+      );
       const sortedAttendance = [...attendance].sort(
         (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
       );
@@ -322,11 +327,13 @@ const AdminDashboard: React.FC<{
       let male = 0;
       let female = 0;
       let unassigned = 0;
-      data.members.filter(m => m.assignedChurch === church && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)).forEach(m => {
-        if (m.gender === "MALE") male++;
-        else if (m.gender === "FEMALE") female++;
-        else unassigned++;
-      });
+      data.members
+        .filter(m => m.assignedChurch === church && matchesScope(m, activeBranchId, data.settings?.organization) && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status))
+        .forEach(m => {
+          if (m.gender === "MALE") male++;
+          else if (m.gender === "FEMALE") female++;
+          else unassigned++;
+        });
       const genderData = [
         { name: "Male", value: male },
         { name: "Female", value: female },
@@ -350,7 +357,7 @@ const AdminDashboard: React.FC<{
         genderData,
       };
     });
-  }, [data, churches]);
+  }, [data, churches, activeBranchId]);
 
   const totalPop = churchStats.reduce((acc, curr) => acc + curr.population, 0);
   const totalMemberPop = churchStats.reduce((acc, curr) => acc + curr.memberPop, 0);
@@ -361,7 +368,9 @@ const AdminDashboard: React.FC<{
     let maleMembers = 0, femaleMembers = 0;
     let maleTeachers = 0, femaleTeachers = 0;
     
-    data.members.forEach(m => {
+    data.members
+      .filter(m => matchesScope(m, activeBranchId, data.settings?.organization))
+      .forEach(m => {
         if ([MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)) {
           const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
           if (isTeacher) {
@@ -388,10 +397,11 @@ const AdminDashboard: React.FC<{
     prevSunday.setDate(currentSunday.getDate() - 7);
     const prevDateStr = prevSunday.toISOString().split("T")[0];
 
-    const hasLatestRecord = data.attendance.some(r => r.date === latestDateStr);
-    const hasPrevRecord = data.attendance.some(r => r.date === prevDateStr);
+    const scopedAttendance = data.attendance.filter(r => matchesScope(r, activeBranchId, data.settings?.organization));
+    const hasLatestRecord = scopedAttendance.some(r => r.date === latestDateStr);
+    const hasPrevRecord = scopedAttendance.some(r => r.date === prevDateStr);
     
-    const latestRecords = data.attendance.filter(r => r.date === latestDateStr);
+    const latestRecords = scopedAttendance.filter(r => r.date === latestDateStr);
     latestRecords.forEach(r => {
       r.presentMemberIds.forEach(id => {
         const m = data.members.find(mem => mem.id === id);
@@ -403,7 +413,7 @@ const AdminDashboard: React.FC<{
       });
     });
     
-    const prevRecords = data.attendance.filter(r => r.date === prevDateStr);
+    const prevRecords = scopedAttendance.filter(r => r.date === prevDateStr);
     prevRecords.forEach(r => {
       r.presentMemberIds.forEach(id => {
         const m = data.members.find(mem => mem.id === id);
@@ -431,7 +441,7 @@ const AdminDashboard: React.FC<{
         hasPrevRecord,
       }
     };
-  }, [data.members, data.attendance]);
+  }, [data.members, data.attendance, activeBranchId, data.settings?.organization]);
 
   const totalTarget = churchStats.reduce(
     (acc, curr) => acc + (curr.target > 0 ? curr.target : 0),
@@ -466,6 +476,7 @@ const AdminDashboard: React.FC<{
 
     let eligibleMembers = data.members.filter(
       (m) =>
+        matchesScope(m, activeBranchId, data.settings?.organization) &&
         ["Member", "FNF"].includes(m.type) &&
         ["Active", "Inconsistent", "Not Active"].includes(m.status),
     );
@@ -531,7 +542,7 @@ const AdminDashboard: React.FC<{
       prayerTargetMins,
       totalPrayerMins,
     };
-  }, [data]);
+  }, [data, activeBranchId]);
 
   return (
     <motion.div
@@ -577,7 +588,7 @@ const AdminDashboard: React.FC<{
                 Ministry Overview
               </h3>
               <p className="text-slate-500 text-sm">
-                Combined metrics ({new Date().getFullYear()})
+                {getScopeDisplayLabel(activeBranchId, data.settings?.organization)} ({new Date().getFullYear()})
               </p>
             </div>
             <div className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-bold mr-10 md:mr-0">
@@ -816,6 +827,23 @@ const AdminDashboard: React.FC<{
         </motion.div>
       </div>
 
+      {totalPop === 0 && totalAvg === 0 && (
+        <motion.div
+          variants={itemVariants}
+          className="p-8 bg-slate-50 border border-dashed border-slate-200 rounded-3xl text-center my-4"
+        >
+          <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
+            <MapPin size={24} />
+          </div>
+          <h4 className="text-base font-bold text-slate-800">
+            No Records Found for {getScopeDisplayLabel(activeBranchId, data.settings?.organization)}
+          </h4>
+          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto font-medium">
+            There are currently no active members or attendance logs associated with this scope. Select another branch or zone from the top switcher to view records.
+          </p>
+        </motion.div>
+      )}
+
       <motion.div
         variants={itemVariants}
         className="grid grid-cols-1 md:grid-cols-2 gap-4"
@@ -1026,10 +1054,16 @@ const UpcomingBirthdays: React.FC<{ members: Member[] }> = ({ members }) => {
 };
 
 // --- CHURCH DASHBOARD ---
-const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUser: Member }> = ({
+const ChurchDashboard: React.FC<{
+  data: AppData;
+  activeChurch: Church;
+  currentUser: Member;
+  activeBranchId?: string;
+}> = ({
   data,
   activeChurch,
   currentUser,
+  activeBranchId,
 }) => {
   const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
     currentUser.role || "",
@@ -1075,6 +1109,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
     const membersInChurch = data.members.filter(
       (m) =>
         m.assignedChurch === activeChurch &&
+        matchesScope(m, activeBranchId, data.settings?.organization) &&
         [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) &&
         (m.type === MemberType.MEMBER ||
           m.type === MemberType.FNF ||
@@ -1095,11 +1130,13 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
 
     const members = data.members.filter(
       (m) =>
-        m.assignedChurch === activeChurch && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status),
+        m.assignedChurch === activeChurch &&
+        matchesScope(m, activeBranchId, data.settings?.organization) &&
+        [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status),
     );
     const kids = members;
     const attendance = data.attendance
-      .filter((r) => r.churchId === activeChurch)
+      .filter((r) => r.churchId === activeChurch && matchesScope(r, activeBranchId, data.settings?.organization))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     const getCount = (r: any) =>
@@ -1166,7 +1203,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
       target,
       retention,
     };
-  }, [data, activeChurch]);
+  }, [data, activeChurch, activeBranchId]);
 
   // Active Church Specific Outreach Stats
   const outreachStats = useMemo(() => {
@@ -1176,6 +1213,7 @@ const ChurchDashboard: React.FC<{ data: AppData; activeChurch: Church; currentUs
     let eligibleMembers = data.members.filter(
       (m) =>
         m.assignedChurch === activeChurch &&
+        matchesScope(m, activeBranchId, data.settings?.organization) &&
         ["Member", "FNF"].includes(m.type) &&
         ["Active", "Inconsistent", "Not Active"].includes(m.status),
     );
@@ -1794,18 +1832,30 @@ const Dashboard: React.FC<DashboardProps> = ({
   data,
   activeChurch,
   currentUser,
+  activeBranchId,
 }) => {
-  const isAdmin = ["ADMIN", "SUPER_ADMIN", "ZONAL_HEAD"].includes(
-    currentUser.role || "",
-  );
-  const showAdminView = isAdmin && activeChurch === "CM";
+  const isLeadership = [
+    "ADMIN",
+    "SUPER_ADMIN",
+    "ZONAL_HEAD",
+    "BRANCH_COORDINATOR",
+    "DIRECTORATE_HEAD",
+  ].includes(currentUser.role || "");
+  const showAdminView =
+    (isLeadership && (activeChurch === "CM" || activeChurch === "All")) ||
+    (currentUser.role === "BRANCH_COORDINATOR" && activeChurch === "All");
 
   return (
     <div className="pb-10">
       {showAdminView ? (
-        <AdminDashboard data={data} />
+        <AdminDashboard data={data} activeBranchId={activeBranchId} />
       ) : (
-        <ChurchDashboard data={data} activeChurch={activeChurch} currentUser={currentUser} />
+        <ChurchDashboard
+          data={data}
+          activeChurch={activeChurch}
+          currentUser={currentUser}
+          activeBranchId={activeBranchId}
+        />
       )}
     </div>
   );
