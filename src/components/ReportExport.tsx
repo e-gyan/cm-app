@@ -685,9 +685,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
     // =========================================================================
     if (
       userRole === "BRANCH_COORDINATOR" ||
-      (activeBranchId && !activeBranchId.startsWith("ZONE:") && activeBranchId !== "ALL") ||
+      (userRole !== "TEACHER" && activeBranchId && !activeBranchId.startsWith("ZONE:") && activeBranchId !== "ALL") ||
       (activeChurch === "All" && userRole !== "TEACHER") ||
-      activeChurch === "CM"
+      (activeChurch === "CM" && userRole !== "TEACHER")
     ) {
       const branchObj = data.settings.organization?.zones
         ?.flatMap((z) => z.branches || [])
