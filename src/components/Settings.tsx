@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { AppData, Member, AppSettings } from "../types";
 import { updateSettings } from "../services/storageService";
+import { hasRoleSubfeature } from "../lib/permissions";
 import { doc, getDoc } from "firebase/firestore";
 import { db, loginWithGoogle } from "../services/firebase";
 import {
@@ -77,6 +78,16 @@ const Settings: React.FC<SettingsProps> = ({
   const [localSettings, setLocalSettings] = useState<AppSettings>(
     data.settings,
   );
+
+  useEffect(() => {
+    if (data.settings) {
+      setLocalSettings(data.settings);
+    }
+  }, [data.settings]);
+
+  const [isSavingPerms, setIsSavingPerms] = useState(false);
+  const [permsSaveSuccess, setPermsSaveSuccess] = useState(false);
+
   const [newChurch, setNewChurch] = useState("");
   const [statusMsg, setStatusMsg] = useState<{
     type: "success" | "error";
@@ -174,11 +185,21 @@ const Settings: React.FC<SettingsProps> = ({
     }
   };
 
-  const saveConfig = () => {
-    updateSettings(localSettings);
-    setStatusMsg({ type: "success", text: "Settings saved successfully" });
-    setTimeout(() => setStatusMsg(null), 3000);
-    onUpdate();
+  const saveConfig = async () => {
+    setIsSavingPerms(true);
+    try {
+      await updateSettings(localSettings);
+      setStatusMsg({ type: "success", text: "Settings saved successfully to database" });
+      setPermsSaveSuccess(true);
+      setTimeout(() => setPermsSaveSuccess(false), 3000);
+      setTimeout(() => setStatusMsg(null), 3000);
+      onUpdate();
+    } catch (e: any) {
+      console.error("Save settings error:", e);
+      setStatusMsg({ type: "error", text: "Failed to save: " + (e.message || String(e)) });
+    } finally {
+      setIsSavingPerms(false);
+    }
   };
 
   const handleAddChurch = () => {
@@ -261,7 +282,10 @@ const Settings: React.FC<SettingsProps> = ({
   };
 
   const getRolePermissions = (role: string): string[] => {
-    return localSettings.permissions?.[role] || [];
+    if (localSettings.permissions && role in localSettings.permissions) {
+      return localSettings.permissions[role] || [];
+    }
+    return (DEFAULT_SETTINGS.permissions as Record<string, string[]>)?.[role] || [];
   };
 
   const isRoleFullAdmin = (role: string): boolean => {
@@ -270,6 +294,7 @@ const Settings: React.FC<SettingsProps> = ({
   };
 
   const hasRoleFeature = (role: string, featureId: string): boolean => {
+    if (role === "SUPER_ADMIN") return true;
     const perms = getRolePermissions(role);
     if (perms.includes("ALL")) return true;
     if (perms.includes(featureId)) return true;
@@ -281,6 +306,7 @@ const Settings: React.FC<SettingsProps> = ({
   };
 
   const hasRoleSubfeature = (role: string, featureId: string, subId: string): boolean => {
+    if (role === "SUPER_ADMIN") return true;
     const perms = getRolePermissions(role);
     if (perms.includes("ALL")) return true;
     const subKey = `${featureId}.${subId}`;
@@ -292,9 +318,45 @@ const Settings: React.FC<SettingsProps> = ({
     return false;
   };
 
-  const toggleFeatureForRole = (role: string, featureId: string) => {
-    const permissions = { ...(localSettings.permissions || {}) };
-    let rolePerms = [...(permissions[role] || [])];
+  const savePermissionsToDb = async (newPerms: Record<string, string[]>, successText?: string) => {
+    setIsSavingPerms(true);
+    setPermsSaveSuccess(false);
+
+    // Merge with DEFAULT_SETTINGS to ensure all roles exist in the database document
+    const fullPermissions: Record<string, string[]> = {
+      ...DEFAULT_SETTINGS.permissions,
+      ...(localSettings.permissions || {}),
+      ...newPerms,
+    };
+
+    const updated = {
+      ...localSettings,
+      permissions: fullPermissions,
+    };
+
+    setLocalSettings(updated);
+
+    try {
+      await updateSettings(updated);
+      onUpdate();
+      setPermsSaveSuccess(true);
+      if (successText) {
+        setStatusMsg({ type: "success", text: successText });
+        setTimeout(() => setStatusMsg(null), 3000);
+      }
+      setTimeout(() => setPermsSaveSuccess(false), 3500);
+    } catch (err: any) {
+      console.error("Failed to save permissions to database:", err);
+      setStatusMsg({ type: "error", text: "Failed to save permissions to database: " + (err.message || String(err)) });
+      setTimeout(() => setStatusMsg(null), 5000);
+    } finally {
+      setIsSavingPerms(false);
+    }
+  };
+
+  const toggleFeatureForRole = async (role: string, featureId: string) => {
+    const currentPerms = getRolePermissions(role);
+    let rolePerms = [...currentPerms];
     const feature = APP_FEATURES_REGISTRY.find((f) => f.id === featureId);
     if (!feature) return;
 
@@ -319,21 +381,12 @@ const Settings: React.FC<SettingsProps> = ({
       });
     }
 
-    const updated = {
-      ...localSettings,
-      permissions: {
-        ...permissions,
-        [role]: rolePerms,
-      },
-    };
-    setLocalSettings(updated);
-    updateSettings(updated);
-    onUpdate();
+    await savePermissionsToDb({ [role]: rolePerms });
   };
 
-  const toggleSubfeatureForRole = (role: string, featureId: string, subId: string) => {
-    const permissions = { ...(localSettings.permissions || {}) };
-    let rolePerms = [...(permissions[role] || [])];
+  const toggleSubfeatureForRole = async (role: string, featureId: string, subId: string) => {
+    const currentPerms = getRolePermissions(role);
+    let rolePerms = [...currentPerms];
     const feature = APP_FEATURES_REGISTRY.find((f) => f.id === featureId);
     if (!feature) return;
 
@@ -375,72 +428,54 @@ const Settings: React.FC<SettingsProps> = ({
       }
     }
 
-    const updated = {
-      ...localSettings,
-      permissions: {
-        ...permissions,
-        [role]: rolePerms,
-      },
-    };
-    setLocalSettings(updated);
-    updateSettings(updated);
-    onUpdate();
+    await savePermissionsToDb({ [role]: rolePerms });
   };
 
-  const grantAllForRole = (role: string) => {
-    const permissions = { ...(localSettings.permissions || {}) };
+  const grantAllForRole = async (role: string) => {
     const allPerms = ["ALL"];
     APP_FEATURES_REGISTRY.forEach((f) => {
       allPerms.push(f.id);
       f.subfeatures.forEach((sf) => allPerms.push(`${f.id}.${sf.id}`));
     });
 
-    const updated = {
-      ...localSettings,
-      permissions: {
-        ...permissions,
-        [role]: allPerms,
-      },
-    };
-    setLocalSettings(updated);
-    updateSettings(updated);
-    onUpdate();
-    setStatusMsg({ type: "success", text: `Granted all permissions to ${role}` });
-    setTimeout(() => setStatusMsg(null), 3000);
+    await savePermissionsToDb({ [role]: allPerms }, `Granted all permissions to ${role}`);
   };
 
-  const revokeAllForRole = (role: string) => {
-    const permissions = { ...(localSettings.permissions || {}) };
-    const updated = {
-      ...localSettings,
-      permissions: {
-        ...permissions,
-        [role]: [],
-      },
-    };
-    setLocalSettings(updated);
-    updateSettings(updated);
-    onUpdate();
-    setStatusMsg({ type: "success", text: `Revoked all permissions from ${role}` });
-    setTimeout(() => setStatusMsg(null), 3000);
+  const revokeAllForRole = async (role: string) => {
+    await savePermissionsToDb({ [role]: [] }, `Revoked all permissions from ${role}`);
   };
 
-  const resetRoleToDefaults = (role: string) => {
-    const permissions = { ...(localSettings.permissions || {}) };
+  const resetRoleToDefaults = async (role: string) => {
     const defaultPerms = (DEFAULT_SETTINGS.permissions as any)?.[role] || [];
-    const updated = {
-      ...localSettings,
-      permissions: {
-        ...permissions,
-        [role]: defaultPerms,
-      },
-    };
-    setLocalSettings(updated);
-    updateSettings(updated);
-    onUpdate();
-    setStatusMsg({ type: "success", text: `Reset ${role} permissions to defaults` });
-    setTimeout(() => setStatusMsg(null), 3000);
+    await savePermissionsToDb({ [role]: defaultPerms }, `Reset ${role} permissions to defaults`);
   };
+
+  const isSuperAdmin = currentUser.role === "SUPER_ADMIN" || currentUser.name?.toLowerCase().trim() === "emmanuel gyan";
+
+  const canAccessSettingsTab = (tabId: string) => {
+    if (isSuperAdmin || currentUser.role === "ADMIN") return true;
+    if (tabId === "MAINTENANCE") return false;
+    return hasRoleSubfeature(currentUser.role || "", "Settings", tabId);
+  };
+
+  const visibleSettingsTabs = useMemo(() => {
+    const tabs: { id: "GENERAL" | "CHURCHES" | "ORGANIZATION" | "THEME" | "PERMISSIONS" | "CLOUD" | "MAINTENANCE"; label: string; icon: any }[] = [
+      { id: "GENERAL", label: "General", icon: SettingsIcon },
+      { id: "CHURCHES", label: "Church Branches", icon: Database },
+      { id: "ORGANIZATION", label: "Organization Structure", icon: List },
+      { id: "THEME", label: "Theme Colors", icon: Palette },
+      { id: "PERMISSIONS", label: "Role Permissions", icon: CheckCircle },
+      { id: "CLOUD", label: "Cloud Sync", icon: Cloud },
+      { id: "MAINTENANCE", label: "Maintenance", icon: Wrench },
+    ];
+    return tabs.filter((t) => canAccessSettingsTab(t.id));
+  }, [currentUser.role, isSuperAdmin, localSettings.permissions]);
+
+  useEffect(() => {
+    if (visibleSettingsTabs.length > 0 && !visibleSettingsTabs.some((t) => t.id === activeTab)) {
+      setActiveTab(visibleSettingsTabs[0].id);
+    }
+  }, [visibleSettingsTabs, activeTab]);
 
   return (
     <div className="pb-20 space-y-6 animate-in fade-in slide-in-from-bottom-4">
@@ -472,51 +507,22 @@ const Settings: React.FC<SettingsProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 {/* Sidebar */}
         <div className="md:col-span-1 space-y-2">
-          <button
-            onClick={() => setActiveTab("GENERAL")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab === "GENERAL"? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
-          >
-            <SettingsIcon size={16} /> General
-          </button>
-          <button
-            onClick={() => setActiveTab("CHURCHES")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab === "CHURCHES"? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
-          >
-            <Database size={16} /> Church Branches
-          </button>
-          <button
-            onClick={() => setActiveTab("ORGANIZATION")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab === "ORGANIZATION"? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
-          >
-            <List size={16} /> Organization Structure
-          </button>
-          <button
-            onClick={() => setActiveTab("THEME")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab === "THEME"? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
-          >
-            <Palette size={16} /> Theme Colors
-          </button>
-          <button
-            onClick={() => setActiveTab("PERMISSIONS")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab ==="PERMISSIONS" ? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
-          >
-            <CheckCircle size={16} /> Role Permissions
-          </button>
-          <button
-            onClick={() => setActiveTab("CLOUD")}
-            className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab === "CLOUD"? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
-          >
-            <Cloud size={16} /> Cloud Sync
-          </button>
-          {isAdmin && (
-            <button
-              onClick={() => setActiveTab("MAINTENANCE")}
-              className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${activeTab === "MAINTENANCE" ? "bg-indigo-600 text-white shadow-md scale-[1.02]" : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"}`}
-            >
-              <Wrench size={16} /> Maintenance
-            </button>
-          )}
-
+          {visibleSettingsTabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${
+                  activeTab === tab.id
+                    ? "bg-indigo-600 text-white shadow-md scale-[1.02]"
+                    : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"
+                }`}
+              >
+                <Icon size={16} /> {tab.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Content Area */}
@@ -1241,11 +1247,22 @@ const Settings: React.FC<SettingsProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {isSavingPerms ? (
+                    <span className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 text-xs font-bold rounded-xl border border-amber-200 animate-pulse">
+                      <RefreshCw size={13} className="animate-spin" /> Saving to database...
+                    </span>
+                  ) : permsSaveSuccess ? (
+                    <span className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-xl border border-emerald-200">
+                      <CheckCircle size={13} className="text-emerald-600" /> Saved in database
+                    </span>
+                  ) : null}
+
                   <button
-                    onClick={saveConfig}
-                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-indigo-100 flex items-center gap-2"
+                    onClick={() => savePermissionsToDb({}, "Permissions successfully saved to database")}
+                    disabled={isSavingPerms}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-indigo-100 flex items-center gap-2"
                   >
-                    <Save size={16} /> Save Permissions
+                    <Save size={16} /> {isSavingPerms ? "Saving..." : "Save Permissions"}
                   </button>
                 </div>
               </div>

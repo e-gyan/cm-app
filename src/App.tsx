@@ -408,20 +408,38 @@ const App: React.FC = () => {
     if (isSuperAdminUser) return true;
     if (!currentUser.role) return false;
     if (subfeature) {
-      return hasRoleSubfeature(data.settings.permissions || {}, currentUser.role, moduleName, subfeature);
+      return hasRoleSubfeature(data, currentUser.role, moduleName, subfeature);
     }
-    return hasRoleFeature(data.settings.permissions || {}, currentUser.role, moduleName);
+    return hasRoleFeature(data, currentUser.role, moduleName);
   };
 
-  const isOutreachEnabledForUser = data.settings.features?.[currentUser.assignedChurch]?.outreach ?? false;
-
-  const showOutreach =
-    hasPermission("Outreach") ||
-    normalizedName.includes("maxeen") ||
-    isOutreachEnabledForUser;
+  const showDashboard = hasPermission("Dashboard");
+  const showAttendance = hasPermission("Attendance");
+  const showMembers = hasPermission("People Hub");
+  const showAnalytics = hasPermission("Analytics");
+  const showOutreach = hasPermission("Outreach") || normalizedName.includes("maxeen");
   const showFinances = hasPermission("Finances");
-  const showAnalytics = hasPermission("Analytics") || currentUser.role === "TEACHER" || currentUser.type === "Teacher";
+  const showReports = hasPermission("Reports");
   const showSettings = isSuperAdminUser || hasPermission("Settings");
+
+  const allowedViews = useMemo(() => {
+    const list: View[] = [];
+    if (showDashboard) list.push(View.DASHBOARD);
+    if (showAttendance) list.push(View.ATTENDANCE);
+    if (showMembers) list.push(View.MEMBERS);
+    if (showAnalytics) list.push(View.ANALYTICS);
+    if (showOutreach) list.push(View.OUTREACH);
+    if (showFinances) list.push(View.FINANCES);
+    if (showReports) list.push(View.EXPORT);
+    if (showSettings) list.push(View.SETTINGS);
+    return list;
+  }, [showDashboard, showAttendance, showMembers, showAnalytics, showOutreach, showFinances, showReports, showSettings]);
+
+  useEffect(() => {
+    if (allowedViews.length > 0 && !allowedViews.includes(currentView)) {
+      setCurrentView(allowedViews[0]);
+    }
+  }, [allowedViews, currentView]);
 
   const NavItem = ({
     view,
@@ -580,15 +598,15 @@ const App: React.FC = () => {
           </div>
 
           <nav className="space-y-2 flex-1">
-            <NavItem view={View.DASHBOARD} icon={LayoutDashboard} />
-            <NavItem view={View.ATTENDANCE} icon={CalendarCheck} />
-            <NavItem view={View.MEMBERS} icon={Users} />
+            {showDashboard && <NavItem view={View.DASHBOARD} icon={LayoutDashboard} />}
+            {showAttendance && <NavItem view={View.ATTENDANCE} icon={CalendarCheck} />}
+            {showMembers && <NavItem view={View.MEMBERS} icon={Users} />}
             {showAnalytics && <NavItem view={View.ANALYTICS} icon={PieChart} />}
             {showOutreach && (
               <NavItem view={View.OUTREACH} icon={HeartHandshake} />
             )}
             {showFinances && <NavItem view={View.FINANCES} icon={Building2} />}
-            <NavItem view={View.EXPORT} icon={Share2} />
+            {showReports && <NavItem view={View.EXPORT} icon={Share2} />}
             {showSettings && (
               <div className="pt-4 mt-4 border-t border-slate-100">
                 <NavItem view={View.SETTINGS} icon={SettingsIcon} />
@@ -969,7 +987,7 @@ const App: React.FC = () => {
 
             {/* View Content - State Preservation & Lazy Mount */}
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
-              {visitedViews.has(View.DASHBOARD) && (
+              {showDashboard && visitedViews.has(View.DASHBOARD) && (
                 <div
                   style={{
                     display: currentView === View.DASHBOARD ? "block" : "none",
@@ -983,7 +1001,7 @@ const App: React.FC = () => {
                   />
                 </div>
               )}
-              {visitedViews.has(View.ATTENDANCE) && (
+              {showAttendance && visitedViews.has(View.ATTENDANCE) && (
                 <div
                   style={{
                     display: currentView === View.ATTENDANCE ? "block" : "none",
@@ -998,7 +1016,7 @@ const App: React.FC = () => {
                   />
                 </div>
               )}
-              {visitedViews.has(View.MEMBERS) && (
+              {showMembers && visitedViews.has(View.MEMBERS) && (
                 <div
                   style={{
                     display: currentView === View.MEMBERS ? "block" : "none",
@@ -1057,7 +1075,7 @@ const App: React.FC = () => {
                   />
                 </div>
               )}
-              {visitedViews.has(View.EXPORT) && (
+              {showReports && visitedViews.has(View.EXPORT) && (
                 <div
                   style={{
                     display: currentView === View.EXPORT ? "block" : "none",
@@ -1093,17 +1111,23 @@ const App: React.FC = () => {
 
         {/* Mobile Bottom Navigation */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 px-2 py-1 pb-safe flex justify-start sm:justify-around items-center shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.05)] overflow-x-auto gap-2 hide-scrollbar">
-          <MobileNavItem
-            view={View.DASHBOARD}
-            icon={LayoutDashboard}
-            label="Home"
-          />
-          <MobileNavItem
-            view={View.ATTENDANCE}
-            icon={CalendarCheck}
-            label="Attend"
-          />
-          <MobileNavItem view={View.MEMBERS} icon={Users} label="People" />
+          {showDashboard && (
+            <MobileNavItem
+              view={View.DASHBOARD}
+              icon={LayoutDashboard}
+              label="Home"
+            />
+          )}
+          {showAttendance && (
+            <MobileNavItem
+              view={View.ATTENDANCE}
+              icon={CalendarCheck}
+              label="Attend"
+            />
+          )}
+          {showMembers && (
+            <MobileNavItem view={View.MEMBERS} icon={Users} label="People" />
+          )}
           {showAnalytics && (
             <MobileNavItem
               view={View.ANALYTICS}
@@ -1125,7 +1149,9 @@ const App: React.FC = () => {
               label="Finances"
             />
           )}
-          <MobileNavItem view={View.EXPORT} icon={Share2} label="Reports" />
+          {showReports && (
+            <MobileNavItem view={View.EXPORT} icon={Share2} label="Reports" />
+          )}
           {showSettings && (
             <MobileNavItem
               view={View.SETTINGS}

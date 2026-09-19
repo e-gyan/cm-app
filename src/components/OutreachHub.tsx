@@ -1,5 +1,6 @@
 import { calculateChurchDivisions, matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
 import { generatePrayerSchedule, generateOutreachSchedule } from "../services/storageService";
+import { hasRoleSubfeature, isSuperAdminUser } from "../lib/permissions";
 import React, { useState, useMemo, useEffect } from "react";
 import { AppData,
   Member,
@@ -1224,6 +1225,25 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     return getScopeDisplayLabel(activeBranchId, data.settings?.organization);
   }, [activeBranchId, data.settings?.organization]);
 
+  const isSuperAdmin = isSuperAdminUser(currentUser);
+
+  const visibleOutreachTabs = useMemo(() => {
+    const all: { id: "VISIT" | "PRAYER" | "CONNECT" | "TRACK"; label: string; icon: any; badge?: number }[] = [
+      { id: "VISIT", label: "Visits", icon: MapPin },
+      { id: "PRAYER", label: "Prayer", icon: Heart },
+      { id: "CONNECT", label: "Members", icon: Phone, badge: connectList.length },
+      { id: "TRACK", label: "Progress", icon: BarChart2 },
+    ];
+    if (isSuperAdmin || currentUser.role === "ADMIN") return all;
+    return all.filter((tab) => hasRoleSubfeature(data, currentUser.role || "", "Outreach", tab.id));
+  }, [data, currentUser.role, isSuperAdmin, connectList.length]);
+
+  useEffect(() => {
+    if (visibleOutreachTabs.length > 0 && !visibleOutreachTabs.some((t) => t.id === activeTab)) {
+      setActiveTab(visibleOutreachTabs[0].id);
+    }
+  }, [visibleOutreachTabs, activeTab]);
+
   return (
     <div className="space-y-4 pb-24 relative min-h-screen">
       {connectList.length === 0 && (filteredLocalSessions || []).length === 0 && (
@@ -1240,37 +1260,33 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
       {/* HEADER TABS */}
       <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex gap-1.5 sticky top-0 z-30 overflow-x-auto hide-scrollbar">
-        <button
-          onClick={() => setActiveTab("VISIT")}
-          className={`flex-1 min-w-[85px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "VISIT" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
-        >
-          <MapPin size={16} /> Visits
-        </button>
-        <button
-          onClick={() => setActiveTab("PRAYER")}
-          className={`flex-1 min-w-[85px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "PRAYER" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
-        >
-          <Heart size={16} /> Prayer
-        </button>
-        <button
-          onClick={() => setActiveTab("CONNECT")}
-          className={`flex-1 min-w-[85px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "CONNECT" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
-        >
-          <Phone size={16} /> Members
-          {connectList.length > 0 && (
-            <span
-              className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${activeTab === "CONNECT" ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-600"}`}
+        {visibleOutreachTabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 min-w-[85px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${
+                activeTab === tab.id
+                  ? "bg-indigo-600 text-white shadow-md"
+                  : "text-slate-500 hover:bg-slate-50"
+              }`}
             >
-              {connectList.length}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab("TRACK")}
-          className={`flex-1 min-w-[85px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === "TRACK" ? "bg-indigo-600 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}
-        >
-          <BarChart2 size={16} /> Progress
-        </button>
+              <Icon size={16} /> {tab.label}
+              {tab.badge !== undefined && tab.badge > 0 && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${
+                    activeTab === tab.id
+                      ? "bg-indigo-700 text-white"
+                      : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {isAdmin && (

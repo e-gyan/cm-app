@@ -66,7 +66,14 @@ const parseAppDataDoc = (docData: any): AppData => {
     notifications: Array.isArray(docData?.notifications) ? docData.notifications : [],
     outreachSessions: Array.isArray(docData?.outreachSessions) ? docData.outreachSessions : [],
     prayerSchedule: Array.isArray(docData?.prayerSchedule) ? docData.prayerSchedule : [],
-    settings: { ...DEFAULT_SETTINGS, ...(docData?.settings || {}) },
+    settings: {
+      ...DEFAULT_SETTINGS,
+      ...(docData?.settings || {}),
+      permissions: {
+        ...DEFAULT_SETTINGS.permissions,
+        ...(docData?.settings?.permissions || {}),
+      },
+    },
     targets: docData?.targets || { UJ: 0, I: 0, K: 0, LJ: 0 },
   };
 
@@ -359,13 +366,28 @@ export const deleteAttendanceRecord = async (id: string) => {
   updateMainDoc({ attendance }).catch(console.error);
 };
 
-// Optimistic Settings Operations
+// Settings Operations with immediate Firestore synchronization
 export const updateSettings = async (settings: AppSettings) => {
   const current = memoryCache || (await loadData());
   memoryCache = { ...current, settings };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ settings });
+  pendingUpdates = { ...pendingUpdates, settings };
+  await flushPendingWrites();
+};
+
+export const saveRolePermissions = async (permissions: Record<string, string[]>) => {
+  const current = memoryCache || (await loadData());
+  const updatedSettings: AppSettings = {
+    ...current.settings,
+    permissions: {
+      ...DEFAULT_SETTINGS.permissions,
+      ...(current.settings?.permissions || {}),
+      ...permissions,
+    },
+  };
+  await updateSettings(updatedSettings);
+  return updatedSettings;
 };
 
 // Optimistic Notifications Operations
