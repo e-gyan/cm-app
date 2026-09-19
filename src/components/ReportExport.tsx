@@ -541,7 +541,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
               });
             }
           });
-          branchSummaries.push(`${branch.name}: ${branchAtt}`);
+          if (branchAtt > 0) branchSummaries.push(`${branch.name}: ${branchAtt}`);
           zoneAttendance += branchAtt;
         });
 
@@ -557,14 +557,13 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
         if (zoneAttendance > 0 || zoneOutreach.visits > 0 || zonePrayer > 0) {
           hasData = true;
+          report += `*ZONE: ${zone.name.toUpperCase()}*\n`;
+          report += `• Total Attendance: ${zoneAttendance}\n`;
+          report += `• Services: Joy (${zoneJoy}) | Enlargement (${zoneEnlargement})` + (zoneSpecial > 0 ? ` | Special (${zoneSpecial})` : "") + `\n`;
+          report += `• Branches: ${branchSummaries.join(" | ") || "No branches"}\n`;
+          report += `• First Timers: ${zoneFirstTimers} | Teachers: ${zoneTeachers}\n`;
+          report += `• Outreach and Prayer: ${zoneOutreach.visits} Visits | ${zoneOutreach.calls} Calls | ${zonePrayer} Prayers\n\n`;
         }
-
-        report += `*ZONE: ${zone.name.toUpperCase()}*\n`;
-        report += `• Total Attendance: ${zoneAttendance}\n`;
-        report += `• Services: Joy (${zoneJoy}) | Enlargement (${zoneEnlargement})` + (zoneSpecial > 0 ? ` | Special (${zoneSpecial})` : "") + `\n`;
-        report += `• Branches: ${branchSummaries.join(" | ") || "No branches"}\n`;
-        report += `• First Timers: ${zoneFirstTimers} | Teachers: ${zoneTeachers}\n`;
-        report += `• Outreach and Prayer: ${zoneOutreach.visits} Visits | ${zoneOutreach.calls} Calls | ${zonePrayer} Prayers\n\n`;
 
         grandAttendance += zoneAttendance;
         grandFirstTimers += zoneFirstTimers;
@@ -610,10 +609,6 @@ const ReportExport: React.FC<ReportExportProps> = ({
       report += `============================\n\n`;
 
       let zoneTotalAtt = 0;
-      let zoneTotalFT = 0;
-      let zoneTotalVisits = 0;
-      let zoneTotalCalls = 0;
-      let zoneTotalPrayers = 0;
       let hasData = false;
 
       (zone?.branches || []).forEach((branch) => {
@@ -636,7 +631,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
           if (rec) {
             const count = rec.presentMemberIds.length;
             branchAtt += count;
-            churchBreakdown.push(`${church}: ${count}`);
+            if (count > 0) churchBreakdown.push(`${church}: ${count}`);
             rec.presentMemberIds.forEach((id) => {
               const m = data.members.find((mem) => mem.id === id);
               if (m) {
@@ -659,41 +654,28 @@ const ReportExport: React.FC<ReportExportProps> = ({
           }
         });
 
-        const branchOutreach = getOutreachCounts((s) => s.branchId === branch.id || s.branchId === branch.name);
-        const branchPrayer = getPrayerCount((p) =>
-          (p.assignedMemberIds || []).some((id) => {
-            const m = data.members.find((mem) => mem.id === id);
-            return m && (m.branchId === branch.id || m.branchId === branch.name);
-          })
-        );
-
-        if (branchAtt > 0 || branchOutreach.visits > 0 || branchPrayer > 0) {
+        if (branchAtt > 0) {
           hasData = true;
+          report += `*BRANCH: ${branch.name}*\n`;
+          if (churchBreakdown.length > 0) {
+            churchBreakdown.forEach((cb) => {
+              report += `• ${cb}\n`;
+            });
+          } else {
+            report += `_No records_\n`;
+          }
+          report += `*Total Branch Attendance: ${branchAtt}*\n\n`;
         }
 
-        report += `*BRANCH: ${branch.name}*\n`;
-        report += `• Attendance: ${branchAtt} (Children: ${branchKids} | Teachers: ${branchTeachers})\n`;
-        report += `• Services: Joy (${branchJoy}) | Enlargement (${branchEnlargement})` + (branchSpecial > 0 ? ` | Special (${branchSpecial})` : "") + `\n`;
-        report += `• Churches: ${churchBreakdown.join(" | ") || "No records"}\n`;
-        report += `• First Timers: ${branchFT}\n`;
-        report += `• Outreach and Prayer: ${branchOutreach.visits} Visits | ${branchOutreach.calls} Calls | ${branchPrayer} Prayers\n\n`;
-
         zoneTotalAtt += branchAtt;
-        zoneTotalFT += branchFT;
-        zoneTotalVisits += branchOutreach.visits;
-        zoneTotalCalls += branchOutreach.calls;
-        zoneTotalPrayers += branchPrayer;
       });
 
       report += `============================\n`;
       report += `*${zoneName.toUpperCase()} TOTALS*\n`;
       report += `• Total Attendance: ${zoneTotalAtt}\n`;
-      report += `• Total First Timers: ${zoneTotalFT}\n`;
-      report += `• Total Outreach Activity: ${zoneTotalVisits} Visits | ${zoneTotalCalls} Calls\n`;
-      report += `• Total Prayers Completed: ${zoneTotalPrayers}\n`;
 
       if (!hasData) {
-        report += `\n_No attendance or outreach data recorded yet for this date._`;
+        report += `\n_No attendance data recorded yet for this date._`;
       }
       return report.trim();
     }
@@ -723,10 +705,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
       let branchTotalMembers = 0;
       let branchTotalFNF = 0;
       let branchTotalTeachers = 0;
-      let branchTotalVisits = 0;
-      let branchTotalCalls = 0;
-      let branchTotalPrayers = 0;
       let hasData = false;
+
+      const globalEventName = data.attendance.find((r) => r.date === selectedDate && r.eventName)?.eventName;
 
       availableChurches.forEach((churchId) => {
         const record = data.attendance.find(
@@ -775,37 +756,45 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
         const churchTotal = record ? record.presentMemberIds.length : 0;
 
-        const churchOutreach = getOutreachCounts((s) => {
-          return (
-            (s.branchId === branchObj.id || s.branchId === branchObj.name || !s.branchId) &&
-            (s.assignedMemberIds || []).some((id) => {
-              const m = data.members.find((mem) => mem.id === id);
-              return m && m.assignedChurch === churchId;
-            })
-          );
-        });
+        if (churchTotal > 0) {
+          const eventNameToUse = record?.eventName || globalEventName;
+          
+          report += `*${churchId} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
+          if (eventNameToUse) report += `*${eventNameToUse}*\n`;
+          report += `------------------------------\n`;
+          report += `*TOTAL PRESENT: ${churchTotal}*\n`;
+          
+          const splits = [];
+          if (eventNameToUse === "Joint Service") {
+            const totalChildren = totalJoy + totalEnlargement + totalSpecial;
+            if (totalChildren > 0) splits.push(`Joint Service: ${totalChildren}`);
+          } else {
+            if (totalJoy > 0) splits.push(`Joy Service: ${totalJoy}`);
+            if (totalEnlargement > 0) splits.push(`Enlargement Service: ${totalEnlargement}`);
+            if (totalSpecial > 0) splits.push(`${eventNameToUse || "Special"}: ${totalSpecial}`);
+          }
+          
+          if (teachersCount > 0) splits.push(`Teachers: ${teachersCount}`);
+          
+          if (splits.length > 0) {
+            report += `(${splits.join(" | ")})\n\n`;
+          } else {
+            report += `\n`;
+          }
 
-        const churchPrayer = getPrayerCount((p) => {
-          return (p.assignedMemberIds || []).some((id) => {
-            const m = data.members.find((mem) => mem.id === id);
-            return m && m.assignedChurch === churchId;
-          });
-        });
-
-        report += `*${churchId} CHURCH*\n`;
-        report += `• Total Present: ${churchTotal}\n`;
-        report += `• Breakdown: Members (${membersCount}) | FNF (${fnfCount}) | First Timers (${visitorsCount}) | Teachers (${teachersCount})\n`;
-        report += `• Services: Joy (${totalJoy}) | Enlargement (${totalEnlargement})` + (totalSpecial > 0 ? ` | Special (${totalSpecial})` : "") + `\n`;
-        report += `• Outreach and Prayer: ${churchOutreach.visits} Visits | ${churchOutreach.calls} Calls | ${churchPrayer} Prayers\n\n`;
+          if (membersCount > 0) report += `*MEMBERS (${membersCount})*\n`;
+          if (fnfCount > 0) report += `*FNF (${fnfCount})*\n`;
+          if (visitorsCount > 0) report += `*FIRST TIMERS (${visitorsCount})*\n`;
+          if (notMembersCount > 0) report += `*NOT A MEMBER (${notMembersCount})*\n`;
+          if (teachersCount > 0) report += `*TEACHERS (${teachersCount})*\n`;
+          report += `\n`;
+        }
 
         branchTotalAtt += churchTotal;
         branchTotalMembers += membersCount;
         branchTotalFNF += fnfCount;
         branchTotalFT += visitorsCount;
         branchTotalTeachers += teachersCount;
-        branchTotalVisits += churchOutreach.visits;
-        branchTotalCalls += churchOutreach.calls;
-        branchTotalPrayers += churchPrayer;
       });
 
       report += `============================\n`;
@@ -813,8 +802,6 @@ const ReportExport: React.FC<ReportExportProps> = ({
       report += `• Total Present: ${branchTotalAtt}\n`;
       report += `• Members: ${branchTotalMembers} | FNF: ${branchTotalFNF}\n`;
       report += `• First Timers: ${branchTotalFT} | Teachers on Duty: ${branchTotalTeachers}\n`;
-      report += `• Total Outreach Activity: ${branchTotalVisits} Visits | ${branchTotalCalls} Calls\n`;
-      report += `• Total Prayers Completed: ${branchTotalPrayers}\n`;
 
       if (!hasData) {
         report += `\n_No attendance data recorded yet for this date._`;
