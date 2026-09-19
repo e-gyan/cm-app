@@ -79,11 +79,28 @@ export interface Transaction {
   recordedBy?: string;
 }
 
+export interface OrgBranch {
+  id: string;
+  name: string;
+  churches?: string[];
+}
+
+export interface OrgZone {
+  id: string;
+  name: string;
+  branches: OrgBranch[];
+}
+
+export interface AppOrganization {
+  directorate?: string;
+  zones: OrgZone[];
+}
+
 export interface AppSettings {
-  organization?: any;
+  organization?: AppOrganization;
   churches?: any;
   features?: any;
-  permissions?: any;
+  permissions?: Record<string, string[]>;
   themeColors?: any;
 }
 

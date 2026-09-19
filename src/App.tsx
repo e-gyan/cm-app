@@ -390,13 +390,18 @@ const App: React.FC = () => {
   const isSuperAdminUser =
     normalizedName === "emmanuel gyan" ||
     normalizedName === "admin" ||
-    normalizedName === "main admin";
+    normalizedName === "main admin" ||
+    currentUser.role === "SUPER_ADMIN";
   const isAdmin = currentUser.role === "ADMIN" || isSuperAdminUser;
 
-  const hasPermission = (moduleName: string) => {
+  const hasPermission = (moduleName: string, subfeature?: string) => {
     if (isSuperAdminUser) return true;
     if (!currentUser.role) return false;
     const perms = data.settings.permissions?.[currentUser.role] || [];
+    if (perms.includes("ALL")) return true;
+    if (subfeature) {
+      return perms.includes(`${moduleName}.${subfeature}`) || perms.includes(moduleName);
+    }
     return perms.includes(moduleName);
   };
 
@@ -408,7 +413,7 @@ const App: React.FC = () => {
     isOutreachEnabledForUser;
   const showFinances = hasPermission("Finances");
   const showAnalytics = hasPermission("Analytics") || currentUser.role === "TEACHER" || currentUser.type === "Teacher";
-  const showSettings = isSuperAdminUser;
+  const showSettings = isSuperAdminUser || hasPermission("Settings");
 
   const NavItem = ({
     view,

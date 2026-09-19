@@ -605,27 +605,31 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     try {
       const cleanName = sanitizeInput(newMemberName);
       
-      // Copy teacher's/currentUser's branch, zone, and church details
-      const targetChurch = (currentUser?.assignedChurch && currentUser?.assignedChurch !== "All" && currentUser?.assignedChurch !== "CM") ? currentUser.assignedChurch : (effectiveChurch as Church || "UJ");
-      const targetBranchId = currentUser?.branchId;
-      const targetZoneId = currentUser?.zoneId;
+      // Auto-assign from teacher's/currentUser's profile
+      const targetChurch: Church = (currentUser?.assignedChurch && currentUser?.assignedChurch !== "All" && currentUser?.assignedChurch !== "CM")
+        ? (currentUser.assignedChurch as Church)
+        : (effectiveChurch as Church || "UJ");
+      const targetBranchId = currentUser?.branchId || "";
+      const targetZoneId = currentUser?.zoneId || "";
       const determinedGender = determineGenderByName(cleanName);
       
       const memberId = crypto.randomUUID();
       const newMember: Member = {
         id: memberId,
         name: cleanName,
-        type: MemberType.VISITOR,
+        type: MemberType.VISITOR, // Role category: First Timer
         assignedChurch: targetChurch,
+        churchId: targetChurch,
         passcode: "",
-        status: MemberStatus.NOT_ACTIVE,
+        status: MemberStatus.ACTIVE,
         gender: determinedGender,
         branchId: targetBranchId,
         zoneId: targetZoneId,
+        assignedTeacherId: currentUser?.id, // Hooked directly to logged-in teacher
         addedAt: Date.now()
       };
       
-      await addMember(newMember);
+      addMember(newMember);
 
       const newSet = new Set(presentIds);
       newSet.add(newMember.id);
@@ -639,7 +643,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
       setNewMemberName("");
       setIsAddingFNF(false);
-      await confirmSave(newSet, newSMap);
+      confirmSave(newSet, newSMap);
       onUpdate();
     } finally {
       setIsSubmittingVisitor(false);
@@ -1060,10 +1064,38 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               placeholder="First Timer's Full Name"
               value={newMemberName}
               onChange={(e) => setNewMemberName(e.target.value)}
-              className="w-full p-3 border border-slate-200 rounded-xl mb-4 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium text-slate-700 bg-slate-50 placeholder:text-slate-400"
+              className="w-full p-3 border border-slate-200 rounded-xl mb-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium text-slate-700 bg-slate-50 placeholder:text-slate-400"
               autoFocus
               onKeyDown={(e) => e.key === "Enter" && handleAddFNF()}
             />
+
+            {/* Auto-assigned Profile Details */}
+            <div className="bg-indigo-50/70 border border-indigo-100/80 rounded-2xl p-3 mb-4 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Logged-in Teacher:</span>
+                <span className="font-bold text-slate-800">{currentUser?.name || "Self"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Assigned Church:</span>
+                <span className="font-extrabold text-indigo-700 bg-indigo-100/90 px-2 py-0.5 rounded-lg">
+                  {(currentUser?.assignedChurch && currentUser?.assignedChurch !== "All" && currentUser?.assignedChurch !== "CM")
+                    ? currentUser.assignedChurch
+                    : (effectiveChurch || "UJ")}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Zone & Branch:</span>
+                <span className="font-semibold text-slate-700">
+                  {currentUser?.zoneId || "Central Zone"} &bull; {currentUser?.branchId || "Main Branch"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Role Category:</span>
+                <span className="font-bold text-teal-700 bg-teal-100/90 px-2 py-0.5 rounded-lg">
+                  First Timer (Visitor)
+                </span>
+              </div>
+            </div>
             
             <div className="flex gap-2">
               <button

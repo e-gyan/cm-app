@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
-import {  AppData, Member, AppSettings } from "../types";
-import { updateSettings} from "../services/storageService";
+import React, { useState, useEffect, useMemo } from "react";
+import { AppData, Member, AppSettings } from "../types";
+import { updateSettings } from "../services/storageService";
 import { doc, getDoc } from "firebase/firestore";
 import { db, loginWithGoogle } from "../services/firebase";
 import {
@@ -11,13 +11,34 @@ import {
   RefreshCw,
   AlertCircle,
   CheckCircle,
-  Database, Activity,
+  Database,
+  Activity,
   Terminal,
   Palette,
   Wrench,
   Trash2,
+  Building2,
+  MapPin,
+  Layers,
+  Plus,
+  ChevronRight,
+  ChevronDown,
+  ShieldCheck,
+  Check,
+  Search,
+  Sparkles,
+  RotateCcw,
+  LayoutDashboard,
+  Users,
+  CalendarCheck,
+  HeartHandshake,
+  PieChart,
+  Share2,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { themeColorPalettes, applyTheme } from "../lib/theme";
+import { APP_FEATURES_REGISTRY, DEFAULT_SETTINGS } from "../constants";
 
 interface SettingsProps {
   data: AppData;
@@ -103,8 +124,15 @@ const Settings: React.FC<SettingsProps> = ({
     }
   };
 
-  const [permTab, setPermTab] = useState<"MATRIX" | "INDIVIDUAL">("MATRIX");
-  const [selectedRoleForPerms, setSelectedRoleForPerms] = useState<string>("ZONAL_HEAD");
+  const [permTab, setPermTab] = useState<"MATRIX" | "INDIVIDUAL">("INDIVIDUAL");
+  const [selectedRoleForPerms, setSelectedRoleForPerms] = useState<string>("TEACHER");
+  const [permSearchQuery, setPermSearchQuery] = useState<string>("");
+  const [expandedFeatures, setExpandedFeatures] = useState<Set<string>>(
+    new Set(["Dashboard", "People Hub", "Attendance", "Outreach", "Analytics", "Finances", "Reports", "Settings"])
+  );
+  const [newZoneName, setNewZoneName] = useState<string>("");
+  const [isAddingZone, setIsAddingZone] = useState<boolean>(false);
+  const [branchInputByZone, setBranchInputByZone] = useState<Record<string, string>>({});
   const [isSyncing, setIsSyncing] = useState(false);
   const [cloudLastUpdated, setCloudLastUpdated] = useState<number | null>(null);
 
@@ -192,12 +220,197 @@ const Settings: React.FC<SettingsProps> = ({
   const handleForcePush = async () => {
     setIsSyncing(true);
     try {
-            await (true);
+      await (true);
       setStatusMsg({ type: "success", text: "Cloud push successful" });
     } catch (err: any) {
       setStatusMsg({ type: "error", text: err.message || "Push failed" });
     }
     setIsSyncing(false);
+  };
+
+  const ROLES_LIST = [
+    { id: "SUPER_ADMIN", label: "Super Admin", color: "purple", desc: "Full unrestricted platform control" },
+    { id: "ADMIN", label: "Administrator", color: "indigo", desc: "Full administrative and settings control" },
+    { id: "DIRECTORATE_HEAD", label: "Directorate Head", color: "blue", desc: "Directorate-wide oversight & reporting" },
+    { id: "ZONAL_HEAD", label: "Zonal Head", color: "emerald", desc: "Zonal oversight & campus coordination" },
+    { id: "BRANCH_COORDINATOR", label: "Branch Coordinator", color: "teal", desc: "Branch operations, attendance & roster" },
+    { id: "TEACHER", label: "Teacher", color: "amber", desc: "Attendance taking, outreach & visits" },
+    { id: "VOLUNTEER", label: "Volunteer / Helper", color: "slate", desc: "Basic attendance check-in assistance" },
+  ];
+
+  const getFeatureIconComponent = (iconName: string) => {
+    switch (iconName) {
+      case "LayoutDashboard": return LayoutDashboard;
+      case "Users": return Users;
+      case "CalendarCheck": return CalendarCheck;
+      case "HeartHandshake": return HeartHandshake;
+      case "PieChart": return PieChart;
+      case "Database": return Database;
+      case "Share2": return Share2;
+      case "Settings": return SettingsIcon;
+      default: return ShieldCheck;
+    }
+  };
+
+  const getRolePermissions = (role: string): string[] => {
+    return localSettings.permissions?.[role] || [];
+  };
+
+  const hasRoleFeature = (role: string, featureId: string): boolean => {
+    const perms = getRolePermissions(role);
+    if (perms.includes("ALL")) return true;
+    return perms.includes(featureId);
+  };
+
+  const hasRoleSubfeature = (role: string, featureId: string, subId: string): boolean => {
+    const perms = getRolePermissions(role);
+    if (perms.includes("ALL")) return true;
+    const subKey = `${featureId}.${subId}`;
+    return perms.includes(subKey) || perms.includes(featureId);
+  };
+
+  const toggleFeatureForRole = (role: string, featureId: string) => {
+    const permissions = { ...(localSettings.permissions || {}) };
+    let rolePerms = [...(permissions[role] || [])];
+    const feature = APP_FEATURES_REGISTRY.find((f) => f.id === featureId);
+    if (!feature) return;
+
+    const subKeys = feature.subfeatures.map((sf) => `${featureId}.${sf.id}`);
+    const isCurrentlyActive = rolePerms.includes(featureId) || rolePerms.includes("ALL");
+
+    if (rolePerms.includes("ALL")) {
+      const allOtherPerms: string[] = [];
+      APP_FEATURES_REGISTRY.forEach((f) => {
+        if (f.id !== featureId) {
+          allOtherPerms.push(f.id);
+          f.subfeatures.forEach((sf) => allOtherPerms.push(`${f.id}.${sf.id}`));
+        }
+      });
+      rolePerms = allOtherPerms;
+    } else if (isCurrentlyActive) {
+      rolePerms = rolePerms.filter((p) => p !== featureId && !subKeys.includes(p));
+    } else {
+      rolePerms.push(featureId);
+      subKeys.forEach((k) => {
+        if (!rolePerms.includes(k)) rolePerms.push(k);
+      });
+    }
+
+    const updated = {
+      ...localSettings,
+      permissions: {
+        ...permissions,
+        [role]: rolePerms,
+      },
+    };
+    setLocalSettings(updated);
+    updateSettings(updated);
+    onUpdate();
+  };
+
+  const toggleSubfeatureForRole = (role: string, featureId: string, subId: string) => {
+    const permissions = { ...(localSettings.permissions || {}) };
+    let rolePerms = [...(permissions[role] || [])];
+    const subKey = `${featureId}.${subId}`;
+
+    if (rolePerms.includes("ALL")) {
+      const allPerms: string[] = [];
+      APP_FEATURES_REGISTRY.forEach((f) => {
+        f.subfeatures.forEach((sf) => {
+          const k = `${f.id}.${sf.id}`;
+          if (k !== subKey) allPerms.push(k);
+        });
+        if (f.id !== featureId || f.subfeatures.some((sf) => `${f.id}.${sf.id}` !== subKey)) {
+          allPerms.push(f.id);
+        }
+      });
+      rolePerms = allPerms;
+    } else {
+      const isSubActive = rolePerms.includes(subKey) || (rolePerms.includes(featureId) && !rolePerms.some(p => p.startsWith(`${featureId}.`)));
+      if (isSubActive) {
+        rolePerms = rolePerms.filter((p) => p !== subKey && p !== featureId);
+        const feature = APP_FEATURES_REGISTRY.find((f) => f.id === featureId);
+        if (feature) {
+          feature.subfeatures.forEach((sf) => {
+            if (sf.id !== subId && !rolePerms.includes(`${featureId}.${sf.id}`)) {
+              rolePerms.push(`${featureId}.${sf.id}`);
+            }
+          });
+          if (rolePerms.some((p) => p.startsWith(`${featureId}.`))) {
+            if (!rolePerms.includes(featureId)) rolePerms.push(featureId);
+          }
+        }
+      } else {
+        if (!rolePerms.includes(subKey)) rolePerms.push(subKey);
+        if (!rolePerms.includes(featureId)) rolePerms.push(featureId);
+      }
+    }
+
+    const updated = {
+      ...localSettings,
+      permissions: {
+        ...permissions,
+        [role]: rolePerms,
+      },
+    };
+    setLocalSettings(updated);
+    updateSettings(updated);
+    onUpdate();
+  };
+
+  const grantAllForRole = (role: string) => {
+    const permissions = { ...(localSettings.permissions || {}) };
+    const allPerms = ["ALL"];
+    APP_FEATURES_REGISTRY.forEach((f) => {
+      allPerms.push(f.id);
+      f.subfeatures.forEach((sf) => allPerms.push(`${f.id}.${sf.id}`));
+    });
+
+    const updated = {
+      ...localSettings,
+      permissions: {
+        ...permissions,
+        [role]: allPerms,
+      },
+    };
+    setLocalSettings(updated);
+    updateSettings(updated);
+    onUpdate();
+    setStatusMsg({ type: "success", text: `Granted all permissions to ${role}` });
+    setTimeout(() => setStatusMsg(null), 3000);
+  };
+
+  const revokeAllForRole = (role: string) => {
+    const permissions = { ...(localSettings.permissions || {}) };
+    const updated = {
+      ...localSettings,
+      permissions: {
+        ...permissions,
+        [role]: [],
+      },
+    };
+    setLocalSettings(updated);
+    updateSettings(updated);
+    onUpdate();
+    setStatusMsg({ type: "success", text: `Revoked all permissions from ${role}` });
+    setTimeout(() => setStatusMsg(null), 3000);
+  };
+
+  const resetRoleToDefaults = (role: string) => {
+    const permissions = { ...(localSettings.permissions || {}) };
+    const defaultPerms = (DEFAULT_SETTINGS.permissions as any)?.[role] || [];
+    const updated = {
+      ...localSettings,
+      permissions: {
+        ...permissions,
+        [role]: defaultPerms,
+      },
+    };
+    setLocalSettings(updated);
+    updateSettings(updated);
+    onUpdate();
+    setStatusMsg({ type: "success", text: `Reset ${role} permissions to defaults` });
+    setTimeout(() => setStatusMsg(null), 3000);
   };
 
   return (
@@ -410,215 +623,351 @@ const Settings: React.FC<SettingsProps> = ({
           )}
 
           {/* ORGANIZATION TAB */}
-          {activeTab === "ORGANIZATION"&& (
+          {activeTab === "ORGANIZATION" && (
             <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h3 className="font-bold text-lg text-slate-800">
-                  Organization Hierarchy
-                </h3>
-              </div>
-              <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl text-indigo-800 text-sm">
-                <p>
-                  Configure your organization structure. Directorates contain
-                  Zones, and Zones contain Branches. Each Branch automatically
-                  has the following Children's Ministries:{" "}
-                  <strong>I, K, LJ, and UJ</strong>.
-                </p>
-              </div>
-
               {(() => {
                 const org = localSettings.organization || {
-                  directorate: "Central Directorate",
+                  directorate: "Central Children's Ministry Directorate",
                   zones: [],
                 };
 
                 const updateOrg = (newOrg: any) => {
-                  setLocalSettings({ ...localSettings, organization: newOrg });
+                  const updatedSettings = {
+                    ...localSettings,
+                    organization: newOrg,
+                  };
+                  setLocalSettings(updatedSettings);
+                  updateSettings(updatedSettings);
+                  onUpdate();
+                };
+
+                const totalBranches = (org.zones || []).reduce(
+                  (acc: number, z: any) => acc + (z.branches?.length || 0),
+                  0,
+                );
+
+                const handleCreateZone = () => {
+                  if (!newZoneName.trim()) return;
+                  const newZone = {
+                    id: crypto.randomUUID(),
+                    name: newZoneName.trim(),
+                    branches: [
+                      {
+                        id: crypto.randomUUID(),
+                        name: `${newZoneName.trim()} Campus`,
+                        churches: ["I", "K", "LJ", "UJ"],
+                      },
+                    ],
+                  };
+                  updateOrg({
+                    ...org,
+                    zones: [...(org.zones || []), newZone],
+                  });
+                  setNewZoneName("");
+                  setIsAddingZone(false);
+                  setStatusMsg({ type: "success", text: `Zone "${newZone.name}" created successfully` });
+                  setTimeout(() => setStatusMsg(null), 3000);
+                };
+
+                const handleRemoveZone = (zoneId: string, zoneName: string) => {
+                  if (!window.confirm(`Are you sure you want to remove zone "${zoneName}" and all its branches?`)) return;
+                  const updatedZones = (org.zones || []).filter((z: any) => z.id !== zoneId);
+                  updateOrg({ ...org, zones: updatedZones });
+                  setStatusMsg({ type: "success", text: `Zone "${zoneName}" removed` });
+                  setTimeout(() => setStatusMsg(null), 3000);
+                };
+
+                const handleAddBranchToZone = (zoneIndex: number) => {
+                  const zone = org.zones[zoneIndex];
+                  const branchName = (branchInputByZone[zone.id] || "").trim();
+                  if (!branchName) return;
+
+                  const newBranch = {
+                    id: crypto.randomUUID(),
+                    name: branchName,
+                    churches: ["I", "K", "LJ", "UJ"],
+                  };
+
+                  const updatedZones = [...org.zones];
+                  updatedZones[zoneIndex] = {
+                    ...zone,
+                    branches: [...(zone.branches || []), newBranch],
+                  };
+
+                  updateOrg({ ...org, zones: updatedZones });
+                  setBranchInputByZone((prev) => ({ ...prev, [zone.id]: "" }));
+                  setStatusMsg({ type: "success", text: `Branch "${branchName}" added to ${zone.name}` });
+                  setTimeout(() => setStatusMsg(null), 3000);
+                };
+
+                const handleRemoveBranch = (zoneIndex: number, branchIndex: number, branchName: string) => {
+                  if (!window.confirm(`Remove branch "${branchName}"?`)) return;
+                  const updatedZones = [...org.zones];
+                  const currentBranches = updatedZones[zoneIndex].branches || [];
+                  updatedZones[zoneIndex] = {
+                    ...updatedZones[zoneIndex],
+                    branches: currentBranches.filter((_: any, idx: number) => idx !== branchIndex),
+                  };
+                  updateOrg({ ...org, zones: updatedZones });
                 };
 
                 return (
                   <div className="space-y-6">
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">
-                        Directorate Name
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-                        value={org.directorate}
-                        onChange={(e) =>
-                          updateOrg({ ...org, directorate: e.target.value })
-                        }
-                        placeholder="e.g. Main CM Directorate"
-                      />
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-slate-800">Zones</h4>
+                    {/* TOP SUMMARY & ACTION BAR */}
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div>
+                        <h3 className="font-extrabold text-xl text-slate-800 flex items-center gap-2">
+                          <Layers size={22} className="text-indigo-600" /> Organization Structure
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Manage Directorates, Zones, and Campus Branches with real-time application updates.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
                         <button
-                          onClick={() => {
-                            updateOrg({
-                              ...org,
-                              zones: [
-                                ...(org.zones || []),
-                                {
-                                  id: crypto.randomUUID(),
-                                  name: "New Zone",
-                                  branches: [],
-                                },
-                              ],
-                            });
-                          }}
-                          className="text-sm font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors"
+                          onClick={() => setIsAddingZone(true)}
+                          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-indigo-100 flex items-center gap-2"
                         >
-                          + Add Zone
+                          <Plus size={16} /> Add Zone
+                        </button>
+                        <button
+                          onClick={saveConfig}
+                          className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all flex items-center gap-2"
+                        >
+                          <Save size={16} /> Save All
                         </button>
                       </div>
+                    </div>
 
-                      {(org.zones || []).map((zone: any, zIndex: number) => (
-                        <div
-                          key={zIndex}
-                          className="p-4 border border-slate-200 rounded-xl bg-white space-y-4"
-                        >
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="text"
-                              className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-slate-800"
-                              value={zone.name}
-                              onChange={(e) => {
-                                const newZones = [...org.zones];
-                                newZones[zIndex].name = e.target.value;
-                                updateOrg({ ...org, zones: newZones });
-                              }}
-                              placeholder="Zone Name"
-                            />
-                            <button
-                              onClick={() => {
-                                const newZones = org.zones.filter(
-                                  (_: any, i: number) => i !== zIndex,
-                                );
-                                updateOrg({ ...org, zones: newZones });
-                              }}
-                              className="text-red-500 hover:text-red-700 p-2 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
-                              title="Remove Zone"
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width="16"
-                                height="16"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <path d="M3 6h18" />
-                                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                              </svg>
-                            </button>
-                          </div>
+                    {/* KPI CARDS BAR */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {/* Directorate Card */}
+                      <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-1">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                          <Building2 size={13} className="text-indigo-500" /> Directorate Name
+                        </span>
+                        <input
+                          type="text"
+                          value={org.directorate || ""}
+                          onChange={(e) => updateOrg({ ...org, directorate: e.target.value })}
+                          className="w-full font-bold text-sm text-slate-800 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                          placeholder="Directorate Title"
+                        />
+                      </div>
 
-                          <div className="pl-6 border-l-2 border-indigo-100 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                                Branches
-                              </label>
-                              <button
-                                onClick={() => {
-                                  const newZones = [...org.zones];
-                                  newZones[zIndex].branches = [
-                                    ...(newZones[zIndex].branches || []),
-                                    {
-                                      id: crypto.randomUUID(),
-                                      name: "New Branch",
-                                      churches: ["I", "K", "LJ", "UJ"],
-                                    },
-                                  ];
-                                  updateOrg({ ...org, zones: newZones });
-                                }}
-                                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
-                              >
-                                + Add Branch
-                              </button>
+                      {/* Total Zones */}
+                      <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 flex items-center justify-between">
+                        <div>
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-500">
+                            Total Zones
+                          </span>
+                          <h4 className="text-2xl font-black text-indigo-900 mt-1">
+                            {org.zones?.length || 0}
+                          </h4>
+                        </div>
+                        <span className="p-3 bg-indigo-100 text-indigo-600 rounded-2xl">
+                          <MapPin size={20} />
+                        </span>
+                      </div>
+
+                      {/* Total Branches */}
+                      <div className="bg-teal-50/50 border border-teal-100 rounded-2xl p-4 flex items-center justify-between">
+                        <div>
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-teal-600">
+                            Active Branches
+                          </span>
+                          <h4 className="text-2xl font-black text-teal-900 mt-1">
+                            {totalBranches}
+                          </h4>
+                        </div>
+                        <span className="p-3 bg-teal-100 text-teal-600 rounded-2xl">
+                          <Building2 size={20} />
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* ADD ZONE MODAL / INLINE CARD */}
+                    {isAddingZone && (
+                      <div className="p-4 bg-indigo-50/70 border-2 border-indigo-200 rounded-2xl space-y-3 animate-in fade-in zoom-in-95">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-indigo-900 text-sm flex items-center gap-2">
+                            <Plus size={16} /> Create New Zone
+                          </h4>
+                          <button
+                            onClick={() => setIsAddingZone(false)}
+                            className="text-slate-400 hover:text-slate-600 p-1"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={newZoneName}
+                            onChange={(e) => setNewZoneName(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleCreateZone()}
+                            placeholder="Enter Zone Name (e.g. Northern Zone, Tema Zone)"
+                            className="flex-1 px-3.5 py-2.5 bg-white border border-indigo-200 rounded-xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            autoFocus
+                          />
+                          <button
+                            onClick={handleCreateZone}
+                            disabled={!newZoneName.trim()}
+                            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all"
+                          >
+                            Create Zone
+                          </button>
+                          <button
+                            onClick={() => setIsAddingZone(false)}
+                            className="px-4 py-2.5 bg-white hover:bg-slate-100 text-slate-600 font-bold text-xs rounded-xl border border-slate-200 transition-all"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ZONES LIST */}
+                    <div className="space-y-4">
+                      {(org.zones || []).map((zone: any, zIndex: number) => {
+                        const branches = zone.branches || [];
+                        const currentInput = branchInputByZone[zone.id] || "";
+
+                        return (
+                          <div
+                            key={zone.id || zIndex}
+                            className="bg-white border border-slate-200/90 rounded-3xl p-5 shadow-sm space-y-4 hover:border-indigo-200 transition-all"
+                          >
+                            {/* ZONE HEADER */}
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
+                              <div className="flex items-center gap-3 flex-1">
+                                <span className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                                  <MapPin size={20} />
+                                </span>
+                                <div className="flex-1">
+                                  <input
+                                    type="text"
+                                    value={zone.name}
+                                    onChange={(e) => {
+                                      const updatedZones = [...org.zones];
+                                      updatedZones[zIndex].name = e.target.value;
+                                      updateOrg({ ...org, zones: updatedZones });
+                                    }}
+                                    className="font-extrabold text-base text-slate-800 bg-transparent hover:bg-slate-50 focus:bg-white px-2 py-1 -ml-2 rounded-lg border border-transparent hover:border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none w-full max-w-sm transition-all"
+                                    placeholder="Zone Name"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 self-end sm:self-auto">
+                                <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold">
+                                  {branches.length} {branches.length === 1 ? "Branch" : "Branches"}
+                                </span>
+                                <button
+                                  onClick={() => handleRemoveZone(zone.id, zone.name)}
+                                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                                  title="Delete Zone"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
                             </div>
 
-                            {(zone.branches || []).map(
-                              (branch: any, bIndex: number) => (
-                                <div
-                                  key={bIndex}
-                                  className="flex flex-col gap-2 p-3 bg-slate-50 rounded-lg border border-slate-100"
+                            {/* BRANCHES CONTAINER */}
+                            <div className="space-y-3 pl-2 sm:pl-4">
+                              <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                <span>Branches in this Zone</span>
+                              </div>
+
+                              {/* BRANCH CARDS GRID */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {branches.map((branch: any, bIndex: number) => (
+                                  <div
+                                    key={branch.id || bIndex}
+                                    className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-3.5 space-y-2.5 hover:shadow-sm hover:bg-white transition-all group"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        <Building2 size={16} className="text-slate-400 shrink-0" />
+                                        <input
+                                          type="text"
+                                          value={branch.name}
+                                          onChange={(e) => {
+                                            const updatedZones = [...org.zones];
+                                            updatedZones[zIndex].branches[bIndex].name = e.target.value;
+                                            updateOrg({ ...org, zones: updatedZones });
+                                          }}
+                                          className="text-xs font-bold text-slate-800 bg-transparent hover:bg-white focus:bg-white px-1.5 py-1 -ml-1 rounded border border-transparent hover:border-slate-200 focus:border-indigo-400 outline-none w-full truncate"
+                                          placeholder="Branch Name"
+                                        />
+                                      </div>
+                                      <button
+                                        onClick={() => handleRemoveBranch(zIndex, bIndex, branch.name)}
+                                        className="opacity-40 group-hover:opacity-100 text-slate-400 hover:text-red-600 p-1 hover:bg-red-50 rounded-lg transition-all shrink-0"
+                                        title="Remove Branch"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </div>
+
+                                    {/* Children Ministries Badges */}
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      {["I", "K", "LJ", "UJ"].map((c) => (
+                                        <span
+                                          key={c}
+                                          className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-indigo-100 text-indigo-700"
+                                        >
+                                          {c}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* INLINE ADD BRANCH ROW */}
+                              <div className="flex items-center gap-2 pt-2">
+                                <input
+                                  type="text"
+                                  value={currentInput}
+                                  onChange={(e) =>
+                                    setBranchInputByZone((prev) => ({
+                                      ...prev,
+                                      [zone.id]: e.target.value,
+                                    }))
+                                  }
+                                  onKeyDown={(e) => e.key === "Enter" && handleAddBranchToZone(zIndex)}
+                                  placeholder={`+ Add branch to ${zone.name}...`}
+                                  className="flex-1 max-w-md px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+                                />
+                                <button
+                                  onClick={() => handleAddBranchToZone(zIndex)}
+                                  disabled={!currentInput.trim()}
+                                  className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-40 text-indigo-700 font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5"
                                 >
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="text"
-                                      className="flex-1 p-1.5 text-sm bg-white border border-slate-200 rounded outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 font-medium"
-                                      value={branch.name}
-                                      onChange={(e) => {
-                                        const newZones = [...org.zones];
-                                        newZones[zIndex].branches[bIndex].name =
-                                          e.target.value;
-                                        updateOrg({ ...org, zones: newZones });
-                                      }}
-                                      placeholder="Branch Name"
-                                    />
-                                    <button
-                                      onClick={() => {
-                                        const newZones = [...org.zones];
-                                        newZones[zIndex].branches = newZones[
-                                          zIndex
-                                        ].branches.filter(
-                                          (_: any, i: number) => i !== bIndex,
-                                        );
-                                        updateOrg({ ...org, zones: newZones });
-                                      }}
-                                      className="text-red-400 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors"
-                                      title="Remove Branch"
-                                    >
-                                      <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        width="14"
-                                        height="14"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                      >
-                                        <path d="M18 6 6 18" />
-                                        <path d="m6 6 12 12" />
-                                      </svg>
-                                    </button>
-                                  </div>
-                                  <div className="flex gap-2">
-                                    {["I", "K", "LJ", "UJ"].map((church) => (
-                                      <span
-                                        key={church}
-                                        className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded shadow-sm"
-                                      >
-                                        {church}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              ),
-                            )}
-                            {(!zone.branches || zone.branches.length === 0) && (
-                              <p className="text-xs text-slate-400 italic">
-                                No branches added to this zone.
-                              </p>
-                            )}
+                                  <Plus size={14} /> Add
+                                </button>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
 
                       {(!org.zones || org.zones.length === 0) && (
-                        <div className="p-8 border-2 border-dashed border-slate-200 rounded-xl text-center text-slate-500 text-sm">
-                          No zones configured. Click "Add Zone" to start
-                          building your hierarchy.
+                        <div className="p-12 border-2 border-dashed border-slate-200 rounded-3xl text-center space-y-3 bg-slate-50/50">
+                          <span className="p-4 bg-indigo-50 text-indigo-600 rounded-3xl inline-block">
+                            <Layers size={32} />
+                          </span>
+                          <h4 className="font-bold text-slate-700 text-base">No Zones Configured</h4>
+                          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                            Zones group your campus branches together under the central directorate.
+                          </p>
+                          <button
+                            onClick={() => setIsAddingZone(true)}
+                            className="mt-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all inline-flex items-center gap-2"
+                          >
+                            <Plus size={16} /> Create First Zone
+                          </button>
                         </div>
                       )}
                     </div>
@@ -755,169 +1104,401 @@ const Settings: React.FC<SettingsProps> = ({
           {/* PERMISSIONS TAB */}
           {activeTab === "PERMISSIONS" && (
             <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                  <SettingsIcon size={20} className="text-indigo-600" /> Role Permissions
-                </h3>
-              </div>
-              <p className="text-sm text-slate-500">
-                Configure module access for different roles across the system.
-              </p>
-
-              <div className="flex gap-4 border-b border-slate-100 pb-4 mb-4">
-                <button
-                  onClick={() => setPermTab("MATRIX")}
-                  className={`px-4 py-2 font-bold text-sm rounded-xl transition-colors ${permTab === "MATRIX" ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-50"}`}
-                >
-                  Role Access Overview
-                </button>
-                <button
-                  onClick={() => setPermTab("INDIVIDUAL")}
-                  className={`px-4 py-2 font-bold text-sm rounded-xl transition-colors ${permTab === "INDIVIDUAL" ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-50"}`}
-                >
-                  Individual Role Management
-                </button>
-              </div>
-
-              {permTab === "MATRIX" && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wide">
-                      <tr>
-                        <th className="px-4 py-3">Role</th>
-                        <th className="px-4 py-3 text-center">Dashboard</th>
-                        <th className="px-4 py-3 text-center">People Hub</th>
-                        <th className="px-4 py-3 text-center">Attendance</th>
-                        <th className="px-4 py-3 text-center">Finances</th>
-                        <th className="px-4 py-3 text-center">Outreach</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-sm">
-                      {["ZONAL_HEAD", "BRANCH_COORDINATOR", "CMD_COORDINATOR", "EXTERNAL", "ADMIN", "SUPER_ADMIN", "TEACHER"].map((role) => {
-                        const permissions = localSettings.permissions || {};
-                        const rolePerms = permissions[role] || [];
-                        const hasPerm = (module: string) => rolePerms.includes(module);
-                        
-                        const togglePerm = (module: string) => {
-                          const newPerms = hasPerm(module) 
-                            ? rolePerms.filter(p => p !== module)
-                            : [...rolePerms, module];
-                          setLocalSettings({
-                            ...localSettings,
-                            permissions: {
-                              ...permissions,
-                              [role]: newPerms
-                            }
-                          });
-                        };
-
-                        return (
-                          <tr key={role} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-4 py-4 font-bold text-slate-800">{role.replace(/_/g, " ")}</td>
-                            <td className="px-4 py-4 text-center">
-                              <input
-                                type="checkbox"
-                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                                checked={hasPerm("Dashboard")}
-                                onChange={() => togglePerm("Dashboard")}
-                              />
-                            </td>
-                            <td className="px-4 py-4 text-center">
-                              <input
-                                type="checkbox"
-                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                                checked={hasPerm("People Hub")}
-                                onChange={() => togglePerm("People Hub")}
-                              />
-                            </td>
-                            <td className="px-4 py-4 text-center">
-                              <input
-                                type="checkbox"
-                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                                checked={hasPerm("Attendance")}
-                                onChange={() => togglePerm("Attendance")}
-                              />
-                            </td>
-                            <td className="px-4 py-4 text-center">
-                              <input
-                                type="checkbox"
-                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                                checked={hasPerm("Finances")}
-                                onChange={() => togglePerm("Finances")}
-                              />
-                            </td>
-                            <td className="px-4 py-4 text-center">
-                              <input
-                                type="checkbox"
-                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                                checked={hasPerm("Outreach")}
-                                onChange={() => togglePerm("Outreach")}
-                              />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+              {/* HEADER */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-5">
+                <div>
+                  <h3 className="font-extrabold text-xl text-slate-800 flex items-center gap-2">
+                    <ShieldCheck size={22} className="text-indigo-600" /> Role Permissions & Access Control
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Manage granular access to all 8 core features and {APP_FEATURES_REGISTRY.reduce((acc, f) => acc + f.subfeatures.length, 0)} subfeatures across ministry roles.
+                  </p>
                 </div>
-              )}
 
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={saveConfig}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-indigo-100 flex items-center gap-2"
+                  >
+                    <Save size={16} /> Save Permissions
+                  </button>
+                </div>
+              </div>
+
+              {/* VIEW MODE TOGGLE */}
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex bg-slate-100 p-1 rounded-2xl">
+                  <button
+                    onClick={() => setPermTab("INDIVIDUAL")}
+                    className={`px-4 py-2 font-bold text-xs rounded-xl transition-all flex items-center gap-2 ${
+                      permTab === "INDIVIDUAL"
+                        ? "bg-white text-indigo-700 shadow-sm"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <Users size={15} /> Role Feature Manager
+                  </button>
+                  <button
+                    onClick={() => setPermTab("MATRIX")}
+                    className={`px-4 py-2 font-bold text-xs rounded-xl transition-all flex items-center gap-2 ${
+                      permTab === "MATRIX"
+                        ? "bg-white text-indigo-700 shadow-sm"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <Layers size={15} /> Full Matrix Overview
+                  </button>
+                </div>
+
+                {/* SEARCH BAR */}
+                <div className="relative w-full sm:w-72">
+                  <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={permSearchQuery}
+                    onChange={(e) => setPermSearchQuery(e.target.value)}
+                    placeholder="Search features or actions..."
+                    className="w-full pl-9 pr-4 py-2 text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+                  />
+                  {permSearchQuery && (
+                    <button
+                      onClick={() => setPermSearchQuery("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 font-bold"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* TAB 1: ROLE FEATURE MANAGER */}
               {permTab === "INDIVIDUAL" && (
                 <div className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-2">Select Role to Manage</label>
-                    <select
-                      value={selectedRoleForPerms}
-                      onChange={(e) => setSelectedRoleForPerms(e.target.value)}
-                      className="w-full md:w-1/2 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      {["ZONAL_HEAD", "BRANCH_COORDINATOR", "CMD_COORDINATOR", "EXTERNAL", "ADMIN", "SUPER_ADMIN", "TEACHER"].map(role => (
-                        <option key={role} value={role}>{role.replace(/_/g, " ")}</option>
-                      ))}
-                    </select>
+                  {/* ROLE SELECTOR CAROUSEL / TABS */}
+                  <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+                    {ROLES_LIST.map((r) => {
+                      const isSelected = selectedRoleForPerms === r.id;
+                      const rolePerms = getRolePermissions(r.id);
+                      const isFull = rolePerms.includes("ALL");
+
+                      return (
+                        <button
+                          key={r.id}
+                          onClick={() => setSelectedRoleForPerms(r.id)}
+                          className={`px-4 py-3 rounded-2xl text-left border transition-all shrink-0 min-w-[140px] flex flex-col gap-1 ${
+                            isSelected
+                              ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100 scale-[1.02]"
+                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                          }`}
+                        >
+                          <span className={`text-xs font-extrabold ${isSelected ? "text-white" : "text-slate-800"}`}>
+                            {r.label}
+                          </span>
+                          <span className={`text-[10px] font-semibold ${isSelected ? "text-indigo-100" : "text-slate-400"}`}>
+                            {isFull ? "Full Access" : `${rolePerms.filter((p) => !p.includes(".")).length} Features`}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {["Dashboard", "People Hub", "Attendance", "Finances", "Outreach"].map(module => {
-                      const permissions = localSettings.permissions || {};
-                      const rolePerms = permissions[selectedRoleForPerms] || [];
-                      const hasPerm = rolePerms.includes(module);
-                      
-                      const togglePerm = () => {
-                        const newPerms = hasPerm
-                          ? rolePerms.filter(p => p !== module)
-                          : [...rolePerms, module];
-                        setLocalSettings({
-                          ...localSettings,
-                          permissions: {
-                            ...permissions,
-                            [selectedRoleForPerms]: newPerms
-                          }
+
+                  {/* ACTIVE ROLE BANNER & QUICK ACTIONS */}
+                  {(() => {
+                    const currentRoleMeta = ROLES_LIST.find((r) => r.id === selectedRoleForPerms) || ROLES_LIST[0];
+
+                    return (
+                      <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-extrabold text-slate-800 text-sm">
+                              Managing Access for: <span className="text-indigo-600">{currentRoleMeta.label}</span>
+                            </span>
+                            {isRoleFullAdmin(currentRoleMeta.id) && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-purple-100 text-purple-700">
+                                Full Administrator
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">{currentRoleMeta.desc}</p>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            onClick={() => grantAllForRole(currentRoleMeta.id)}
+                            className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs rounded-xl border border-emerald-200 transition-colors flex items-center gap-1"
+                          >
+                            <Unlock size={13} /> Grant All
+                          </button>
+                          <button
+                            onClick={() => revokeAllForRole(currentRoleMeta.id)}
+                            className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs rounded-xl border border-red-200 transition-colors flex items-center gap-1"
+                          >
+                            <Lock size={13} /> Revoke All
+                          </button>
+                          <button
+                            onClick={() => resetRoleToDefaults(currentRoleMeta.id)}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl border border-slate-200 transition-colors flex items-center gap-1"
+                          >
+                            <RotateCcw size={13} /> Reset Defaults
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* FEATURES & SUBFEATURES LIST */}
+                  <div className="space-y-4">
+                    {APP_FEATURES_REGISTRY.filter((f) => {
+                      if (!permSearchQuery.trim()) return true;
+                      const q = permSearchQuery.toLowerCase();
+                      return (
+                        f.name.toLowerCase().includes(q) ||
+                        f.description.toLowerCase().includes(q) ||
+                        f.subfeatures.some((sf) => sf.name.toLowerCase().includes(q) || sf.description.toLowerCase().includes(q))
+                      );
+                    }).map((feature) => {
+                      const IconComponent = getFeatureIconComponent(feature.iconName);
+                      const isExpanded = expandedFeatures.has(feature.id) || !!permSearchQuery.trim();
+                      const featureActive = hasRoleFeature(selectedRoleForPerms, feature.id);
+
+                      const enabledSubCount = feature.subfeatures.filter((sf) =>
+                        hasRoleSubfeature(selectedRoleForPerms, feature.id, sf.id),
+                      ).length;
+
+                      const isFullFeature = enabledSubCount === feature.subfeatures.length;
+
+                      const toggleExpand = () => {
+                        setExpandedFeatures((prev) => {
+                          const n = new Set(prev);
+                          if (n.has(feature.id)) n.delete(feature.id);
+                          else n.add(feature.id);
+                          return n;
                         });
                       };
 
                       return (
-                        <label key={module} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
-                          <span className="font-bold text-slate-700">{module}</span>
-                          <input
-                            type="checkbox"
-                            checked={hasPerm}
-                            onChange={togglePerm}
-                            className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer"
-                          />
-                        </label>
+                        <div
+                          key={feature.id}
+                          className={`bg-white border rounded-3xl transition-all shadow-sm ${
+                            featureActive ? "border-indigo-200" : "border-slate-200 opacity-90"
+                          }`}
+                        >
+                          {/* FEATURE CARD HEADER */}
+                          <div className="p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <div
+                              onClick={toggleExpand}
+                              className="flex items-center gap-3.5 flex-1 cursor-pointer select-none"
+                            >
+                              <span
+                                className={`p-3 rounded-2xl transition-colors ${
+                                  featureActive ? "bg-indigo-600 text-white shadow-md shadow-indigo-100" : "bg-slate-100 text-slate-400"
+                                }`}
+                              >
+                                <IconComponent size={22} />
+                              </span>
+                              <div>
+                                <div className="flex items-center gap-2.5">
+                                  <h4 className="font-extrabold text-base text-slate-800">{feature.name}</h4>
+                                  <span
+                                    className={`px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold ${
+                                      isFullFeature
+                                        ? "bg-emerald-100 text-emerald-700"
+                                        : enabledSubCount > 0
+                                        ? "bg-amber-100 text-amber-800"
+                                        : "bg-slate-100 text-slate-500"
+                                    }`}
+                                  >
+                                    {enabledSubCount} / {feature.subfeatures.length} enabled
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{feature.description}</p>
+                              </div>
+                            </div>
+
+                            {/* MASTER TOGGLE & EXPAND CHEVRON */}
+                            <div className="flex items-center gap-4 self-end sm:self-auto">
+                              <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-bold text-slate-700">
+                                <span>{featureActive ? "Enabled" : "Disabled"}</span>
+                                <input
+                                  type="checkbox"
+                                  checked={featureActive}
+                                  onChange={() => toggleFeatureForRole(selectedRoleForPerms, feature.id)}
+                                  className="w-5 h-5 text-indigo-600 rounded-md focus:ring-indigo-500 cursor-pointer"
+                                />
+                              </label>
+
+                              <button
+                                onClick={toggleExpand}
+                                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors"
+                              >
+                                {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* SUBFEATURES EXPANDABLE SECTION */}
+                          {isExpanded && (
+                            <div className="px-5 pb-5 pt-2 border-t border-slate-100 bg-slate-50/50 rounded-b-3xl space-y-3">
+                              <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">
+                                Subfeatures & Detailed Actions
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {feature.subfeatures
+                                  .filter((sf) => {
+                                    if (!permSearchQuery.trim()) return true;
+                                    const q = permSearchQuery.toLowerCase();
+                                    return sf.name.toLowerCase().includes(q) || sf.description.toLowerCase().includes(q);
+                                  })
+                                  .map((sf) => {
+                                    const isSubActive = hasRoleSubfeature(selectedRoleForPerms, feature.id, sf.id);
+
+                                    return (
+                                      <label
+                                        key={sf.id}
+                                        className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                                          isSubActive
+                                            ? "bg-white border-indigo-200/90 shadow-sm"
+                                            : "bg-slate-100/60 border-slate-200/70 hover:bg-white"
+                                        }`}
+                                      >
+                                        <div className="space-y-0.5 pr-2">
+                                          <div className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                                            {sf.name}
+                                          </div>
+                                          <p className="text-[11px] text-slate-500 leading-relaxed">{sf.description}</p>
+                                        </div>
+
+                                        <input
+                                          type="checkbox"
+                                          checked={isSubActive}
+                                          onChange={() =>
+                                            toggleSubfeatureForRole(selectedRoleForPerms, feature.id, sf.id)
+                                          }
+                                          className="mt-0.5 w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer shrink-0"
+                                        />
+                                      </label>
+                                    );
+                                  })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
                 </div>
               )}
 
-              <div className="pt-6 flex justify-end">
+              {/* TAB 2: FULL MATRIX OVERVIEW */}
+              {permTab === "MATRIX" && (
+                <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-800">Role Permissions Comparison Matrix</h4>
+                      <p className="text-xs text-slate-500">Cross-table view of all roles vs. application features.</p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-slate-50 text-slate-600 text-xs font-extrabold uppercase tracking-wide border-b border-slate-200">
+                        <tr>
+                          <th className="px-4 py-3 min-w-[220px]">Feature / Action</th>
+                          {ROLES_LIST.map((r) => (
+                            <th key={r.id} className="px-3 py-3 text-center min-w-[120px]">
+                              <div>{r.label}</div>
+                              <button
+                                onClick={() =>
+                                  getRolePermissions(r.id).length > 0 ? revokeAllForRole(r.id) : grantAllForRole(r.id)
+                                }
+                                className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 lowercase tracking-normal"
+                              >
+                                {getRolePermissions(r.id).length > 0 ? "clear" : "all"}
+                              </button>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+
+                      <tbody className="divide-y divide-slate-100 text-xs">
+                        {APP_FEATURES_REGISTRY.filter((f) => {
+                          if (!permSearchQuery.trim()) return true;
+                          const q = permSearchQuery.toLowerCase();
+                          return (
+                            f.name.toLowerCase().includes(q) ||
+                            f.subfeatures.some((sf) => sf.name.toLowerCase().includes(q))
+                          );
+                        }).map((feature) => (
+                          <React.Fragment key={feature.id}>
+                            {/* TOP-LEVEL FEATURE ROW */}
+                            <tr className="bg-indigo-50/40 font-extrabold text-slate-800 hover:bg-indigo-50/70">
+                              <td className="px-4 py-3 flex items-center gap-2">
+                                <span className="p-1.5 bg-indigo-100 text-indigo-700 rounded-lg">
+                                  {React.createElement(getFeatureIconComponent(feature.iconName), { size: 14 })}
+                                </span>
+                                <span>{feature.name}</span>
+                              </td>
+                              {ROLES_LIST.map((r) => {
+                                const active = hasRoleFeature(r.id, feature.id);
+
+                                return (
+                                  <td key={r.id} className="px-3 py-3 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={active}
+                                      onChange={() => toggleFeatureForRole(r.id, feature.id)}
+                                      className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer"
+                                    />
+                                  </td>
+                                );
+                              })}
+                            </tr>
+
+                            {/* SUBFEATURE ROWS */}
+                            {feature.subfeatures
+                              .filter((sf) => {
+                                if (!permSearchQuery.trim()) return true;
+                                const q = permSearchQuery.toLowerCase();
+                                return sf.name.toLowerCase().includes(q) || feature.name.toLowerCase().includes(q);
+                              })
+                              .map((sf) => (
+                                <tr key={sf.id} className="hover:bg-slate-50 transition-colors">
+                                  <td className="px-4 py-2.5 pl-9 text-slate-600 font-medium">
+                                    <span className="text-slate-400 mr-1.5">&bull;</span>
+                                    {sf.name}
+                                  </td>
+                                  {ROLES_LIST.map((r) => {
+                                    const active = hasRoleSubfeature(r.id, feature.id, sf.id);
+
+                                    return (
+                                      <td key={r.id} className="px-3 py-2.5 text-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={active}
+                                          onChange={() => toggleSubfeatureForRole(r.id, feature.id, sf.id)}
+                                          className="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer"
+                                        />
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                          </React.Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* SAVE ACTION BAR */}
+              <div className="pt-4 flex justify-end">
                 <button
                   onClick={saveConfig}
-                  className="px-6 py-2 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors flex items-center gap-2 shadow-sm"
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-2"
                 >
-                  <Save size={18} /> Save Permissions
+                  <Save size={16} /> Save Permissions
                 </button>
               </div>
             </div>
