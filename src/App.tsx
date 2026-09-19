@@ -376,6 +376,53 @@ const App: React.FC = () => {
     refreshData();
   };
 
+  const normalizedName = currentUser?.name?.toLowerCase().trim() || "";
+  const isSuperAdminUser =
+    normalizedName === "emmanuel gyan" ||
+    normalizedName === "admin" ||
+    normalizedName === "main admin" ||
+    currentUser?.role === "SUPER_ADMIN";
+  const isAdmin = currentUser?.role === "ADMIN" || isSuperAdminUser;
+
+  const hasPermission = (moduleName: string, subfeature?: string) => {
+    if (!currentUser) return false;
+    if (isSuperAdminUser) return true;
+    if (!currentUser.role) return false;
+    if (subfeature) {
+      return hasRoleSubfeature(data, currentUser.role, moduleName, subfeature);
+    }
+    return hasRoleFeature(data, currentUser.role, moduleName);
+  };
+
+  const showDashboard = hasPermission("Dashboard");
+  const showAttendance = hasPermission("Attendance");
+  const showMembers = hasPermission("People Hub");
+  const showAnalytics = hasPermission("Analytics");
+  const showOutreach = hasPermission("Outreach") || normalizedName.includes("maxeen");
+  const showFinances = hasPermission("Finances");
+  const showReports = hasPermission("Reports");
+  const showSettings = isSuperAdminUser || hasPermission("Settings");
+
+  const allowedViews = useMemo(() => {
+    if (!currentUser) return [];
+    const list: View[] = [];
+    if (showDashboard) list.push(View.DASHBOARD);
+    if (showAttendance) list.push(View.ATTENDANCE);
+    if (showMembers) list.push(View.MEMBERS);
+    if (showAnalytics) list.push(View.ANALYTICS);
+    if (showOutreach) list.push(View.OUTREACH);
+    if (showFinances) list.push(View.FINANCES);
+    if (showReports) list.push(View.EXPORT);
+    if (showSettings) list.push(View.SETTINGS);
+    return list;
+  }, [currentUser, showDashboard, showAttendance, showMembers, showAnalytics, showOutreach, showFinances, showReports, showSettings]);
+
+  useEffect(() => {
+    if (currentUser && allowedViews.length > 0 && !allowedViews.includes(currentView)) {
+      setCurrentView(allowedViews[0]);
+    }
+  }, [currentUser, allowedViews, currentView]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 flex-col gap-6">
@@ -395,51 +442,6 @@ const App: React.FC = () => {
   if (!currentUser) {
     return <Login onLogin={handleLogin} />;
   }
-
-  const normalizedName = currentUser.name.toLowerCase().trim();
-  const isSuperAdminUser =
-    normalizedName === "emmanuel gyan" ||
-    normalizedName === "admin" ||
-    normalizedName === "main admin" ||
-    currentUser.role === "SUPER_ADMIN";
-  const isAdmin = currentUser.role === "ADMIN" || isSuperAdminUser;
-
-  const hasPermission = (moduleName: string, subfeature?: string) => {
-    if (isSuperAdminUser) return true;
-    if (!currentUser.role) return false;
-    if (subfeature) {
-      return hasRoleSubfeature(data, currentUser.role, moduleName, subfeature);
-    }
-    return hasRoleFeature(data, currentUser.role, moduleName);
-  };
-
-  const showDashboard = hasPermission("Dashboard");
-  const showAttendance = hasPermission("Attendance");
-  const showMembers = hasPermission("People Hub");
-  const showAnalytics = hasPermission("Analytics");
-  const showOutreach = hasPermission("Outreach") || normalizedName.includes("maxeen");
-  const showFinances = hasPermission("Finances");
-  const showReports = hasPermission("Reports");
-  const showSettings = isSuperAdminUser || hasPermission("Settings");
-
-  const allowedViews = useMemo(() => {
-    const list: View[] = [];
-    if (showDashboard) list.push(View.DASHBOARD);
-    if (showAttendance) list.push(View.ATTENDANCE);
-    if (showMembers) list.push(View.MEMBERS);
-    if (showAnalytics) list.push(View.ANALYTICS);
-    if (showOutreach) list.push(View.OUTREACH);
-    if (showFinances) list.push(View.FINANCES);
-    if (showReports) list.push(View.EXPORT);
-    if (showSettings) list.push(View.SETTINGS);
-    return list;
-  }, [showDashboard, showAttendance, showMembers, showAnalytics, showOutreach, showFinances, showReports, showSettings]);
-
-  useEffect(() => {
-    if (allowedViews.length > 0 && !allowedViews.includes(currentView)) {
-      setCurrentView(allowedViews[0]);
-    }
-  }, [allowedViews, currentView]);
 
   const NavItem = ({
     view,
