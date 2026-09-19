@@ -283,6 +283,16 @@ export const addMember = async (member: Member) => {
   updateMainDoc({ members }).catch(console.error);
 };
 
+export const addMembers = async (newMembersList: Member[]) => {
+  if (!newMembersList || newMembersList.length === 0) return;
+  const current = memoryCache || (await loadData());
+  const members = [...current.members, ...newMembersList];
+  memoryCache = { ...current, members };
+  saveLocalCache(memoryCache);
+  notifySubscribers(memoryCache);
+  updateMainDoc({ members }).catch(console.error);
+};
+
 export const updateMember = async (id: string, updates: Partial<Member>) => {
   const current = memoryCache || (await loadData());
   const members = current.members.map((m) => (m.id === id ? { ...m, ...updates } : m));

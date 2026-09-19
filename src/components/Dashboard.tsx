@@ -474,32 +474,57 @@ const AdminDashboard: React.FC<{
     const isOutreachEnabled = Object.values(data.settings.features || {}).some((f: any) => f.outreach);
     if (!isOutreachEnabled) return null;
 
-    let eligibleMembers = data.members.filter(
-      (m) =>
-        matchesScope(m, activeBranchId, data.settings?.organization) &&
-        ["Member", "FNF"].includes(m.type) &&
-        ["Active", "Inconsistent", "Not Active"].includes(m.status),
-    );
+    // Calculate dynamic divisions for all target churches within active scope
+    const divisions = calculateChurchDivisions(data.members, ["UJ", "LJ", "K", "I", "N"], activeBranchId);
+    const allAssignments = Object.values(divisions).flatMap((d) => d.assignments);
+    const assignedMembers = allAssignments.flatMap((a) => a.members);
+    const assignedKidIds = new Set(assignedMembers.map((m) => m.id));
 
+    // Dynamic assigned count responsive to increases or reductions in children per teacher
+    let totalAssignedKids = assignedMembers.length;
+    let eligibleKidIds = assignedKidIds;
 
-    const eligibleKids = eligibleMembers.length;
-    const eligibleKidIds = new Set(eligibleMembers.map((m) => m.id));
+    // Fallback if divisions has no members assigned yet
+    if (totalAssignedKids === 0) {
+      const fallbackMembers = data.members.filter(
+        (m) =>
+          matchesScope(m, activeBranchId, data.settings?.organization) &&
+          [MemberType.MEMBER, MemberType.FNF, MemberType.VISITOR].includes(m.type) &&
+          ["Active", "Inconsistent", "Not Active"].includes(m.status)
+      );
+      totalAssignedKids = fallbackMembers.length;
+      eligibleKidIds = new Set(fallbackMembers.map((m) => m.id));
+    }
 
-    const visitTarget = eligibleKids * 2;
-    const callTarget = eligibleKids * 4;
-    const prayerTargetMins = eligibleKids * 5 * 52 * 30;
+    const activeTeachersWithAssignments = allAssignments.filter((a) => a.members.length > 0).length;
+    const totalEligibleTeachers = Object.values(divisions).reduce((sum, d) => sum + d.eligibleTeachers.length, 0);
+    const activeTeachersCount = activeTeachersWithAssignments > 0 ? activeTeachersWithAssignments : totalEligibleTeachers;
+    const avgKidsPerTeacher = activeTeachersCount > 0 ? (totalAssignedKids / activeTeachersCount).toFixed(1) : "0";
+
+    // Dynamic targets scale directly with assigned roster: 2 visits and 4 calls per child per year
+    const visitTarget = totalAssignedKids * 2;
+    const callTarget = totalAssignedKids * 4;
+    const prayerTargetMins = totalAssignedKids * 5 * 52 * 30;
+
+    const currentYear = new Date().getFullYear();
+    const visitedMemberIdsThisYear = new Set<string>();
+    const calledMemberIdsThisYear = new Set<string>();
 
     const totalVisitsDone = (data.outreachSessions || [])
       .filter(
         (s) =>
           s.status === "COMPLETED" &&
           s.sessionType !== "CALL" &&
-          new Date(s.date).getFullYear() === new Date().getFullYear(),
+          new Date(s.date).getFullYear() === currentYear,
       )
       .reduce((acc, s) => {
-        const validVisits = (s.visitedMemberIds || []).filter((id) =>
-          eligibleKidIds.has(id),
-        ).length;
+        const validVisits = (s.visitedMemberIds || []).filter((id) => {
+          if (eligibleKidIds.has(id)) {
+            visitedMemberIdsThisYear.add(id);
+            return true;
+          }
+          return false;
+        }).length;
         return acc + validVisits;
       }, 0);
 
@@ -509,12 +534,16 @@ const AdminDashboard: React.FC<{
           s.status === "COMPLETED" &&
           s.sessionType === "CALL" &&
           s.outcome === "REACHED" &&
-          new Date(s.date).getFullYear() === new Date().getFullYear(),
+          new Date(s.date).getFullYear() === currentYear,
       )
       .reduce((acc, s) => {
-        const validCalls = (s.visitedMemberIds || []).filter((id) =>
-          eligibleKidIds.has(id),
-        ).length;
+        const validCalls = (s.visitedMemberIds || []).filter((id) => {
+          if (eligibleKidIds.has(id)) {
+            calledMemberIdsThisYear.add(id);
+            return true;
+          }
+          return false;
+        }).length;
         return acc + validCalls;
       }, 0);
 
@@ -522,7 +551,7 @@ const AdminDashboard: React.FC<{
       .filter(
         (s) =>
           s.isCompleted &&
-          new Date(s.date).getFullYear() === new Date().getFullYear(),
+          new Date(s.date).getFullYear() === currentYear,
       )
       .reduce((acc, s) => {
         const validPrayers = (s.assignedMemberIds || []).filter((id) =>
@@ -534,13 +563,27 @@ const AdminDashboard: React.FC<{
         );
       }, 0);
 
+    const uniqueVisitedKidsCount = visitedMemberIdsThisYear.size;
+    const uniqueCalledKidsCount = calledMemberIdsThisYear.size;
+    const visitProgressPct = visitTarget > 0 ? Math.min(100, Math.round((totalVisitsDone / visitTarget) * 100)) : 0;
+    const callProgressPct = callTarget > 0 ? Math.min(100, Math.round((totalCallsDone / callTarget) * 100)) : 0;
+    const prayerProgressPct = prayerTargetMins > 0 ? Math.min(100, Math.round((totalPrayerMins / prayerTargetMins) * 100)) : 0;
+
     return {
+      totalAssignedKids,
+      activeTeachersCount,
+      avgKidsPerTeacher,
       visitTarget,
       totalVisitsDone,
+      uniqueVisitedKidsCount,
+      visitProgressPct,
       callTarget,
       totalCallsDone,
+      uniqueCalledKidsCount,
+      callProgressPct,
       prayerTargetMins,
       totalPrayerMins,
+      prayerProgressPct,
     };
   }, [data, activeBranchId]);
 
@@ -682,60 +725,122 @@ const AdminDashboard: React.FC<{
       {globalOutreachStats && (
         <motion.div
           variants={itemVariants}
-          className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100"
+          className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-4"
         >
-          <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <Heart size={20} className="text-pink-500" /> Outreach Impact (YTD)
-          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div>
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Heart size={20} className="text-pink-500" /> Outreach Impact (YTD)
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Dynamic outreach performance across active teacher assignments
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full border border-indigo-100">
+                <Users size={13} className="text-indigo-500" />
+                {globalOutreachStats.totalAssignedKids} Children &bull; {globalOutreachStats.activeTeachersCount} Teachers
+              </span>
+              <span className="inline-flex items-center gap-1 px-3 py-1 bg-violet-50 text-violet-700 text-xs font-bold rounded-full border border-violet-100">
+                ~{globalOutreachStats.avgKidsPerTeacher} kids / teacher
+              </span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-blue-500 uppercase">
-                  Visits Done
-                </p>
-                <h4 className="text-2xl font-bold text-slate-800">
-                  {globalOutreachStats.totalVisitsDone}{" "}
-                  <span className="text-sm text-slate-400 font-medium">
-                    / {globalOutreachStats.visitTarget}
-                  </span>
-                </h4>
+            {/* Visits */}
+            <div className="p-4 bg-blue-50/80 rounded-2xl border border-blue-100 flex flex-col justify-between space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">
+                    Visits Done
+                  </p>
+                  <h4 className="text-2xl font-bold text-slate-800 mt-0.5">
+                    {globalOutreachStats.totalVisitsDone}{" "}
+                    <span className="text-sm text-slate-400 font-medium">
+                      / {globalOutreachStats.visitTarget}
+                    </span>
+                  </h4>
+                </div>
+                <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-blue-500 shadow-xs">
+                  <MapPin size={20} />
+                </div>
               </div>
-              <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-blue-500 shadow-sm">
-                <MapPin size={20} />
-              </div>
-            </div>
-
-            <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-emerald-600 uppercase">
-                  Calls Reached
-                </p>
-                <h4 className="text-2xl font-bold text-slate-800">
-                  {globalOutreachStats.totalCallsDone}{" "}
-                  <span className="text-sm text-slate-400 font-medium">
-                    / {globalOutreachStats.callTarget}
-                  </span>
-                </h4>
-              </div>
-              <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-emerald-500 shadow-sm">
-                <Phone size={20} />
+              <div className="space-y-1.5">
+                <div className="w-full bg-blue-100/70 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-blue-600 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${globalOutreachStats.visitProgressPct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500">
+                  <span>{globalOutreachStats.uniqueVisitedKidsCount} of {globalOutreachStats.totalAssignedKids} kids reached</span>
+                  <span className="text-blue-700 font-bold">{globalOutreachStats.visitProgressPct}% goal</span>
+                </div>
               </div>
             </div>
 
-            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-amber-600 uppercase">
-                  Prayer Time
-                </p>
-                <h4 className="text-2xl font-bold text-slate-800">
-                  {formatDuration(globalOutreachStats.totalPrayerMins)}{" "}
-                  <span className="text-sm text-slate-400 font-medium">
-                    / {formatDuration(globalOutreachStats.prayerTargetMins)}
-                  </span>
-                </h4>
+            {/* Calls */}
+            <div className="p-4 bg-emerald-50/80 rounded-2xl border border-emerald-100 flex flex-col justify-between space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">
+                    Calls Reached
+                  </p>
+                  <h4 className="text-2xl font-bold text-slate-800 mt-0.5">
+                    {globalOutreachStats.totalCallsDone}{" "}
+                    <span className="text-sm text-slate-400 font-medium">
+                      / {globalOutreachStats.callTarget}
+                    </span>
+                  </h4>
+                </div>
+                <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-emerald-500 shadow-xs">
+                  <Phone size={20} />
+                </div>
               </div>
-              <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-amber-500 shadow-sm">
-                <Hourglass size={20} />
+              <div className="space-y-1.5">
+                <div className="w-full bg-emerald-100/70 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-emerald-600 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${globalOutreachStats.callProgressPct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500">
+                  <span>{globalOutreachStats.uniqueCalledKidsCount} of {globalOutreachStats.totalAssignedKids} kids reached</span>
+                  <span className="text-emerald-700 font-bold">{globalOutreachStats.callProgressPct}% goal</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Prayer */}
+            <div className="p-4 bg-amber-50/80 rounded-2xl border border-amber-100 flex flex-col justify-between space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">
+                    Prayer Time
+                  </p>
+                  <h4 className="text-2xl font-bold text-slate-800 mt-0.5">
+                    {formatDuration(globalOutreachStats.totalPrayerMins)}{" "}
+                    <span className="text-sm text-slate-400 font-medium">
+                      / {formatDuration(globalOutreachStats.prayerTargetMins)}
+                    </span>
+                  </h4>
+                </div>
+                <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-amber-500 shadow-xs">
+                  <Hourglass size={20} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="w-full bg-amber-100/70 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-amber-600 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${globalOutreachStats.prayerProgressPct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500">
+                  <span>Dynamic targets update with roster</span>
+                  <span className="text-amber-700 font-bold">{globalOutreachStats.prayerProgressPct}% goal</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1210,78 +1315,98 @@ const ChurchDashboard: React.FC<{
     const isOutreachEnabled = data.settings.features?.[activeChurch]?.outreach ?? false;
     if (!isOutreachEnabled) return null;
 
-    let eligibleMembers = data.members.filter(
-      (m) =>
-        m.assignedChurch === activeChurch &&
-        matchesScope(m, activeBranchId, data.settings?.organization) &&
-        ["Member", "FNF"].includes(m.type) &&
-        ["Active", "Inconsistent", "Not Active"].includes(m.status),
-    );
+    // Calculate church division for this church respecting current activeBranchId
+    const divisions = calculateChurchDivisions(data.members, [activeChurch], activeBranchId);
+    const churchDiv = divisions[activeChurch];
 
-    if (!isAdmin && activeChurch !== "All" && activeChurch !== "CM" && (currentUser.type === "Teacher" || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === "Helper")) {
-      const divResult = calculateChurchDivisions(data.members, [activeChurch]);
-      const churchDiv = divResult[activeChurch];
-      if (churchDiv) {
-        const assignment = churchDiv.assignments.find(a => a.teacher.id === currentUser.id);
-        if (assignment) {
-          const assignedIds = new Set(assignment.members.map(m => m.id));
-          eligibleMembers = eligibleMembers.filter(m => assignedIds.has(m.id));
-        } else {
-          eligibleMembers = [];
-        }
+    const isTeacherUser = !isAdmin &&
+      (currentUser.type === "Teacher" || currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.type === "Helper" || currentUser.type === MemberType.HELPER) &&
+      currentUser.role !== "BRANCH_COORDINATOR" && currentUser.role !== "ZONAL_HEAD" && currentUser.role !== "DIRECTORATE_HEAD";
+
+    let assignedKids: Member[] = [];
+    let isTeacherView = false;
+    let myAssignment: any = null;
+
+    if (isTeacherUser && churchDiv) {
+      myAssignment = churchDiv.assignments.find((a) => a.teacher.id === currentUser.id);
+      if (myAssignment) {
+        assignedKids = myAssignment.members;
+        isTeacherView = true;
       }
     }
-    const eligibleKids = eligibleMembers.length;
-    const eligibleKidIds = new Set(eligibleMembers.map((m) => m.id));
 
-    const visitTarget = eligibleKids * 2; // Annual Target: 2 visits per kid
-    const callTarget = eligibleKids * 4; // Annual Target: 4 calls per kid
+    if (!isTeacherView) {
+      if (churchDiv) {
+        assignedKids = churchDiv.assignments.flatMap((a) => a.members);
+      } else {
+        assignedKids = data.members.filter(
+          (m) =>
+            m.assignedChurch === activeChurch &&
+            matchesScope(m, activeBranchId, data.settings?.organization) &&
+            [MemberType.MEMBER, MemberType.FNF, MemberType.VISITOR].includes(m.type) &&
+            ["Active", "Inconsistent", "Not Active"].includes(m.status)
+        );
+      }
+    }
 
-    // Prayer Time Logic: Dynamic based on eligible kids
-    // 5 days * 52 weeks * 30 mins = 7,800 mins per kid per year
-    const prayerTargetMins = eligibleKids * 5 * 52 * 30;
+    const assignedCount = assignedKids.length;
+    const assignedKidIds = new Set(assignedKids.map((m) => m.id));
 
-    // Actual Visits Count (Only counting visits for currently eligible kids)
+    // Dynamic targets scale directly with the current assigned count per teacher
+    const visitTarget = assignedCount * 2; // 2 visits per kid per year
+    const callTarget = assignedCount * 4; // 4 calls per kid per year
+    const prayerTargetMins = assignedCount * 5 * 52 * 30; // 5 days * 52 weeks * 30 mins
+
+    const currentYear = new Date().getFullYear();
+    const visitedKidsSet = new Set<string>();
+    const calledKidsSet = new Set<string>();
+
     const totalVisitsDone = (data.outreachSessions || [])
       .filter(
         (s) =>
           s.status === "COMPLETED" &&
-          s.sessionType !== "CALL" && // Explicitly excluding calls
-          new Date(s.date).getFullYear() === new Date().getFullYear(),
+          s.sessionType !== "CALL" &&
+          new Date(s.date).getFullYear() === currentYear,
       )
       .reduce((acc, s) => {
-        const validVisits = (s.visitedMemberIds || []).filter((id) =>
-          eligibleKidIds.has(id),
-        ).length;
+        const validVisits = (s.visitedMemberIds || []).filter((id) => {
+          if (assignedKidIds.has(id)) {
+            visitedKidsSet.add(id);
+            return true;
+          }
+          return false;
+        }).length;
         return acc + validVisits;
       }, 0);
 
-    // Actual Calls Count
     const totalCallsDone = (data.outreachSessions || [])
       .filter(
         (s) =>
           s.status === "COMPLETED" &&
           s.sessionType === "CALL" &&
           s.outcome === "REACHED" &&
-          new Date(s.date).getFullYear() === new Date().getFullYear(),
+          new Date(s.date).getFullYear() === currentYear,
       )
       .reduce((acc, s) => {
-        const validCalls = (s.visitedMemberIds || []).filter((id) =>
-          eligibleKidIds.has(id),
-        ).length;
+        const validCalls = (s.visitedMemberIds || []).filter((id) => {
+          if (assignedKidIds.has(id)) {
+            calledKidsSet.add(id);
+            return true;
+          }
+          return false;
+        }).length;
         return acc + validCalls;
       }, 0);
 
-    // Actual Prayer Time (Only counting prayer time for currently eligible kids)
     const totalPrayerMins = (data.prayerSchedule || [])
       .filter(
         (s) =>
           s.isCompleted &&
-          new Date(s.date).getFullYear() === new Date().getFullYear(),
+          new Date(s.date).getFullYear() === currentYear,
       )
       .reduce((acc, s) => {
         const validPrayers = (s.assignedMemberIds || []).filter((id) =>
-          eligibleKidIds.has(id),
+          assignedKidIds.has(id),
         ).length;
         return (
           acc +
@@ -1289,15 +1414,34 @@ const ChurchDashboard: React.FC<{
         );
       }, 0);
 
+    const uniqueVisitedKidsCount = visitedKidsSet.size;
+    const uniqueCalledKidsCount = calledKidsSet.size;
+    const visitProgressPct = visitTarget > 0 ? Math.min(100, Math.round((totalVisitsDone / visitTarget) * 100)) : 0;
+    const callProgressPct = callTarget > 0 ? Math.min(100, Math.round((totalCallsDone / callTarget) * 100)) : 0;
+    const prayerProgressPct = prayerTargetMins > 0 ? Math.min(100, Math.round((totalPrayerMins / prayerTargetMins) * 100)) : 0;
+
+    const totalEligibleTeachers = churchDiv?.eligibleTeachers.length || 0;
+    const avgKidsPerTeacher = churchDiv?.membersPerTeacherAvg || (totalEligibleTeachers > 0 ? (assignedCount / totalEligibleTeachers).toFixed(1) : "0");
+
     return {
+      isTeacherView,
+      assignedCount,
+      totalChurchKids: assignedCount,
+      totalEligibleTeachers,
+      avgKidsPerTeacher,
       visitTarget,
       totalVisitsDone,
+      uniqueVisitedKidsCount,
+      visitProgressPct,
       callTarget,
       totalCallsDone,
+      uniqueCalledKidsCount,
+      callProgressPct,
       prayerTargetMins,
       totalPrayerMins,
+      prayerProgressPct,
     };
-  }, [data, activeChurch]);
+  }, [data, activeChurch, activeBranchId, currentUser, isAdmin]);
 
   const { churchGenderBreakdown, churchAttendanceBreakdown, statusBreakdown } = useMemo(() => {
     let maleMembers = 0, femaleMembers = 0;
@@ -1679,60 +1823,138 @@ const ChurchDashboard: React.FC<{
       {outreachStats && (
         <motion.div
           variants={itemVariants}
-          className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100"
+          className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-4"
         >
-          <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <Heart size={20} className="text-pink-500" /> Outreach Impact (YTD)
-          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div>
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Heart size={20} className="text-pink-500" /> Outreach Impact (YTD)
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {outreachStats.isTeacherView
+                  ? `Personal outreach impact dynamically scaled to your ${outreachStats.assignedCount} assigned children`
+                  : `Dynamic outreach impact for ${activeChurch} across assigned teachers and children`}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {outreachStats.isTeacherView ? (
+                <>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full border border-indigo-100">
+                    <Users size={13} className="text-indigo-500" />
+                    Your Roster: {outreachStats.assignedCount} Children
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-slate-50 text-slate-600 text-xs font-bold rounded-full border border-slate-200">
+                    2 visits &bull; 4 calls / kid
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full border border-indigo-100">
+                    <Users size={13} className="text-indigo-500" />
+                    {outreachStats.totalChurchKids} Children &bull; {outreachStats.totalEligibleTeachers} Teachers
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-violet-50 text-violet-700 text-xs font-bold rounded-full border border-violet-100">
+                    ~{outreachStats.avgKidsPerTeacher} kids / teacher
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-blue-500 uppercase">
-                  Visits Done
-                </p>
-                <h4 className="text-2xl font-bold text-slate-800">
-                  {outreachStats.totalVisitsDone}{" "}
-                  <span className="text-sm text-slate-400 font-medium">
-                    / {outreachStats.visitTarget}
-                  </span>
-                </h4>
+            {/* Visits */}
+            <div className="p-4 bg-blue-50/80 rounded-2xl border border-blue-100 flex flex-col justify-between space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">
+                    Visits Done
+                  </p>
+                  <h4 className="text-2xl font-bold text-slate-800 mt-0.5">
+                    {outreachStats.totalVisitsDone}{" "}
+                    <span className="text-sm text-slate-400 font-medium">
+                      / {outreachStats.visitTarget}
+                    </span>
+                  </h4>
+                </div>
+                <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-blue-500 shadow-xs">
+                  <MapPin size={20} />
+                </div>
               </div>
-              <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-blue-500 shadow-sm">
-                <MapPin size={20} />
-              </div>
-            </div>
-
-            <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-emerald-600 uppercase">
-                  Calls Reached
-                </p>
-                <h4 className="text-2xl font-bold text-slate-800">
-                  {outreachStats.totalCallsDone}{" "}
-                  <span className="text-sm text-slate-400 font-medium">
-                    / {outreachStats.callTarget}
-                  </span>
-                </h4>
-              </div>
-              <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-emerald-500 shadow-sm">
-                <Phone size={20} />
+              <div className="space-y-1.5">
+                <div className="w-full bg-blue-100/70 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-blue-600 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${outreachStats.visitProgressPct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500">
+                  <span>{outreachStats.uniqueVisitedKidsCount} of {outreachStats.assignedCount} kids reached</span>
+                  <span className="text-blue-700 font-bold">{outreachStats.visitProgressPct}% goal</span>
+                </div>
               </div>
             </div>
 
-            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-amber-600 uppercase">
-                  Prayer Time
-                </p>
-                <h4 className="text-2xl font-bold text-slate-800">
-                  {formatDuration(outreachStats.totalPrayerMins)}{" "}
-                  <span className="text-sm text-slate-400 font-medium">
-                    / {formatDuration(outreachStats.prayerTargetMins)}
-                  </span>
-                </h4>
+            {/* Calls */}
+            <div className="p-4 bg-emerald-50/80 rounded-2xl border border-emerald-100 flex flex-col justify-between space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">
+                    Calls Reached
+                  </p>
+                  <h4 className="text-2xl font-bold text-slate-800 mt-0.5">
+                    {outreachStats.totalCallsDone}{" "}
+                    <span className="text-sm text-slate-400 font-medium">
+                      / {outreachStats.callTarget}
+                    </span>
+                  </h4>
+                </div>
+                <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-emerald-500 shadow-xs">
+                  <Phone size={20} />
+                </div>
               </div>
-              <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-amber-500 shadow-sm">
-                <Hourglass size={20} />
+              <div className="space-y-1.5">
+                <div className="w-full bg-emerald-100/70 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-emerald-600 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${outreachStats.callProgressPct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500">
+                  <span>{outreachStats.uniqueCalledKidsCount} of {outreachStats.assignedCount} kids reached</span>
+                  <span className="text-emerald-700 font-bold">{outreachStats.callProgressPct}% goal</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Prayer */}
+            <div className="p-4 bg-amber-50/80 rounded-2xl border border-amber-100 flex flex-col justify-between space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">
+                    Prayer Time
+                  </p>
+                  <h4 className="text-2xl font-bold text-slate-800 mt-0.5">
+                    {formatDuration(outreachStats.totalPrayerMins)}{" "}
+                    <span className="text-sm text-slate-400 font-medium">
+                      / {formatDuration(outreachStats.prayerTargetMins)}
+                    </span>
+                  </h4>
+                </div>
+                <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center text-amber-500 shadow-xs">
+                  <Hourglass size={20} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="w-full bg-amber-100/70 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-amber-600 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${outreachStats.prayerProgressPct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500">
+                  <span>Dynamic targets update with roster</span>
+                  <span className="text-amber-700 font-bold">{outreachStats.prayerProgressPct}% goal</span>
+                </div>
               </div>
             </div>
           </div>

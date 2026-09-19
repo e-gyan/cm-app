@@ -26,9 +26,8 @@ import {
 import { motion } from "motion/react";
 import {
   addMember,
+  addMembers,
   saveAttendance,
-  
-  
   loadData,
   updateMember,
 } from "../services/storageService";
@@ -607,44 +606,49 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     }
   };
 
+  const parsedFirstTimerNames = useMemo(() => {
+    return newMemberName
+      .split(/[\n,]+/)
+      .map((n) => sanitizeInput(n).trim())
+      .filter((n) => n.length > 0);
+  }, [newMemberName]);
+
   const handleAddFNF = async () => {
-    if (!newMemberName.trim() || isSubmittingVisitor) return;
+    if (parsedFirstTimerNames.length === 0 || isSubmittingVisitor) return;
     setIsSubmittingVisitor(true);
     try {
-      const cleanName = sanitizeInput(newMemberName);
-      
       // Auto-assign from teacher's/currentUser's profile
       const targetChurch: Church = (currentUser?.assignedChurch && currentUser?.assignedChurch !== "All" && currentUser?.assignedChurch !== "CM")
         ? (currentUser.assignedChurch as Church)
         : (effectiveChurch as Church || "UJ");
       const targetBranchId = currentUser?.branchId || "";
       const targetZoneId = currentUser?.zoneId || "";
-      const determinedGender = determineGenderByName(cleanName);
-      
-      const memberId = crypto.randomUUID();
-      const newMember: Member = {
-        id: memberId,
+
+      const newMembers: Member[] = parsedFirstTimerNames.map((cleanName) => ({
+        id: crypto.randomUUID(),
         name: cleanName,
         type: MemberType.VISITOR, // Role category: First Timer
         assignedChurch: targetChurch,
         churchId: targetChurch,
         passcode: "",
         status: MemberStatus.ACTIVE,
-        gender: determinedGender,
+        gender: determineGenderByName(cleanName),
         branchId: targetBranchId,
         zoneId: targetZoneId,
         assignedTeacherId: currentUser?.id, // Hooked directly to logged-in teacher
         addedAt: Date.now()
-      };
-      
-      addMember(newMember);
+      }));
+
+      await addMembers(newMembers);
 
       const newSet = new Set(presentIds);
-      newSet.add(newMember.id);
-      setPresentIds(newSet);
+      const newSMap = { ...serviceMap };
+      newMembers.forEach((m) => {
+        newSet.add(m.id);
+        newSMap[m.id] = currentService;
+      });
 
-      // Add to current service map
-      const newSMap = { ...serviceMap, [newMember.id]: currentService };
+      setPresentIds(newSet);
       setServiceMap(newSMap);
 
       saveDraft(newSet, punctualIds, newSMap);
@@ -1063,21 +1067,48 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             
             <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
               <UserPlus className="text-indigo-600" size={22} />
-              Add New First Timer
+              Add First Timer(s)
             </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Add a new First Timer to the directory and mark them present for this Sunday ({formatDateDDMMYYYY(selectedDate)}).
+            <p className="text-xs text-slate-500 mb-3">
+              Add one or multiple First Timers to directory and mark them present for this Sunday ({formatDateDDMMYYYY(selectedDate)}). Type or paste names separated by new lines or commas.
             </p>
             
-            <input
-              type="text"
-              placeholder="First Timer's Full Name"
+            <textarea
+              rows={3}
+              placeholder={"Enter First Timer full name(s)\ne.g.\nKwame Mensah\nAma Osei\nKofi Boateng"}
               value={newMemberName}
               onChange={(e) => setNewMemberName(e.target.value)}
-              className="w-full p-3 border border-slate-200 rounded-xl mb-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium text-slate-700 bg-slate-50 placeholder:text-slate-400"
+              className="w-full p-3 border border-slate-200 rounded-xl mb-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium text-slate-700 bg-slate-50 placeholder:text-slate-400 text-sm resize-none"
               autoFocus
-              onKeyDown={(e) => e.key === "Enter" && handleAddFNF()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  handleAddFNF();
+                }
+              }}
             />
+
+            {parsedFirstTimerNames.length > 0 && (
+              <div className="mb-3 animate-in fade-in">
+                <div className="flex items-center justify-between text-[11px] text-slate-500 font-bold uppercase tracking-wider mb-1.5">
+                  <span>Detected Names ({parsedFirstTimerNames.length}):</span>
+                  {parsedFirstTimerNames.length > 1 && (
+                    <span className="text-indigo-600 font-semibold lowercase">all marked present</span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-slate-50 border border-slate-200/80 rounded-xl">
+                  {parsedFirstTimerNames.map((name, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 bg-white text-indigo-700 border border-indigo-200 rounded-lg shadow-2xs"
+                    >
+                      <UserPlus size={11} className="text-indigo-500 shrink-0" />
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Auto-assigned Profile Details */}
             <div className="bg-indigo-50/70 border border-indigo-100/80 rounded-2xl p-3 mb-4 space-y-2 text-xs">
@@ -1116,10 +1147,16 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               </button>
               <button
                 onClick={handleAddFNF}
-                disabled={!newMemberName.trim() || isSubmittingVisitor}
-                className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-colors shadow-lg shadow-indigo-100"
+                disabled={parsedFirstTimerNames.length === 0 || isSubmittingVisitor}
+                className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-colors shadow-lg shadow-indigo-100 flex items-center justify-center gap-1.5"
               >
-                {isSubmittingVisitor ? "Adding..." : "Add and Mark Present"}
+                {isSubmittingVisitor ? (
+                  "Adding & Marking..."
+                ) : parsedFirstTimerNames.length > 1 ? (
+                  `Add & Mark ${parsedFirstTimerNames.length} Present`
+                ) : (
+                  "Add and Mark Present"
+                )}
               </button>
             </div>
           </div>
