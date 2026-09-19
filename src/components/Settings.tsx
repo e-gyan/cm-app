@@ -1525,7 +1525,8 @@ const Settings: React.FC<SettingsProps> = ({
                     </div>
                   </div>
 
-                  <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                  {/* DESKTOP TABLE VIEW */}
+                  <div className="hidden md:block overflow-x-auto border border-slate-100 rounded-2xl">
                     <table className="w-full text-left border-collapse">
                       <thead className="bg-slate-50 text-slate-600 text-xs font-extrabold uppercase tracking-wide border-b border-slate-200">
                         <tr>
@@ -1615,6 +1616,85 @@ const Settings: React.FC<SettingsProps> = ({
                         ))}
                       </tbody>
                     </table>
+                  </div>
+
+                  {/* MOBILE CARD VIEW */}
+                  <div className="block md:hidden space-y-4">
+                    {APP_FEATURES_REGISTRY.filter((f) => {
+                      if (!permSearchQuery.trim()) return true;
+                      const q = permSearchQuery.toLowerCase();
+                      return (
+                        f.name.toLowerCase().includes(q) ||
+                        f.subfeatures.some((sf) => sf.name.toLowerCase().includes(q))
+                      );
+                    }).map((feature) => (
+                      <div key={feature.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="p-1.5 bg-indigo-100 text-indigo-700 rounded-lg">
+                            {React.createElement(getFeatureIconComponent(feature.iconName), { size: 16 })}
+                          </span>
+                          <h5 className="font-extrabold text-sm text-slate-800">{feature.name}</h5>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {ROLES_LIST.map((r) => {
+                            const active = hasRoleFeature(r.id, feature.id);
+                            return (
+                              <button
+                                key={r.id}
+                                onClick={() => toggleFeatureForRole(r.id, feature.id)}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors border ${
+                                  active
+                                    ? "bg-indigo-600 text-white border-indigo-600"
+                                    : "bg-slate-50 text-slate-500 border-slate-200"
+                                }`}
+                              >
+                                {r.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {feature.subfeatures.filter((sf) => {
+                          if (!permSearchQuery.trim()) return true;
+                          const q = permSearchQuery.toLowerCase();
+                          return sf.name.toLowerCase().includes(q) || feature.name.toLowerCase().includes(q);
+                        }).length > 0 && (
+                          <div className="space-y-4 pt-4 border-t border-slate-100">
+                            {feature.subfeatures
+                              .filter((sf) => {
+                                if (!permSearchQuery.trim()) return true;
+                                const q = permSearchQuery.toLowerCase();
+                                return sf.name.toLowerCase().includes(q) || feature.name.toLowerCase().includes(q);
+                              })
+                              .map((sf) => (
+                                <div key={sf.id} className="space-y-2">
+                                  <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                    <span className="text-slate-400">&bull;</span> {sf.name}
+                                  </div>
+                                  <div className="flex flex-wrap gap-2 pl-2">
+                                    {ROLES_LIST.map((r) => {
+                                      const active = hasRoleSubfeature(r.id, feature.id, sf.id);
+                                      return (
+                                        <button
+                                          key={r.id}
+                                          onClick={() => toggleSubfeatureForRole(r.id, feature.id, sf.id)}
+                                          className={`px-2 py-1.5 rounded-md border text-[10px] font-bold transition-colors ${
+                                            active
+                                              ? "bg-indigo-100 text-indigo-700 border-indigo-200"
+                                              : "bg-slate-50 text-slate-400 border-slate-200"
+                                          }`}
+                                        >
+                                          {r.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

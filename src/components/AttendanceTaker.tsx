@@ -1055,7 +1055,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
       {isAddingFNF && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 animate-in zoom-in-95 relative border border-slate-100">
+          <div className="bg-white w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl p-6 animate-in zoom-in-95 relative border border-slate-100">
             <button
               onClick={() => setIsAddingFNF(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-full hover:bg-slate-100"

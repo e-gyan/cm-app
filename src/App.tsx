@@ -416,12 +416,12 @@ const App: React.FC = () => {
   const isOutreachEnabledForUser = data.settings.features?.[currentUser.assignedChurch]?.outreach ?? false;
 
   const showOutreach =
-    hasPermission("outreach") ||
+    hasPermission("Outreach") ||
     normalizedName.includes("maxeen") ||
     isOutreachEnabledForUser;
-  const showFinances = hasPermission("finances");
-  const showAnalytics = hasPermission("analytics") || currentUser.role === "TEACHER" || currentUser.type === "Teacher";
-  const showSettings = isSuperAdminUser || hasPermission("settings");
+  const showFinances = hasPermission("Finances");
+  const showAnalytics = hasPermission("Analytics") || currentUser.role === "TEACHER" || currentUser.type === "Teacher";
+  const showSettings = isSuperAdminUser || hasPermission("Settings");
 
   const NavItem = ({
     view,
