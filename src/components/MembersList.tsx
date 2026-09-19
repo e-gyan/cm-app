@@ -228,53 +228,59 @@ const MembersList: React.FC<MembersListProps> = ({
     e.preventDefault();
     if (!bulkNames.trim()) return;
 
-    setIsBulkAdding(true);
     const names = bulkNames
       .split(/\r?\n|,/)
       .map((n) => n.trim())
       .filter((n) => n.length > 0);
 
+    setBulkNames("");
+    setIsBulkAddModalOpen(false);
+
     let addedCount = 0;
     for (const name of names) {
       const mId = crypto.randomUUID();
-      const newMember = { id: mId, name: name, type: MemberType.MEMBER, churchId: activeChurch === "CM" ? "UJ" : activeChurch, passcode: "", status: MemberStatus.ACTIVE, addedAt: Date.now() };
-      await addMember(newMember);
-      // Ensure branch and zone are attached
-      await updateMember(newMember.id, { 
-        ...newMember,
+      const newMember = {
+        id: mId,
+        name: name,
+        type: MemberType.MEMBER,
+        churchId: activeChurch === "CM" ? "UJ" : activeChurch,
+        assignedChurch: activeChurch === "CM" ? Church.UJ : (activeChurch as Church),
+        passcode: "",
+        status: MemberStatus.ACTIVE,
+        addedAt: Date.now(),
         branchId: activeBranchId === "ALL" ? "" : activeBranchId,
         zoneId: currentUser.zoneId || "",
-       });
+      };
+      addMember(newMember as Member);
       addedCount++;
     }
 
-    setIsBulkAdding(false);
-    setBulkNames("");
-    setIsBulkAddModalOpen(false);
     onUpdate();
-    alert(`Successfully added ${addedCount} members.`);
+    setToastMessage({ title: "Members Added", message: `Successfully added ${addedCount} members.` });
+    setTimeout(() => setToastMessage(null), 5000);
   };
 
   const handleBulkAssignSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedIds.size === 0) return;
 
-    setIsBulkAssigning(true);
+    const ids = Array.from(selectedIds);
+    setIsBulkAssignModalOpen(false);
+    setSelectedIds(new Set());
+
     let updatedCount = 0;
-    
-    for (const id of selectedIds) {
+    for (const id of ids) {
       const member = data.members.find((m) => m.id === id);
       if (member) {
-        await updateMember(id, { ...member, zoneId: bulkAssignData.zoneId,
+        updateMember(id, {
+          ...member,
+          zoneId: bulkAssignData.zoneId,
           branchId: bulkAssignData.branchId,
-         });
+        });
         updatedCount++;
       }
     }
 
-    setIsBulkAssigning(false);
-    setIsBulkAssignModalOpen(false);
-    setSelectedIds(new Set());
     onUpdate();
     setToastMessage({ title: "Assignment Complete", message: `Successfully assigned ${updatedCount} members.` });
     setTimeout(() => setToastMessage(null), 5000);
@@ -284,21 +290,20 @@ const MembersList: React.FC<MembersListProps> = ({
     e.preventDefault();
     if (selectedIds.size === 0 || !bulkGenderValue) return;
 
-    setIsBulkGendering(true);
+    const ids = Array.from(selectedIds);
+    const gender = bulkGenderValue as "MALE" | "FEMALE";
+    setIsBulkGenderModalOpen(false);
+    setSelectedIds(new Set());
+
     let updatedCount = 0;
-    
-    for (const id of selectedIds) {
+    for (const id of ids) {
       const member = data.members.find((m) => m.id === id);
       if (member) {
-        await updateMember(id, { ...member, gender: bulkGenderValue as "MALE" | "FEMALE",
-         });
+        updateMember(id, { ...member, gender });
         updatedCount++;
       }
     }
 
-    setIsBulkGendering(false);
-    setIsBulkGenderModalOpen(false);
-    setSelectedIds(new Set());
     onUpdate();
     setToastMessage({ title: "Gender Update Complete", message: `Successfully updated gender for ${updatedCount} members.` });
     setTimeout(() => setToastMessage(null), 5000);
@@ -318,6 +323,8 @@ const MembersList: React.FC<MembersListProps> = ({
           ...original,
           ...formData,
           name: cleanName,
+          // Hooked assignedTeacherId must never be lost when status, church, or type changes
+          assignedTeacherId: original.assignedTeacherId || (formData as any).assignedTeacherId,
         } as Member;
 
         // Check for promotion/transfer
@@ -341,20 +348,34 @@ const MembersList: React.FC<MembersListProps> = ({
           updatedMember.lastActivationDate = new Date().toISOString();
         }
 
-        await updateMember(editingId, updatedMember);
+        setIsEditModalOpen(false);
+        setEditingId(null);
+        onUpdate();
+        updateMember(editingId, updatedMember).catch(console.error);
+        return;
       }
       setIsEditModalOpen(false);
     } else {
       // CREATE NEW
       const mId = crypto.randomUUID();
-      const newMember = { id: mId, name: cleanName, type: formData.type!, churchId: formData.assignedChurch!, passcode: formData.birthDate!, status: formData.status!, addedAt: Date.now() };
-      await addMember(newMember as Member);
-      // Update with extra fields that addMember doesn't support by default args
-      await updateMember(mId, { ...newMember,
-        ...formData,
+      const newMember: Member = {
+        id: mId,
         name: cleanName,
-      } as Member);
+        type: formData.type || MemberType.MEMBER,
+        assignedChurch: formData.assignedChurch || (activeChurch === "CM" ? Church.UJ : (activeChurch as Church)),
+        churchId: formData.assignedChurch || (activeChurch === "CM" ? "UJ" : activeChurch),
+        status: formData.status || MemberStatus.ACTIVE,
+        birthDate: formData.birthDate,
+        passcode: formData.birthDate || "",
+        addedAt: Date.now(),
+        ...formData,
+      } as Member;
+
       setIsCreateModalOpen(false);
+      setEditingId(null);
+      onUpdate();
+      addMember(newMember).catch(console.error);
+      return;
     }
     setEditingId(null);
     onUpdate();
@@ -366,9 +387,10 @@ const MembersList: React.FC<MembersListProps> = ({
 
   const confirmArchiveSingle = async () => {
     if (memberToArchive) {
-      await updateMember(memberToArchive.id, { ...memberToArchive, status: MemberStatus.ARCHIVED  });
+      const target = memberToArchive;
       setMemberToArchive(null);
       onUpdate();
+      updateMember(target.id, { ...target, status: MemberStatus.ARCHIVED }).catch(console.error);
     }
   };
 
@@ -407,29 +429,33 @@ const MembersList: React.FC<MembersListProps> = ({
           promotion,
         ],
       };
-      await updateMember(transferMember.id, updatedMember as Member);
+      const mId = transferMember.id;
       setTransferMember(null);
       setTransferTarget("");
       onUpdate();
+      updateMember(mId, updatedMember as Member).catch(console.error);
     } else {
       setTransferMember(null);
       setTransferTarget("");
     }
   };
   const restoreMember = async (member: Member) => {
-    await updateMember(member.id, {  ...member, status: MemberStatus.ACTIVE  });
+    updateMember(member.id, {  ...member, status: MemberStatus.ACTIVE  }).catch(console.error);
     onUpdate();
   };
   
   const handleVacationSave = async () => {
     if (vacationMember) {
-      await updateMember(vacationMember.id, {
-        ...vacationMember,
-        vacationStartDate: vacationStart,
-        vacationEndDate: vacationEnd
-      });
+      const target = vacationMember;
+      const start = vacationStart;
+      const end = vacationEnd;
       setVacationMember(null);
       onUpdate();
+      updateMember(target.id, {
+        ...target,
+        vacationStartDate: start,
+        vacationEndDate: end
+      }).catch(console.error);
     }
   };
 

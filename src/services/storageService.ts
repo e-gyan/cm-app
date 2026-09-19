@@ -254,7 +254,7 @@ const updateMainDoc = async (updates: Partial<AppData>): Promise<void> => {
       } finally {
         resolve();
       }
-    }, 150);
+    }, 50);
   });
 };
 
@@ -271,7 +271,7 @@ export const saveMembers = async (members: Member[]) => {
   memoryCache = { ...current, members: newMembers };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ members: newMembers });
+  updateMainDoc({ members: newMembers }).catch(console.error);
 };
 
 export const addMember = async (member: Member) => {
@@ -280,7 +280,7 @@ export const addMember = async (member: Member) => {
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ members });
+  updateMainDoc({ members }).catch(console.error);
 };
 
 export const updateMember = async (id: string, updates: Partial<Member>) => {
@@ -289,7 +289,7 @@ export const updateMember = async (id: string, updates: Partial<Member>) => {
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ members });
+  updateMainDoc({ members }).catch(console.error);
   return { success: true, message: "" };
 };
 
@@ -299,7 +299,7 @@ export const deleteMember = async (id: string) => {
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ members });
+  updateMainDoc({ members }).catch(console.error);
   return { success: true, message: "" };
 };
 
@@ -311,7 +311,7 @@ export const bulkArchiveMembers = async (ids: string[]) => {
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ members });
+  updateMainDoc({ members }).catch(console.error);
   return { success: true, message: "" };
 };
 
@@ -321,7 +321,7 @@ export const bulkDeleteMembers = async (ids: string[]) => {
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ members });
+  updateMainDoc({ members }).catch(console.error);
   return { success: true, message: "" };
 };
 
@@ -337,7 +337,7 @@ export const saveAttendance = async (id: string, records: AttendanceRecord[]) =>
   memoryCache = { ...current, attendance: att };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ attendance: att });
+  updateMainDoc({ attendance: att }).catch(console.error);
 };
 
 export const deleteAttendanceRecord = async (id: string) => {
@@ -346,7 +346,7 @@ export const deleteAttendanceRecord = async (id: string) => {
   memoryCache = { ...current, attendance };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ attendance });
+  updateMainDoc({ attendance }).catch(console.error);
 };
 
 // Optimistic Settings Operations
@@ -427,7 +427,7 @@ export const deleteTransaction = async (id: string) => {
   memoryCache = { ...current, transactions };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ transactions });
+  updateMainDoc({ transactions }).catch(console.error);
 };
 
 // Optimistic Outreach Operations
@@ -441,7 +441,7 @@ export const saveOutreachSession = async (session: OutreachSession) => {
   memoryCache = { ...current, outreachSessions };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ outreachSessions });
+  updateMainDoc({ outreachSessions }).catch(console.error);
 };
 
 export const deleteOutreachSession = async (id: string) => {
@@ -450,7 +450,7 @@ export const deleteOutreachSession = async (id: string) => {
   memoryCache = { ...current, outreachSessions };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ outreachSessions });
+  updateMainDoc({ outreachSessions }).catch(console.error);
 };
 
 export const savePrayerSlot = async (slot: PrayerSlot) => {
@@ -463,7 +463,7 @@ export const savePrayerSlot = async (slot: PrayerSlot) => {
   memoryCache = { ...current, prayerSchedule };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ prayerSchedule });
+  updateMainDoc({ prayerSchedule }).catch(console.error);
 };
 
 export const deletePrayerSlot = async (id: string) => {
@@ -472,7 +472,7 @@ export const deletePrayerSlot = async (id: string) => {
   memoryCache = { ...current, prayerSchedule };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ prayerSchedule });
+  updateMainDoc({ prayerSchedule }).catch(console.error);
 };
 
 export const clearAllData = async () => {

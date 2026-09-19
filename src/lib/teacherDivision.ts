@@ -51,6 +51,31 @@ export const isStaffOrTeacher = (m: Member): boolean => {
   return Boolean(isTypeTeacher || isRoleTeacher);
 };
 
+// Persistent teacher hook helper
+export const getHookedTeacherId = (member: Member): string | undefined => {
+  if (member.assignedTeacherId) return member.assignedTeacherId;
+  if (typeof window !== "undefined") {
+    try {
+      const stored = localStorage.getItem(`cm_hooked_teacher_${member.id}`);
+      if (stored) return stored;
+    } catch {
+      // ignore
+    }
+  }
+  return undefined;
+};
+
+export const setHookedTeacherId = (member: Member, teacherId: string): void => {
+  member.assignedTeacherId = teacherId;
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(`cm_hooked_teacher_${member.id}`, teacherId);
+    } catch {
+      // ignore
+    }
+  }
+};
+
 export const calculateChurchDivisions = (
   allMembers: Member[],
   targetChurches: string[] = ["UJ", "LJ", "K", "I", "N"],
@@ -161,38 +186,54 @@ export const calculateChurchDivisions = (
     const unassignedMembers: Member[] = [];
 
     if (totalEligibleTeachers > 0) {
-      // 1. Fair share of FNF: distribute round-robin so each teacher gets an equal share
-      fnfList.forEach((member, i) => {
-        const teacherIndex = i % totalEligibleTeachers;
-        assignments[teacherIndex].members.push(member);
+      const teacherMap = new Map<string, TeacherAssignment>();
+      assignments.forEach((asg) => teacherMap.set(asg.teacher.id, asg));
+
+      // 1. Separate hooked members vs unhooked members
+      const unhookedFnf: Member[] = [];
+      const unhookedVisitor: Member[] = [];
+      const unhookedRegular: Member[] = [];
+      const unhookedOther: Member[] = [];
+
+      pureMembers.forEach((member) => {
+        const hookedId = getHookedTeacherId(member);
+        if (hookedId && teacherMap.has(hookedId)) {
+          // Permanently hooked to this teacher
+          member.assignedTeacherId = hookedId;
+          teacherMap.get(hookedId)!.members.push(member);
+        } else {
+          if (member.type === MemberType.FNF) unhookedFnf.push(member);
+          else if (member.type === MemberType.VISITOR || member.type === MemberType.NOT_MEMBER) unhookedVisitor.push(member);
+          else if (member.type === MemberType.MEMBER) unhookedRegular.push(member);
+          else unhookedOther.push(member);
+        }
       });
 
-      // 2. Fair share of First Timers (Visitors): distribute round-robin with offset
-      const visitorOffset = fnfList.length % totalEligibleTeachers;
-      visitorList.forEach((member, i) => {
-        const teacherIndex = (visitorOffset + i) % totalEligibleTeachers;
-        assignments[teacherIndex].members.push(member);
-      });
+      // Helper to assign a member to the teacher with the least members (keeping strictly balanced)
+      // and hook them permanently
+      const assignAndHook = (member: Member) => {
+        // Sort teachers by current member count ascending, then by name for deterministic stability
+        assignments.sort(
+          (a, b) => a.members.length - b.members.length || a.teacher.name.localeCompare(b.teacher.name)
+        );
+        const targetAsg = assignments[0];
+        setHookedTeacherId(member, targetAsg.teacher.id);
+        targetAsg.members.push(member);
+      };
 
-      // 3. Regular Members: distribute round-robin with offset to keep total count strictly balanced (diff <= 1)
-      const memberOffset = (fnfList.length + visitorList.length) % totalEligibleTeachers;
-      membersList.forEach((member, i) => {
-        const teacherIndex = (memberOffset + i) % totalEligibleTeachers;
-        assignments[teacherIndex].members.push(member);
-      });
-
-      // 4. Any other non-staff children
-      const otherOffset = (fnfList.length + visitorList.length + membersList.length) % totalEligibleTeachers;
-      otherList.forEach((member, i) => {
-        const teacherIndex = (otherOffset + i) % totalEligibleTeachers;
-        assignments[teacherIndex].members.push(member);
-      });
+      // Assign remaining unhooked members in priority order so new teachers get a fair share
+      unhookedFnf.forEach(assignAndHook);
+      unhookedVisitor.forEach(assignAndHook);
+      unhookedRegular.forEach(assignAndHook);
+      unhookedOther.forEach(assignAndHook);
 
       // Sort each teacher's assigned members alphabetically for clean display and sync count
       assignments.forEach((asg) => {
         asg.members.sort((a, b) => a.name.localeCompare(b.name));
         asg.count = asg.members.length;
       });
+      // Ensure stable display order of teachers by name
+      assignments.sort((a, b) => a.teacher.name.localeCompare(b.teacher.name));
     } else {
       unassignedMembers.push(...pureMembers);
     }

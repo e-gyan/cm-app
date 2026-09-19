@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { AppData, Church, Member, MemberType, MemberStatus } from "../types";
+import { calculateChurchDivisions } from "../lib/teacherDivision";
 import {
   AreaChart,
   Area,
@@ -231,6 +232,74 @@ const DemographicsChart = ({
       .style("font-size", "12px")
       .style("box-shadow", "0 4px 6px -1px rgb(0 0 0 / 0.1)");
 
+const AGE_COLORS_BY_CHURCH: Record<string, Record<string, string>> = {
+  I: {
+    "0 yrs": "#ec4899",
+    "1 yr": "#a855f7",
+    "2 yrs": "#6366f1",
+    "Outliers (3+)": "#f97316",
+    "Unknown": "#94a3b8",
+  },
+  N: {
+    "0 yrs": "#ec4899",
+    "1 yr": "#a855f7",
+    "2 yrs": "#6366f1",
+    "Outliers (3+)": "#f97316",
+    "Unknown": "#94a3b8",
+  },
+  K: {
+    "< 3": "#06b6d4",
+    "3 yrs": "#3b82f6",
+    "4 yrs": "#8b5cf6",
+    "5 yrs": "#ec4899",
+    "Outliers (6+)": "#f97316",
+    "Unknown": "#94a3b8",
+  },
+  LJ: {
+    "< 6": "#06b6d4",
+    "6 yrs": "#10b981",
+    "7 yrs": "#3b82f6",
+    "8 yrs": "#8b5cf6",
+    "Outliers (9+)": "#f97316",
+    "Unknown": "#94a3b8",
+  },
+  UJ: {
+    "< 9": "#06b6d4",
+    "9 yrs": "#10b981",
+    "10 yrs": "#3b82f6",
+    "11 yrs": "#6366f1",
+    "12 yrs": "#a855f7",
+    "Outliers (13+)": "#f97316",
+    "Unknown": "#94a3b8",
+  },
+  All: {
+    "I (0-2)": "#ec4899",
+    "K (3-5)": "#06b6d4",
+    "LJ (6-8)": "#10b981",
+    "UJ (9-12)": "#6366f1",
+    "Teens (13+)": "#f97316",
+    "Unknown": "#94a3b8",
+  },
+};
+
+const DEFAULT_AGE_PALETTE = [
+  "#6366f1",
+  "#06b6d4",
+  "#10b981",
+  "#f59e0b",
+  "#ec4899",
+  "#8b5cf6",
+  "#3b82f6",
+  "#f97316",
+  "#94a3b8",
+];
+
+const getAgeGroupColor = (group: string, church: string, index: number): string => {
+  const churchMap = AGE_COLORS_BY_CHURCH[church] || AGE_COLORS_BY_CHURCH.All;
+  if (churchMap && churchMap[group]) return churchMap[group];
+  return DEFAULT_AGE_PALETTE[index % DEFAULT_AGE_PALETTE.length];
+};
+
     svg
       .selectAll("mybar")
       .data(ageData)
@@ -240,12 +309,19 @@ const DemographicsChart = ({
       .attr("y", height)
       .attr("width", x.bandwidth())
       .attr("height", 0)
-      .attr("fill", "#8b5cf6")
+      .attr("fill", (d, i) => getAgeGroupColor(d.group, effectiveChurch, i))
       .attr("rx", 4)
       .on("mouseover", (event, d) => {
+        const idx = ageData.findIndex((a) => a.group === d.group);
+        const color = getAgeGroupColor(d.group, effectiveChurch, idx >= 0 ? idx : 0);
         tooltip.transition().duration(200).style("opacity", 1);
         tooltip
-          .html(`<b>${d.group}</b>: ${d.count} members`)
+          .html(`
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="width:10px;height:10px;border-radius:50%;background:${color};display:inline-block"></span>
+              <span><b>${d.group}</b>: ${d.count} members</span>
+            </div>
+          `)
           .style("left", event.pageX + 10 + "px")
           .style("top", event.pageY - 28 + "px");
       })
@@ -275,159 +351,6 @@ const DemographicsChart = ({
         className="w-full h-full"
         style={{ maxHeight: "250px" }}
       ></svg>
-    </div>
-  );
-};
-
-const AttendanceHeatmap = ({
-  year,
-  attendance,
-  effectiveChurch,
-}: {
-  year: number;
-  attendance: any[];
-  effectiveChurch: string;
-}) => {
-  const records =
-    effectiveChurch === "All"
-      ? attendance
-      : attendance.filter((a) => a.churchId === effectiveChurch);
-
-  const attendanceMap = new Map<string, { count: number }>();
-
-  records.forEach((r) => {
-    const d = new Date(r.date);
-    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const count = r.presentMemberIds?.length || 0;
-
-    if (attendanceMap.has(dateStr)) {
-      attendanceMap.get(dateStr)!.count += count;
-    } else {
-      attendanceMap.set(dateStr, { count });
-    }
-  });
-
-  const startDate = new Date(year, 0, 1);
-  const endDate = new Date(year, 11, 31);
-
-  const days = [];
-  let current = new Date(startDate);
-  while (current <= endDate) {
-    const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
-    days.push({
-      date: new Date(current),
-      dateStr,
-      attendance: attendanceMap.get(dateStr),
-    });
-    current.setDate(current.getDate() + 1);
-  }
-
-  const values = Array.from(attendanceMap.values())
-    .map((v) => v.count)
-    .filter((c) => c > 0);
-  const maxVal = values.length > 0 ? Math.max(...values) : 1;
-  const minVal = values.length > 0 ? Math.min(...values) : 1;
-
-  const getColor = (count?: number) => {
-    if (count === undefined) return "bg-slate-100";
-    if (count === 0) return "bg-slate-100"; // Or another color if zero is considered an event
-
-    const ratio = (count - minVal) / (maxVal - minVal || 1);
-    if (ratio < 0.2) return "bg-indigo-300";
-    if (ratio < 0.5) return "bg-indigo-400";
-    if (ratio < 0.8) return "bg-indigo-500";
-    return "bg-indigo-700";
-  };
-
-  const startWeekDay = startDate.getDay();
-  const weeks: any[][] = [];
-  let currentWeek: any[] = [];
-
-  for (let i = 0; i < startWeekDay; i++) {
-    currentWeek.push(null);
-  }
-
-  days.forEach((day) => {
-    currentWeek.push(day);
-    if (currentWeek.length === 7) {
-      weeks.push(currentWeek);
-      currentWeek = [];
-    }
-  });
-  if (currentWeek.length > 0) {
-    while (currentWeek.length < 7) currentWeek.push(null);
-    weeks.push(currentWeek);
-  }
-
-  return (
-    <div className="overflow-x-auto hide-scrollbar py-2">
-      <div className="min-w-fit flex">
-        <div className="flex flex-col text-[10px] text-slate-400 font-medium justify-between pr-2 py-1 select-none h-32">
-          <span className="h-4 flex items-center">Sun</span>
-          <span className="h-4 flex items-center">Mon</span>
-          <span className="h-4 flex items-center">Tue</span>
-          <span className="h-4 flex items-center">Wed</span>
-          <span className="h-4 flex items-center">Thu</span>
-          <span className="h-4 flex items-center">Fri</span>
-          <span className="h-4 flex items-center">Sat</span>
-        </div>
-
-        <div className="flex gap-1 relative h-32">
-          {weeks.map((week, i) => (
-            <div key={i} className="flex flex-col gap-1">
-              {week.map((day, j) => {
-                if (!day)
-                  return (
-                    <div
-                      key={j}
-                      className="w-4 h-4 rounded-sm bg-transparent"
-                    ></div>
-                  );
-                const isLow =
-                  day.attendance && day.attendance.count < maxVal * 0.25;
-
-                return (
-                  <div
-                    key={j}
-                    className={`w-4 h-4 rounded-sm ${getColor(day.attendance?.count)} 
-                                            ${isLow ? "ring-2 ring-red-400 ring-offset-1" : ""} 
-                                            hover:ring-2 hover:ring-indigo-500 transition-all group relative cursor-pointer`}
-                  >
-                    <div className="hidden group-hover:block absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded-md whitespace-nowrap z-50">
-                      <div className="font-bold">{day.date.toDateString()}</div>
-                      {day.attendance ? (
-                        <div>{day.attendance.count} members</div>
-                      ) : (
-                        <div>No Records</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-        <div className="flex items-center gap-2">
-          <span>Less</span>
-          <div className="flex gap-1">
-            <div className="w-4 h-4 rounded-sm bg-slate-100"></div>
-            <div className="w-4 h-4 rounded-sm bg-indigo-300"></div>
-            <div className="w-4 h-4 rounded-sm bg-indigo-400"></div>
-            <div className="w-4 h-4 rounded-sm bg-indigo-500"></div>
-            <div className="w-4 h-4 rounded-sm bg-indigo-700"></div>
-          </div>
-          <span>More</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1">
-            <div className="w-3 h-3 border-2 border-red-400 rounded-sm"></div>{" "}
-            Lowest 25% Participation
-          </span>
-        </div>
-      </div>
     </div>
   );
 };
@@ -478,14 +401,21 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
     sessionStorage.setItem("analytics_churchFilter", adminFilterChurch);
   }, [adminFilterChurch]);
 
-  // AI State
-  const [aiInsight, setAiInsight] = useState<string>("");
-  const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  // Teacher selection for Outreach Intelligence
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string>(
+    () => currentUser?.id || ""
+  );
   const [chartViewMode, setChartViewMode] = useState<"ATTENDANCE" | "GENDER">("ATTENDANCE");
   const [selectedChartDate, setSelectedChartDate] = useState<{
     date: string;
     presentIds: string[];
   } | null>(null);
+
+  useEffect(() => {
+    if (currentUser?.id && !selectedTeacherId) {
+      setSelectedTeacherId(currentUser.id);
+    }
+  }, [currentUser?.id, selectedTeacherId]);
 
   // --- HELPERS ---
   const effectiveChurch = hasManagementView ? adminFilterChurch : activeChurch;
@@ -748,134 +678,73 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
     return months;
   }, [data.attendance, hasManagementView, availableChurches]);
 
-  // --- AI GENERATION ---
-  const generateInsight = async () => {
-    if (chartData.length < 2) {
-      setAiInsight(
-        "Not enough data points in this period to generate a trend analysis.",
-      );
-      return;
-    }
+  // Church divisions for teacher assignments
+  const divisions = useMemo(() => {
+    return calculateChurchDivisions(
+      data.members,
+      ["UJ", "LJ", "K", "I", "N"]
+    );
+  }, [data.members]);
 
-    setIsGenerating(true);
-    const { start, end } = getDateRange();
-    const dateRangeStr = `${start.toLocaleDateString()} to ${end.toLocaleDateString()}`;
-
-    const prompt = `
-        Act as a helpful ministry assistant.
-        Analyze this attendance data for the period "${dateRangeStr}" (Filter: ${timeRange}):
-        - Average Attendance: ${stats.avg}
-        - Growth vs previous half of period: ${stats.growth}%
-        - Retention Rate: ${stats.retention}%
-        - New First Timers avg: ${stats.newFaces}
-        - Data Points: ${JSON.stringify(chartData.map((d) => ({ date: d.date, total: d.Total })))}
-
-        Instructions:
-        1. Provide a simple, down-to-earth insight about the attendance trends specifically for this date range.
-        2. Keep it encouraging but honest. Focus on what the data actually says.
-        3. Keep it under 2 sentences. Be direct and easy to understand.
-      `;
-
-    let retryCount = 0;
-    const maxRetries = 3;
-
-    while (retryCount < maxRetries) {
-      try {
-        const res = await fetch("/api/generate-insight", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
-        });
-
-        if (!res.ok) {
-          const errorData = await res.json().catch(() => ({}));
-          let errorMsg = errorData.error || `HTTP error ${res.status}`;
-          if (typeof errorMsg === "object") errorMsg = JSON.stringify(errorMsg);
-          throw new Error(errorMsg);
-        }
-
-        const responseData = await res.json();
-        setAiInsight(responseData.text || "Could not generate insight.");
-        break; // Success, exit loop
-      } catch (e: any) {
-        console.error(`AI Gen Attempt ${retryCount + 1} Error:`, e);
-        retryCount++;
-
-        // Check for 503 or 429 errors (High Demand / Rate Limit)
-        const isOverloaded =
-          e.status === 503 ||
-          e.message?.includes("503") ||
-          e.status === 429 ||
-          e.message?.includes("429");
-
-        // Avoid retrying for 400 Bad Request (like missing API Keys)
-        const isBadRequest =
-          e.message?.includes("400") ||
-          e.message?.includes("API key is not configured");
-
-        if (isBadRequest) {
-          setAiInsight(e.message);
-          break;
-        }
-
-        if (isOverloaded && retryCount < maxRetries) {
-          // Exponential backoff: 1s, 2s...
-          await new Promise((res) => setTimeout(res, 1000 * retryCount));
-          continue;
-        }
-
-        if (retryCount === maxRetries) {
-          if (isOverloaded) {
-            setAiInsight(
-              "System is currently experiencing high traffic. Please try again in a minute.",
-            );
-          } else {
-            let cleanMsg = e.message;
-            try {
-              const parsed = JSON.parse(e.message);
-              if (parsed.error && parsed.error.message) {
-                cleanMsg = parsed.error.message;
-              }
-            } catch (err) {}
-            setAiInsight(`Could not generate insight: ${cleanMsg}`);
-          }
-        }
-      }
-    }
-    setIsGenerating(false);
-  };
-
-  // Debounced Effect to trigger AI when stats change
-  // We removed the auto-trigger to save API quotas
-  useEffect(() => {
-    // Clear the insight when data changes to let the user generate a new one manually
-    if (aiInsight && !aiInsight.includes("Traffic")) {
-      setAiInsight("");
-    }
-  }, [stats, timeRange, effectiveChurch]);
-
-  // 3. Outreach Intelligence
+  // 3. Outreach Intelligence (Focus per teacher's login & assigned children only)
   const outreachIntel = useMemo(() => {
     if (!isOutreachEnabled) return null;
 
     const { start, end } = getDateRange();
-    const ujMembers = data.members.filter(
-      (m) =>
-        (effectiveChurch === "All" || effectiveChurch === "CM" || m.assignedChurch === effectiveChurch) &&
-        [MemberType.MEMBER, MemberType.FNF].includes(m.type) &&
-        [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status),
-    );
-    const totalEligible = ujMembers.length;
 
-    // Visits in period
+    // Determine church for assignments
+    const churchKey =
+      effectiveChurch !== "All" && effectiveChurch !== "CM"
+        ? effectiveChurch
+        : currentUser.assignedChurch &&
+          currentUser.assignedChurch !== "All" &&
+          currentUser.assignedChurch !== "CM"
+        ? currentUser.assignedChurch
+        : "UJ";
+
+    const churchDiv =
+      divisions[churchKey] || divisions["UJ"] || Object.values(divisions)[0];
+    const availableAssignments = churchDiv ? churchDiv.assignments : [];
+    const availableTeachers = availableAssignments.map((a) => ({
+      id: a.teacher.id,
+      name: a.teacher.name,
+      assignedCount: a.count,
+    }));
+
+    // Find active assignment
+    let activeAssignment = availableAssignments.find(
+      (a) => a.teacher.id === selectedTeacherId
+    );
+    if (!activeAssignment && isTeacher) {
+      activeAssignment = availableAssignments.find(
+        (a) => a.teacher.id === currentUser.id
+      );
+    }
+    if (!activeAssignment && availableAssignments.length > 0) {
+      activeAssignment = availableAssignments[0];
+    }
+
+    const teacher = activeAssignment ? activeAssignment.teacher : currentUser;
+    const assignedMembers = activeAssignment ? activeAssignment.members : [];
+    const assignedMemberIds = new Set(assignedMembers.map((m) => m.id));
+    const totalEligible = assignedMembers.length;
+
+    // Visits in period for this teacher's assigned kids
     const visits = (data.outreachSessions || []).filter((s) => {
       const d = new Date(s.date);
-      return d >= start && d <= end && s.status === "COMPLETED";
+      return (
+        d >= start &&
+        d <= end &&
+        s.status === "COMPLETED" &&
+        (s.sessionType === "VISIT" || s.sessionType === "VISITATION" || !s.sessionType)
+      );
     });
 
     const visitedIds = new Set<string>();
     visits.forEach((s) =>
-      s.visitedMemberIds?.forEach((id) => visitedIds.add(id)),
+      s.visitedMemberIds?.forEach((id) => {
+        if (assignedMemberIds.has(id)) visitedIds.add(id);
+      })
     );
 
     const visitCoverage =
@@ -883,7 +752,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
         ? Math.round((visitedIds.size / totalEligible) * 100)
         : 0;
 
-    // Prayers in period
+    // Prayers in period for this teacher's assigned kids
     const prayers = (data.prayerSchedule || []).filter((s) => {
       const d = new Date(s.date);
       return d >= start && d <= end && s.isCompleted;
@@ -891,7 +760,9 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
 
     const prayedIds = new Set<string>();
     prayers.forEach((s) =>
-      s.assignedMemberIds.forEach((id) => prayedIds.add(id)),
+      s.assignedMemberIds?.forEach((id) => {
+        if (assignedMemberIds.has(id)) prayedIds.add(id);
+      })
     );
 
     const prayerCoverage =
@@ -900,17 +771,32 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
         : 0;
 
     // Insights
-    const notVisited = ujMembers.filter((m) => !visitedIds.has(m.id)).length;
-    const notPrayed = ujMembers.filter((m) => !prayedIds.has(m.id)).length;
+    const notVisited = assignedMembers.filter((m) => !visitedIds.has(m.id)).length;
+    const notPrayed = assignedMembers.filter((m) => !prayedIds.has(m.id)).length;
 
     return {
+      teacherId: teacher?.id || "",
+      teacherName: teacher?.name || "Teacher",
+      availableTeachers,
       visitCoverage,
       prayerCoverage,
       notVisited,
       notPrayed,
       totalEligible,
+      visitedCount: visitedIds.size,
+      prayedCount: prayedIds.size,
     };
-  }, [data, isTeacher, effectiveChurch, timeRange, selectedYear]);
+  }, [
+    data,
+    isOutreachEnabled,
+    divisions,
+    effectiveChurch,
+    currentUser,
+    selectedTeacherId,
+    isTeacher,
+    timeRange,
+    selectedYear,
+  ]);
 
   // 4. Financial Intelligence
   const financialIntel = useMemo(() => {
@@ -1334,38 +1220,6 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
               </p>
             </motion.div>
           </div>
-
-          {/* AI Insight Card */}
-          <div className="bg-indigo-900 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden flex flex-col justify-between min-h-[140px]">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-white opacity-5 rounded-full blur-2xl -translate-y-4 translate-x-4"></div>
-            <div>
-              <div className="flex justify-between items-start mb-2">
-                <h4 className="font-bold text-sm flex items-center gap-2">
-                  <Sparkles size={16} className="text-indigo-300" /> AI Insight
-                </h4>
-                <button
-                  onClick={generateInsight}
-                  disabled={isGenerating}
-                  className="p-1 hover:bg-white/10 rounded-full transition-colors disabled:opacity-50"
-                >
-                  <RefreshCw
-                    size={12}
-                    className={isGenerating ? "animate-spin" : ""}
-                  />
-                </button>
-              </div>
-              {isGenerating ? (
-                <div className="flex items-center gap-2 text-indigo-300 text-xs py-2">
-                  <Loader2 size={14} className="animate-spin" />
-                  <span>Analyzing trends...</span>
-                </div>
-              ) : (
-                <p className="text-xs text-indigo-100 leading-relaxed font-medium">
-                  {aiInsight || "Select a range to analyze."}
-                </p>
-              )}
-            </div>
-          </div>
         </div>
 
         {/* Attendance Chart */}
@@ -1552,25 +1406,6 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
           </div>
         </div>
 
-        {/* Attendance Heatmap */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-3 flex flex-col">
-          <div className="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-            <h3 className="font-bold text-slate-800">Participation Heatmap</h3>
-            <div className="text-xs text-slate-400">
-              Events and participation density for the selected year
-            </div>
-          </div>
-          <div className="w-full relative mt-2 bg-slate-50/50 p-4 rounded-xl border border-slate-100 overflow-x-auto hide-scrollbar">
-            <div className="min-w-[600px]">
-              <AttendanceHeatmap
-                year={selectedYear}
-                attendance={data.attendance}
-                effectiveChurch={effectiveChurch}
-              />
-            </div>
-          </div>
-        </div>
-
 
         {hasManagementView && branchGrowthData.length > 0 && (
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-3 flex flex-col overflow-hidden">
@@ -1736,10 +1571,42 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       {/* SECTION B: OUTREACH INTELLIGENCE */}
       {outreachIntel && (
         <div className="space-y-4">
-          <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2 px-1">
-            <HeartHandshake size={20} className="text-indigo-600" /> Outreach
-            Intelligence
-          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
+            <div>
+              <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                <HeartHandshake size={20} className="text-indigo-600" /> Outreach
+                Intelligence
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Targeted visitation & prayer metrics for assigned children
+              </p>
+            </div>
+
+            {hasManagementView && outreachIntel.availableTeachers.length > 0 ? (
+              <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-2xl border border-slate-200 shadow-sm">
+                <User size={15} className="text-indigo-600" />
+                <span className="text-xs font-semibold text-slate-500">Teacher:</span>
+                <select
+                  value={outreachIntel.teacherId}
+                  onChange={(e) => setSelectedTeacherId(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                >
+                  {outreachIntel.availableTeachers.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.assignedCount} kids)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-2xl">
+                <User size={14} className="text-indigo-600" />
+                <span className="text-xs font-bold text-indigo-700">
+                  {outreachIntel.teacherName} ({outreachIntel.totalEligible} assigned children)
+                </span>
+              </div>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Visits Card */}
@@ -1750,7 +1617,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                     Visitation Coverage
                   </h4>
                   <p className="text-xs text-slate-400">
-                    Unique kids visited in period
+                    Assigned kids visited in period
                   </p>
                 </div>
                 <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
@@ -1763,7 +1630,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                   {outreachIntel.visitCoverage}%
                 </span>
                 <span className="text-sm text-slate-400 mb-1.5 font-medium">
-                  of {outreachIntel.totalEligible} kids
+                  ({outreachIntel.visitedCount} of {outreachIntel.totalEligible} assigned kids)
                 </span>
               </div>
 
@@ -1772,8 +1639,14 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                   <Target size={14} />
                 </div>
                 <p className="text-xs text-slate-600">
-                  <b>{outreachIntel.notVisited} children</b> have not been
-                  visited in this period.
+                  {outreachIntel.totalEligible === 0 ? (
+                    <span>No children assigned to this teacher yet.</span>
+                  ) : (
+                    <span>
+                      <b>{outreachIntel.notVisited} assigned children</b> have not been
+                      visited in this period.
+                    </span>
+                  )}
                 </p>
               </div>
 
@@ -1787,7 +1660,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                 <div>
                   <h4 className="font-bold text-slate-700">Prayer Coverage</h4>
                   <p className="text-xs text-slate-400">
-                    Unique kids prayed for in period
+                    Assigned kids prayed for in period
                   </p>
                 </div>
                 <div className="p-2 bg-purple-50 text-purple-600 rounded-xl">
@@ -1800,7 +1673,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                   {outreachIntel.prayerCoverage}%
                 </span>
                 <span className="text-sm text-slate-400 mb-1.5 font-medium">
-                  of {outreachIntel.totalEligible} kids
+                  ({outreachIntel.prayedCount} of {outreachIntel.totalEligible} assigned kids)
                 </span>
               </div>
 
@@ -1809,8 +1682,14 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                   <Target size={14} />
                 </div>
                 <p className="text-xs text-slate-600">
-                  <b>{outreachIntel.notPrayed} children</b> pending prayer
-                  coverage.
+                  {outreachIntel.totalEligible === 0 ? (
+                    <span>No children assigned to this teacher yet.</span>
+                  ) : (
+                    <span>
+                      <b>{outreachIntel.notPrayed} assigned children</b> pending prayer
+                      coverage.
+                    </span>
+                  )}
                 </p>
               </div>
 

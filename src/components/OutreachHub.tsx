@@ -197,18 +197,17 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     });
   };
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = () => {
     if (!editingMember) return;
-    try {
-      await updateMember(editingMember.id, {
-        ...editingMember,
-        ...editFormData,
-      });
-      setEditingMember(null);
-      onUpdate();
-    } catch (e) {
-      console.error(e);
-    }
+    const updated: Member = {
+      ...editingMember,
+      ...editFormData,
+      assignedTeacherId: editingMember.assignedTeacherId,
+    };
+    setEditingMember(null);
+    updateMember(editingMember.id, updated)
+      .then(() => onUpdate())
+      .catch(console.error);
   };
 
   const divisions = useMemo(() => {
@@ -557,21 +556,14 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         "Are you sure you want to permanently delete this schedule?",
       )
     ) {
-      setLoadingId(id);
-      try {
-        await deleteOutreachSession(id);
-        setUnsavedChanges((prev) => {
-          const n = new Set(prev);
-          n.delete(id);
-          return n;
-        });
-        setLocalSessions((prev) => prev.filter(s => s.id !== id));
-        onUpdate();
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoadingId(null);
-      }
+      setUnsavedChanges((prev) => {
+        const n = new Set(prev);
+        n.delete(id);
+        return n;
+      });
+      setLocalSessions((prev) => prev.filter(s => s.id !== id));
+      onUpdate();
+      deleteOutreachSession(id).catch(console.error);
     }
   };
 
@@ -1194,7 +1186,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     setCallModal({ show: true, member, method });
   };
 
-  const confirmCallTrack = async (
+  const confirmCallTrack = (
     outcome: "REACHED" | "UNREACHABLE" | "PENDING",
   ) => {
     if (!callModal) return;
@@ -1213,9 +1205,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       notes: `Connected via ${method} - ${outcome}`,
       completedBy: currentUser.id,
     };
-    await saveOutreachSession(newSession);
     setCallModal(null);
-    onUpdate();
+    saveOutreachSession(newSession)
+      .then(() => onUpdate())
+      .catch(console.error);
   };
 
   return (
@@ -2048,29 +2041,13 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                   { teacher: Member; assignedKids: Member[] }
                 >();
 
-                teacherAssignments.forEach((a) => {
-                  churchTeachersMap.set(a.teacher.id, {
-                    teacher: a.teacher,
-                    assignedKids: a.members,
-                  });
-                });
-
-                data.members
-                  .filter(
-                    (m) =>
-                      m.assignedChurch === selectedProgressChurch &&
-                      (m.type === MemberType.TEACHER ||
-                        m.type === MemberType.HELPER ||
-                        m.role === "TEACHER" ||
-                        m.role === "BRANCH_COORDINATOR"),
-                  )
-                  .forEach((t) => {
-                    if (!churchTeachersMap.has(t.id)) {
-                      churchTeachersMap.set(t.id, {
-                        teacher: t,
-                        assignedKids: [],
-                      });
-                    }
+                teacherAssignments
+                  .filter((a) => a.members.length > 0)
+                  .forEach((a) => {
+                    churchTeachersMap.set(a.teacher.id, {
+                      teacher: a.teacher,
+                      assignedKids: a.members,
+                    });
                   });
 
                 // Completed sessions in current year for children in this church

@@ -52,6 +52,7 @@ export interface Member {
   lastActivationDate?: string;
   vacationStartDate?: string;
   vacationEndDate?: string;
+  assignedTeacherId?: string;
 }
 
 export interface Notification {
