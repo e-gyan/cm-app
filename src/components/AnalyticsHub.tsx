@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { AppData, Church, Member, MemberType, MemberStatus } from "../types";
+import { AppData, type Church, Member, MemberType, MemberStatus } from "../types";
 import { calculateChurchDivisions } from "../lib/teacherDivision";
 import {
   AreaChart,

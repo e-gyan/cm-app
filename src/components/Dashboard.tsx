@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { AppData, MemberType, MemberStatus, Church, Member } from "../types";
+import { AppData, MemberType, MemberStatus, type Church, Member } from "../types";
 import { calculateChurchDivisions } from "../lib/teacherDivision";
 import { updateTargets } from "../services/storageService";
 

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { AppData, Transaction, Church, Member } from "../types";
+import { AppData, Transaction, type Church, Member } from "../types";
 import { deleteTransaction, addTransaction } from "../services/storageService";
 import {
   Plus,

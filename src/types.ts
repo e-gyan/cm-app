@@ -17,7 +17,27 @@ export enum MemberStatus {
   VACATION = "Vacation"
 }
 
+export const Church = {
+  UJ: "UJ",
+  LJ: "LJ",
+  K: "K",
+  I: "I",
+  N: "N",
+  All: "All",
+  CM: "CM",
+} as const;
 export type Church = "UJ" | "LJ" | "K" | "I" | "N" | "All" | "CM";
+
+export const Role = {
+  BRANCH_COORDINATOR: "BRANCH_COORDINATOR",
+  DIRECTORATE_HEAD: "DIRECTORATE_HEAD",
+  ZONAL_HEAD: "ZONAL_HEAD",
+  ADMIN: "ADMIN",
+  SUPER_ADMIN: "SUPER_ADMIN",
+  NONE: "NONE",
+  TEACHER: "TEACHER",
+  VOLUNTEER: "VOLUNTEER",
+} as const;
 export type Role = "BRANCH_COORDINATOR" | "DIRECTORATE_HEAD" | "ZONAL_HEAD" | "ADMIN" | "SUPER_ADMIN" | "NONE" | "TEACHER" | "VOLUNTEER";
 export type ServiceType = "JOY" | "ENLARGEMENT" | "SPECIAL";
 export type NotificationType = "TRANSFER_REQUEST" | "BIRTHDAY" | "GENERAL" | "STATUS_CHANGE" | "PROMOTION" | "GENERAL_INFO";

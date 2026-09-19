@@ -4,8 +4,8 @@ import {
   Member,
   MemberType,
   MemberStatus,
-  Church,
-  Role,
+  type Church,
+  type Role,
   PromotionRecord,
 } from "../types";
 import {
@@ -244,7 +244,7 @@ const MembersList: React.FC<MembersListProps> = ({
         name: name,
         type: MemberType.MEMBER,
         churchId: activeChurch === "CM" ? "UJ" : activeChurch,
-        assignedChurch: activeChurch === "CM" ? Church.UJ : (activeChurch as Church),
+        assignedChurch: activeChurch === "CM" ? "UJ" : (activeChurch as Church),
         passcode: "",
         status: MemberStatus.ACTIVE,
         addedAt: Date.now(),
@@ -362,7 +362,7 @@ const MembersList: React.FC<MembersListProps> = ({
         id: mId,
         name: cleanName,
         type: formData.type || MemberType.MEMBER,
-        assignedChurch: formData.assignedChurch || (activeChurch === "CM" ? Church.UJ : (activeChurch as Church)),
+        assignedChurch: formData.assignedChurch || (activeChurch === "CM" ? "UJ" : (activeChurch as Church)),
         churchId: formData.assignedChurch || (activeChurch === "CM" ? "UJ" : activeChurch),
         status: formData.status || MemberStatus.ACTIVE,
         birthDate: formData.birthDate,
