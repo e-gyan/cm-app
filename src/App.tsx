@@ -12,6 +12,7 @@ import OutreachHub from "./components/OutreachHub";
 import AnalyticsHub from "./components/AnalyticsHub";
 import Settings from "./components/Settings"; // New Import
 import Login from "./components/Login";
+import { hasRoleFeature, hasRoleSubfeature } from "./lib/permissions";
 import { applyTheme } from "./lib/theme";
 import {
   LayoutDashboard,
@@ -406,23 +407,21 @@ const App: React.FC = () => {
   const hasPermission = (moduleName: string, subfeature?: string) => {
     if (isSuperAdminUser) return true;
     if (!currentUser.role) return false;
-    const perms = data.settings.permissions?.[currentUser.role] || [];
-    if (perms.includes("ALL")) return true;
     if (subfeature) {
-      return perms.includes(`${moduleName}.${subfeature}`) || perms.includes(moduleName);
+      return hasRoleSubfeature(data.settings.permissions || {}, currentUser.role, moduleName, subfeature);
     }
-    return perms.includes(moduleName);
+    return hasRoleFeature(data.settings.permissions || {}, currentUser.role, moduleName);
   };
 
   const isOutreachEnabledForUser = data.settings.features?.[currentUser.assignedChurch]?.outreach ?? false;
 
   const showOutreach =
-    hasPermission("Outreach") ||
+    hasPermission("outreach") ||
     normalizedName.includes("maxeen") ||
     isOutreachEnabledForUser;
-  const showFinances = hasPermission("Finances");
-  const showAnalytics = hasPermission("Analytics") || currentUser.role === "TEACHER" || currentUser.type === "Teacher";
-  const showSettings = isSuperAdminUser || hasPermission("Settings");
+  const showFinances = hasPermission("finances");
+  const showAnalytics = hasPermission("analytics") || currentUser.role === "TEACHER" || currentUser.type === "Teacher";
+  const showSettings = isSuperAdminUser || hasPermission("settings");
 
   const NavItem = ({
     view,

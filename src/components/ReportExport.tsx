@@ -503,6 +503,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
       zones.forEach((zone) => {
         let zoneAttendance = 0;
+        let zoneJoy = 0;
+        let zoneEnlargement = 0;
+        let zoneSpecial = 0;
         let zoneFirstTimers = 0;
         let zoneTeachers = 0;
         const branchSummaries: string[] = [];
@@ -528,6 +531,11 @@ const ReportExport: React.FC<ReportExportProps> = ({
                     (m.role && m.role !== "NONE")
                   ) {
                     zoneTeachers++;
+                  } else {
+                    const s = rec.serviceMap?.[m.id] || "JOY";
+                    if (s === "JOY") zoneJoy++;
+                    else if (s === "ENLARGEMENT") zoneEnlargement++;
+                    else if (s === "SPECIAL") zoneSpecial++;
                   }
                 }
               });
@@ -553,6 +561,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
         report += `*ZONE: ${zone.name.toUpperCase()}*\n`;
         report += `• Total Attendance: ${zoneAttendance}\n`;
+        report += `• Services: Joy (${zoneJoy}) | Enlargement (${zoneEnlargement})` + (zoneSpecial > 0 ? ` | Special (${zoneSpecial})` : "") + `\n`;
         report += `• Branches: ${branchSummaries.join(" | ") || "No branches"}\n`;
         report += `• First Timers: ${zoneFirstTimers} | Teachers: ${zoneTeachers}\n`;
         report += `• Outreach and Prayer: ${zoneOutreach.visits} Visits | ${zoneOutreach.calls} Calls | ${zonePrayer} Prayers\n\n`;
@@ -609,6 +618,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
       (zone?.branches || []).forEach((branch) => {
         let branchAtt = 0;
+        let branchJoy = 0;
+        let branchEnlargement = 0;
+        let branchSpecial = 0;
         let branchKids = 0;
         let branchTeachers = 0;
         let branchFT = 0;
@@ -637,6 +649,10 @@ const ReportExport: React.FC<ReportExportProps> = ({
                   branchTeachers++;
                 } else {
                   branchKids++;
+                  const s = rec.serviceMap?.[m.id] || "JOY";
+                  if (s === "JOY") branchJoy++;
+                  else if (s === "ENLARGEMENT") branchEnlargement++;
+                  else if (s === "SPECIAL") branchSpecial++;
                 }
               }
             });
@@ -657,6 +673,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
         report += `*BRANCH: ${branch.name}*\n`;
         report += `• Attendance: ${branchAtt} (Children: ${branchKids} | Teachers: ${branchTeachers})\n`;
+        report += `• Services: Joy (${branchJoy}) | Enlargement (${branchEnlargement})` + (branchSpecial > 0 ? ` | Special (${branchSpecial})` : "") + `\n`;
         report += `• Churches: ${churchBreakdown.join(" | ") || "No records"}\n`;
         report += `• First Timers: ${branchFT}\n`;
         report += `• Outreach and Prayer: ${branchOutreach.visits} Visits | ${branchOutreach.calls} Calls | ${branchPrayer} Prayers\n\n`;

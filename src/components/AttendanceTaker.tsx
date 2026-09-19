@@ -90,7 +90,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       (sessionStorage.getItem("attendance_churchFilter") as any) || "COMBINED",
   );
 
-  const [newMemberName, setNewMemberName] = useState("");
+  const [newMemberNames, setNewMemberNames] = useState<string[]>([""]);
   const [isSubmittingVisitor, setIsSubmittingVisitor] = useState(false);
   const [isAddingFNF, setIsAddingFNF] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -607,11 +607,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   };
 
   const parsedFirstTimerNames = useMemo(() => {
-    return newMemberName
-      .split(/[\n,]+/)
+    return newMemberNames
       .map((n) => sanitizeInput(n).trim())
       .filter((n) => n.length > 0);
-  }, [newMemberName]);
+  }, [newMemberNames]);
 
   const handleAddFNF = async () => {
     if (parsedFirstTimerNames.length === 0 || isSubmittingVisitor) return;
@@ -653,7 +652,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
       saveDraft(newSet, punctualIds, newSMap);
 
-      setNewMemberName("");
+      setNewMemberNames([""]);
       setIsAddingFNF(false);
       confirmSave(newSet, newSMap);
       onUpdate();
@@ -1073,20 +1072,47 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               Add one or multiple First Timers to directory and mark them present for this Sunday ({formatDateDDMMYYYY(selectedDate)}). Type or paste names separated by new lines or commas.
             </p>
             
-            <textarea
-              rows={3}
-              placeholder={"Enter First Timer full name(s)\ne.g.\nKwame Mensah\nAma Osei\nKofi Boateng"}
-              value={newMemberName}
-              onChange={(e) => setNewMemberName(e.target.value)}
-              className="w-full p-3 border border-slate-200 rounded-xl mb-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium text-slate-700 bg-slate-50 placeholder:text-slate-400 text-sm resize-none"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                  e.preventDefault();
-                  handleAddFNF();
-                }
-              }}
-            />
+            {newMemberNames.map((name, index) => (
+              <div key={index} className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  placeholder="Enter First Timer full name"
+                  value={name}
+                  onChange={(e) => {
+                    const updated = [...newMemberNames];
+                    updated[index] = e.target.value;
+                    setNewMemberNames(updated);
+                  }}
+                  className="flex-1 p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium text-slate-700 bg-slate-50 placeholder:text-slate-400 text-sm"
+                  autoFocus={index === newMemberNames.length - 1}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault();
+                      handleAddFNF();
+                    }
+                  }}
+                />
+                {newMemberNames.length > 1 && (
+                  <button
+                    onClick={() => {
+                      const updated = newMemberNames.filter((_, i) => i !== index);
+                      setNewMemberNames(updated);
+                    }}
+                    className="p-3 text-red-500 hover:bg-red-50 rounded-xl transition-colors border border-transparent hover:border-red-100 flex items-center justify-center shrink-0"
+                  >
+                    <X size={18} />
+                  </button>
+                )}
+              </div>
+            ))}
+            
+            <button
+              onClick={() => setNewMemberNames([...newMemberNames, ""])}
+              className="w-full py-2.5 mb-4 text-sm font-semibold text-indigo-600 border border-indigo-100 border-dashed hover:bg-indigo-50 hover:border-indigo-200 rounded-xl transition-colors flex items-center justify-center gap-2"
+            >
+              <UserPlus size={16} />
+              Add another entry
+            </button>
 
             {parsedFirstTimerNames.length > 0 && (
               <div className="mb-3 animate-in fade-in">
