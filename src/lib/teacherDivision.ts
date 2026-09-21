@@ -365,9 +365,10 @@ export const formatDivisionCSV = (
  * by active branch or active zone.
  */
 export const matchesScope = (
-  item: { branchId?: string; zoneId?: string },
+  item: { branchId?: string; zoneId?: string; presentMemberIds?: string[] },
   activeBranchId: string | undefined,
-  organization?: AppOrganization
+  organization?: AppOrganization,
+  allMembers?: Member[]
 ): boolean => {
   if (!activeBranchId || activeBranchId === "ALL") return true;
 
@@ -385,6 +386,7 @@ export const matchesScope = (
   // 2. Branch Scope: activeBranchId is a specific branch ID or name
   if (item.branchId) {
     if (item.branchId === activeBranchId) return true;
+    if (item.branchId.trim().toLowerCase() === activeBranchId.trim().toLowerCase()) return true;
     // Cross-match branch ID with branch Name in organization
     const branch = organization?.zones
       ?.flatMap((z) => z.branches || [])
@@ -395,7 +397,21 @@ export const matchesScope = (
     return false;
   }
 
-  // If item has no branchId set (legacy record):
+  // 3. Attendance Record or items with presentMemberIds:
+  // If item has presentMemberIds, check if any present member belongs to this branch
+  if (item.presentMemberIds && Array.isArray(item.presentMemberIds)) {
+    if (allMembers && allMembers.length > 0 && item.presentMemberIds.length > 0) {
+      const hasBranchMember = item.presentMemberIds.some((id) => {
+        const m = allMembers.find((mem) => mem.id === id);
+        return m && matchesScope(m, activeBranchId, organization);
+      });
+      if (hasBranchMember) return true;
+    }
+    // If no explicit branchId is set on the attendance record, allow it so coordinators can see it
+    return true;
+  }
+
+  // 4. If item has no branchId set (legacy record):
   // Associate with the primary/main branch so legacy records are not lost
   const allBranches = organization?.zones?.flatMap((z) => z.branches || []) || [];
   const primaryBranch = allBranches[0];
@@ -406,6 +422,10 @@ export const matchesScope = (
       activeBranchId === "Main" ||
       activeBranchId === "branch-main")
   ) {
+    return true;
+  }
+
+  if (allBranches.length <= 1) {
     return true;
   }
 

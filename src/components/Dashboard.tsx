@@ -262,7 +262,7 @@ const AdminDashboard: React.FC<{
       });
 
       const attendance = data.attendance.filter(
-        (r) => r.churchId === church && matchesScope(r, activeBranchId, data.settings?.organization)
+        (r) => r.churchId === church && matchesScope(r, activeBranchId, data.settings?.organization, data.members)
       );
       const sortedAttendance = [...attendance].sort(
         (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
@@ -397,11 +397,15 @@ const AdminDashboard: React.FC<{
     prevSunday.setDate(currentSunday.getDate() - 7);
     const prevDateStr = prevSunday.toISOString().split("T")[0];
 
-    const scopedAttendance = data.attendance.filter(r => matchesScope(r, activeBranchId, data.settings?.organization));
-    const hasLatestRecord = scopedAttendance.some(r => r.date === latestDateStr);
-    const hasPrevRecord = scopedAttendance.some(r => r.date === prevDateStr);
+    const scopedAttendance = data.attendance.filter(r => matchesScope(r, activeBranchId, data.settings?.organization, data.members));
+    const datesWithRecords = [...new Set(scopedAttendance.map(r => r.date))].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+    const effectiveLatestDate = scopedAttendance.some(r => r.date === latestDateStr) ? latestDateStr : (datesWithRecords[0] || latestDateStr);
+    const effectivePrevDate = scopedAttendance.some(r => r.date === prevDateStr) ? prevDateStr : (datesWithRecords[1] || prevDateStr);
 
-    const latestRecords = scopedAttendance.filter(r => r.date === latestDateStr);
+    const hasLatestRecord = scopedAttendance.some(r => r.date === effectiveLatestDate);
+    const hasPrevRecord = scopedAttendance.some(r => r.date === effectivePrevDate);
+
+    const latestRecords = scopedAttendance.filter(r => r.date === effectiveLatestDate);
     latestRecords.forEach(r => {
       r.presentMemberIds.forEach(id => {
         const m = data.members.find(mem => mem.id === id);
@@ -413,7 +417,7 @@ const AdminDashboard: React.FC<{
       });
     });
 
-    const prevRecords = scopedAttendance.filter(r => r.date === prevDateStr);
+    const prevRecords = scopedAttendance.filter(r => r.date === effectivePrevDate);
     prevRecords.forEach(r => {
       r.presentMemberIds.forEach(id => {
         const m = data.members.find(mem => mem.id === id);
@@ -1239,7 +1243,7 @@ const ChurchDashboard: React.FC<{
       );
       const kids = members;
       const attendance = data.attendance
-        .filter((r) => r.churchId === activeChurch && matchesScope(r, activeBranchId, data.settings?.organization))
+        .filter((r) => r.churchId === activeChurch && matchesScope(r, activeBranchId, data.settings?.organization, data.members))
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       const getCount = (r: any) =>
@@ -1492,11 +1496,15 @@ const ChurchDashboard: React.FC<{
       prevSunday.setDate(currentSunday.getDate() - 7);
       const prevDateStr = prevSunday.toISOString().split("T")[0];
 
-      const churchAttendance = data.attendance.filter(r => r.churchId === activeChurch);
-      const hasLatestRecord = churchAttendance.some(r => r.date === latestDateStr);
-      const hasPrevRecord = churchAttendance.some(r => r.date === prevDateStr);
+      const churchAttendance = data.attendance.filter(r => r.churchId === activeChurch && matchesScope(r, activeBranchId, data.settings?.organization, data.members));
+      const datesWithRecords = [...new Set(churchAttendance.map(r => r.date))].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+      const effectiveLatestDate = churchAttendance.some(r => r.date === latestDateStr) ? latestDateStr : (datesWithRecords[0] || latestDateStr);
+      const effectivePrevDate = churchAttendance.some(r => r.date === prevDateStr) ? prevDateStr : (datesWithRecords[1] || prevDateStr);
 
-      const latestRecords = churchAttendance.filter(r => r.date === latestDateStr);
+      const hasLatestRecord = churchAttendance.some(r => r.date === effectiveLatestDate);
+      const hasPrevRecord = churchAttendance.some(r => r.date === effectivePrevDate);
+
+      const latestRecords = churchAttendance.filter(r => r.date === effectiveLatestDate);
       latestRecords.forEach(r => {
         r.presentMemberIds.forEach(id => {
           const m = data.members.find(mem => mem.id === id);
@@ -1508,7 +1516,7 @@ const ChurchDashboard: React.FC<{
         });
       });
 
-      const prevRecords = churchAttendance.filter(r => r.date === prevDateStr);
+      const prevRecords = churchAttendance.filter(r => r.date === effectivePrevDate);
       prevRecords.forEach(r => {
         r.presentMemberIds.forEach(id => {
           const m = data.members.find(mem => mem.id === id);

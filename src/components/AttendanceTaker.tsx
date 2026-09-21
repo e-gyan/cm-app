@@ -580,11 +580,13 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         oldEventName !== newEventName
       ) {
         hasActualChanges = true;
+        const effectiveBranchId = existingRecord?.branchId || activeBranchId || currentUser.branchId || undefined;
         const id = `${selectedDate}_${churchId}`;
         saveAttendance(id, [{
           id,
           date: selectedDate,
           churchId,
+          branchId: effectiveBranchId,
           presentMemberIds: finalPresent,
           punctualMemberIds: finalPunctual,
           serviceMap: finalServiceMap,

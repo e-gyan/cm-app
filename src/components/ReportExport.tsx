@@ -133,7 +133,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
     );
   }, [data.settings.organization, activeBranchId, currentUser.branchId]);
 
-  const [reportFormat, setReportFormat] = useState<"BRANCH_COORDINATOR" | "DEFAULT">("BRANCH_COORDINATOR");
+  const [reportFormat, setReportFormat] = useState<"BRANCH_COORDINATOR" | "DEFAULT">(() => {
+    return currentUser.role === "BRANCH_COORDINATOR" ? "BRANCH_COORDINATOR" : "DEFAULT";
+  });
   const [showBcEditor, setShowBcEditor] = useState<boolean>(true);
 
   const [bcReportState, setBcReportState] = useState<BCReportState>(() => ({
@@ -347,7 +349,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
     const branchRecords = data.attendance.filter(
       (r) =>
         r.date === selectedDate &&
-        matchesScope(r, activeBranchId || branchObj.id, data.settings?.organization)
+        matchesScope(r, activeBranchId || branchObj.id, data.settings?.organization, data.members)
     );
 
     const allPresentIds = new Set<string>();
@@ -358,7 +360,12 @@ const ReportExport: React.FC<ReportExportProps> = ({
     const presentMembersList: Member[] = [];
     allPresentIds.forEach((id) => {
       const mem = data.members.find((m) => m.id === id);
-      if (mem) presentMembersList.push(mem);
+      if (mem) {
+        if (mem.branchId && !matchesScope(mem, activeBranchId || branchObj.id, data.settings?.organization)) {
+          return;
+        }
+        presentMembersList.push(mem);
+      }
     });
 
     // Pastors: Zonal Head, Branch Coordinator, Directorate Head
@@ -391,8 +398,10 @@ const ReportExport: React.FC<ReportExportProps> = ({
       let c = 0;
       rec.presentMemberIds.forEach((id) => {
         const m = data.members.find((mem) => mem.id === id);
-        if (m && !isPastor(m) && !isShepherd(m) && m.type === MemberType.MEMBER) {
-          c++;
+        if (m && (!m.branchId || matchesScope(m, activeBranchId || branchObj.id, data.settings?.organization))) {
+          if (!isPastor(m) && !isShepherd(m) && m.type === MemberType.MEMBER) {
+            c++;
+          }
         }
       });
       return c;
@@ -413,7 +422,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       }
     });
 
-    const totalAttendance = presentMembersList.length;
+    const totalAttendance = pastors + shepherds + countI + countK + countL + countU + countN + firstTimers + fnf;
 
     return {
       pastors,
@@ -884,7 +893,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
               (r) =>
                 r.date === selectedDate &&
                 r.churchId === church &&
-                (r.branchId === branch.id || r.branchId === branch.name || (!r.branchId && branch.id === "branch-main"))
+                matchesScope(r, branch.id, data.settings?.organization, data.members)
             );
             if (rec) {
               branchAtt += rec.presentMemberIds.length;
@@ -993,7 +1002,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
             (r) =>
               r.date === selectedDate &&
               r.churchId === church &&
-              (r.branchId === branch.id || r.branchId === branch.name || (!r.branchId && branch.id === "branch-main"))
+              matchesScope(r, branch.id, data.settings?.organization, data.members)
           );
           if (rec) {
             const count = rec.presentMemberIds.length;
@@ -1157,13 +1166,17 @@ const ReportExport: React.FC<ReportExportProps> = ({
       return r;
     };
 
-    if (
-      userRole === "BRANCH_COORDINATOR" ||
-      reportFormat === "BRANCH_COORDINATOR" ||
-      (userRole !== "TEACHER" && activeBranchId && !activeBranchId.startsWith("ZONE:") && activeBranchId !== "ALL") ||
-      (activeChurch === "All" && userRole !== "TEACHER") ||
-      (activeChurch === "CM" && userRole !== "TEACHER")
-    ) {
+    const isTeacher =
+      userRole === "TEACHER" ||
+      currentUser.role === "TEACHER" ||
+      currentUser.type === MemberType.TEACHER;
+
+    const isBranchCoordinator =
+      !isTeacher &&
+      (currentUser.role === "BRANCH_COORDINATOR" ||
+        (isAdmin && reportFormat === "BRANCH_COORDINATOR"));
+
+    if (isBranchCoordinator) {
       return generateBranchCoordinatorReport();
     }
 
@@ -1172,7 +1185,10 @@ const ReportExport: React.FC<ReportExportProps> = ({
     // =========================================================================
     function renderSingleChurch(churchId: string, branchObj?: { id?: string, name: string }) {
       const record = data.attendance.find(
-        (r) => r.date === selectedDate && r.churchId === churchId && matchesScope(r, activeBranchId, data.settings.organization)
+        (r) =>
+          r.date === selectedDate &&
+          r.churchId === churchId &&
+          matchesScope(r, activeBranchId, data.settings.organization, data.members)
       );
       if (!record) return "";
 
@@ -1768,7 +1784,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                     className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-xs md:text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
                   />
                 </div>
-                {isAdmin && (
+                {isAdmin && userRole !== "TEACHER" && currentUser.role !== "TEACHER" && (
                   <div className="flex bg-slate-200/80 p-1 rounded-xl text-xs font-bold">
                     <button
                       onClick={() => setReportFormat("BRANCH_COORDINATOR")}
@@ -1795,8 +1811,8 @@ const ReportExport: React.FC<ReportExportProps> = ({
               </button>
             </div>
 
-            {/* Branch Coordinator Service Report Configuration Panel */}
-            {(currentUser.role === "BRANCH_COORDINATOR" || reportFormat === "BRANCH_COORDINATOR" || isAdmin) && (
+            {/* Branch Coordinator Service Report Configuration Panel - Strictly for Branch Coordinators */}
+            {(currentUser.role === "BRANCH_COORDINATOR" || (isAdmin && userRole !== "TEACHER" && currentUser.role !== "TEACHER" && reportFormat === "BRANCH_COORDINATOR")) && (
               <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm overflow-hidden transition-all">
                 <div
                   onClick={() => setShowBcEditor(!showBcEditor)}
