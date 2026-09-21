@@ -78,14 +78,15 @@ export interface BCReportState {
   gcName: string;
   serviceStarted: string;
   serviceEnded: string;
+  messageTitle: string;
   preacherK: string;
-  messageK: string;
+  messageK?: string;
   preacherLJ: string;
-  messageLJ: string;
+  messageLJ?: string;
   preacherUJ: string;
-  messageUJ: string;
+  messageUJ?: string;
   preacherI: string;
-  messageI: string;
+  messageI?: string;
   altarCall: number;
   cellEvangelism: number;
   outreachSouls: number;
@@ -139,6 +140,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
     gcName: "",
     serviceStarted: "9:00pm",
     serviceEnded: "12:00pm",
+    messageTitle: "",
     preacherK: "",
     messageK: "",
     preacherLJ: "",
@@ -174,6 +176,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
           gcName: parsed.gcName || defaultGc,
           serviceStarted: parsed.serviceStarted || "9:00pm",
           serviceEnded: parsed.serviceEnded || "12:00pm",
+          messageTitle: parsed.messageTitle || parsed.messageK || parsed.messageLJ || parsed.messageUJ || parsed.messageI || "",
           preacherK: parsed.preacherK || "",
           messageK: parsed.messageK || "",
           preacherLJ: parsed.preacherLJ || "",
@@ -206,6 +209,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       gcName: defaultGc,
       serviceStarted: "9:00pm",
       serviceEnded: "12:00pm",
+      messageTitle: "",
       preacherK: "",
       messageK: "",
       preacherLJ: "",
@@ -1090,8 +1094,10 @@ const ReportExport: React.FC<ReportExportProps> = ({
              Number(bcReportState.cellEvangelism || 0) +
              Number(bcReportState.outreachSouls || 0));
 
+      const sharedMessage = (bcReportState.messageTitle || bcReportState.messageK || "").trim();
+
       const formatPreacherMessage = (preacher?: string, message?: string) => {
-        const p = (preacher || "").trim();
+        const p = (preacher || "").trim().toUpperCase();
         const m = (message || "").trim().toUpperCase();
         if (!p && !m) return " / ";
         if (p && !m) return `${p} / `;
@@ -1130,10 +1136,10 @@ const ReportExport: React.FC<ReportExportProps> = ({
       r += `TIME SERVICE ENDED: ${bcReportState.serviceEnded || "12:00pm"}\n\n`;
 
       r += `PREACHER / MESSAGE TITLE:\n`;
-      r += `K CHURCH - ${formatPreacherMessage(bcReportState.preacherK, bcReportState.messageK)}\n`;
-      r += `LJ CHURCH - ${formatPreacherMessage(bcReportState.preacherLJ, bcReportState.messageLJ)}\n`;
-      r += `UJ-CHURCH - ${formatPreacherMessage(bcReportState.preacherUJ, bcReportState.messageUJ)}\n`;
-      r += `I CHURCH - ${formatPreacherMessage(bcReportState.preacherI, bcReportState.messageI)}\n`;
+      r += `K CHURCH - ${formatPreacherMessage(bcReportState.preacherK, sharedMessage)}\n`;
+      r += `LJ CHURCH - ${formatPreacherMessage(bcReportState.preacherLJ, sharedMessage)}\n`;
+      r += `UJ-CHURCH - ${formatPreacherMessage(bcReportState.preacherUJ, sharedMessage)}\n`;
+      r += `I CHURCH - ${formatPreacherMessage(bcReportState.preacherI, sharedMessage)}\n`;
       r += `NUMBER OF NEW MEMBERS - ${effectiveNewMembers}\n\n`;
 
       r += `SOUL WINNING REPORT\n`;
@@ -1859,15 +1865,36 @@ const ReportExport: React.FC<ReportExportProps> = ({
                       </div>
                     </div>
 
-                    {/* Section 2: Preachers & Message Titles */}
-                    <div className="space-y-2.5">
-                      <div className="flex items-center justify-between">
+                    {/* Section 2: Preachers & Message Title */}
+                    <div className="space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                         <label className="text-xs font-extrabold text-slate-700 uppercase flex items-center gap-1.5">
-                          <BookOpen size={14} className="text-indigo-600" /> Preacher & Message Title by Church
+                          <BookOpen size={14} className="text-indigo-600" /> Preachers & Message Title
                         </label>
-                        <span className="text-[11px] text-slate-400">Message titles are automatically capitalized in the export</span>
+                        <span className="text-[11px] text-slate-400">Preachers and message are capitalized in ALL CAPS on export</span>
                       </div>
 
+                      {/* Unified Message Title Input Apportioned to All Churches */}
+                      <div className="bg-gradient-to-r from-indigo-50/80 to-purple-50/50 border border-indigo-200/80 p-3.5 rounded-2xl shadow-sm">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-xs font-bold text-indigo-950 uppercase flex items-center gap-1.5">
+                            <BookOpen size={13} className="text-indigo-600" />
+                            Message Title (Apportioned To All Churches)
+                          </label>
+                          <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider bg-indigo-100/60 px-2 py-0.5 rounded-full">
+                            K, LJ, UJ & I Churches
+                          </span>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="e.g. THE MYSTERY OF PRAISE & PRAYER"
+                          value={bcReportState.messageTitle}
+                          onChange={(e) => updateBcReportField("messageTitle", e.target.value)}
+                          className="w-full p-2.5 bg-white border border-indigo-200 rounded-xl font-bold text-xs uppercase text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm transition-all placeholder:normal-case placeholder:font-normal"
+                        />
+                      </div>
+
+                      {/* Church Preachers */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {/* K Church */}
                         {(() => {
@@ -1876,47 +1903,43 @@ const ReportExport: React.FC<ReportExportProps> = ({
                           const isCustom = p !== "" && !teachers.some((t) => t.name === p);
                           return (
                             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
-                              <span className="font-extrabold text-xs text-indigo-900">K CHURCH</span>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Preacher</label>
-                                  <select
-                                    value={isCustom ? "__CUSTOM__" : p}
-                                    onChange={(e) => {
-                                      if (e.target.value === "__CUSTOM__") {
-                                        updateBcReportField("preacherK", "Guest Preacher");
-                                      } else {
-                                        updateBcReportField("preacherK", e.target.value);
-                                      }
-                                    }}
-                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
-                                  >
-                                    <option value="">-- Select Teacher --</option>
-                                    {teachers.map((t) => (
-                                      <option key={t.id} value={t.name}>{t.name}</option>
-                                    ))}
-                                    <option value="__CUSTOM__">Other (Type Name)...</option>
-                                  </select>
-                                  {isCustom && (
-                                    <input
-                                      type="text"
-                                      placeholder="Preacher name..."
-                                      value={p}
-                                      onChange={(e) => updateBcReportField("preacherK", e.target.value)}
-                                      className="mt-1 w-full text-xs p-1.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
-                                    />
-                                  )}
-                                </div>
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Message Title</label>
+                              <div className="flex items-center justify-between">
+                                <span className="font-extrabold text-xs text-indigo-900">K CHURCH</span>
+                                <span className="text-[10px] text-slate-400 font-semibold uppercase">Preacher</span>
+                              </div>
+                              <div>
+                                <select
+                                  value={isCustom ? "__CUSTOM__" : p}
+                                  onChange={(e) => {
+                                    if (e.target.value === "__CUSTOM__") {
+                                      updateBcReportField("preacherK", "Guest Preacher");
+                                    } else {
+                                      updateBcReportField("preacherK", e.target.value);
+                                    }
+                                  }}
+                                  className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                                >
+                                  <option value="">-- Select Preacher / Teacher --</option>
+                                  {teachers.map((t) => (
+                                    <option key={t.id} value={t.name}>{t.name}</option>
+                                  ))}
+                                  <option value="__CUSTOM__">Other (Type Name)...</option>
+                                </select>
+                                {isCustom && (
                                   <input
                                     type="text"
-                                    placeholder="Message title..."
-                                    value={bcReportState.messageK}
-                                    onChange={(e) => updateBcReportField("messageK", e.target.value)}
-                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold uppercase text-slate-800"
+                                    placeholder="Type preacher name..."
+                                    value={p}
+                                    onChange={(e) => updateBcReportField("preacherK", e.target.value)}
+                                    className="mt-1.5 w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold uppercase"
                                   />
-                                </div>
+                                )}
+                              </div>
+                              <div className="flex items-center justify-between text-[10px] bg-white/70 px-2.5 py-1.5 rounded-lg border border-slate-200/80 text-slate-500">
+                                <span className="font-bold text-slate-400 uppercase">Message:</span>
+                                <span className="font-semibold text-slate-700 uppercase truncate ml-2">
+                                  {bcReportState.messageTitle?.trim() || <span className="text-slate-400 italic">Apportioned from title above</span>}
+                                </span>
                               </div>
                             </div>
                           );
@@ -1929,47 +1952,43 @@ const ReportExport: React.FC<ReportExportProps> = ({
                           const isCustom = p !== "" && !teachers.some((t) => t.name === p);
                           return (
                             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
-                              <span className="font-extrabold text-xs text-indigo-900">LJ CHURCH</span>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Preacher</label>
-                                  <select
-                                    value={isCustom ? "__CUSTOM__" : p}
-                                    onChange={(e) => {
-                                      if (e.target.value === "__CUSTOM__") {
-                                        updateBcReportField("preacherLJ", "Guest Preacher");
-                                      } else {
-                                        updateBcReportField("preacherLJ", e.target.value);
-                                      }
-                                    }}
-                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
-                                  >
-                                    <option value="">-- Select Teacher --</option>
-                                    {teachers.map((t) => (
-                                      <option key={t.id} value={t.name}>{t.name}</option>
-                                    ))}
-                                    <option value="__CUSTOM__">Other (Type Name)...</option>
-                                  </select>
-                                  {isCustom && (
-                                    <input
-                                      type="text"
-                                      placeholder="Preacher name..."
-                                      value={p}
-                                      onChange={(e) => updateBcReportField("preacherLJ", e.target.value)}
-                                      className="mt-1 w-full text-xs p-1.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
-                                    />
-                                  )}
-                                </div>
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Message Title</label>
+                              <div className="flex items-center justify-between">
+                                <span className="font-extrabold text-xs text-indigo-900">LJ CHURCH</span>
+                                <span className="text-[10px] text-slate-400 font-semibold uppercase">Preacher</span>
+                              </div>
+                              <div>
+                                <select
+                                  value={isCustom ? "__CUSTOM__" : p}
+                                  onChange={(e) => {
+                                    if (e.target.value === "__CUSTOM__") {
+                                      updateBcReportField("preacherLJ", "Guest Preacher");
+                                    } else {
+                                      updateBcReportField("preacherLJ", e.target.value);
+                                    }
+                                  }}
+                                  className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                                >
+                                  <option value="">-- Select Preacher / Teacher --</option>
+                                  {teachers.map((t) => (
+                                    <option key={t.id} value={t.name}>{t.name}</option>
+                                  ))}
+                                  <option value="__CUSTOM__">Other (Type Name)...</option>
+                                </select>
+                                {isCustom && (
                                   <input
                                     type="text"
-                                    placeholder="Message title..."
-                                    value={bcReportState.messageLJ}
-                                    onChange={(e) => updateBcReportField("messageLJ", e.target.value)}
-                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold uppercase text-slate-800"
+                                    placeholder="Type preacher name..."
+                                    value={p}
+                                    onChange={(e) => updateBcReportField("preacherLJ", e.target.value)}
+                                    className="mt-1.5 w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold uppercase"
                                   />
-                                </div>
+                                )}
+                              </div>
+                              <div className="flex items-center justify-between text-[10px] bg-white/70 px-2.5 py-1.5 rounded-lg border border-slate-200/80 text-slate-500">
+                                <span className="font-bold text-slate-400 uppercase">Message:</span>
+                                <span className="font-semibold text-slate-700 uppercase truncate ml-2">
+                                  {bcReportState.messageTitle?.trim() || <span className="text-slate-400 italic">Apportioned from title above</span>}
+                                </span>
                               </div>
                             </div>
                           );
@@ -1982,47 +2001,43 @@ const ReportExport: React.FC<ReportExportProps> = ({
                           const isCustom = p !== "" && !teachers.some((t) => t.name === p);
                           return (
                             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
-                              <span className="font-extrabold text-xs text-indigo-900">UJ-CHURCH</span>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Preacher</label>
-                                  <select
-                                    value={isCustom ? "__CUSTOM__" : p}
-                                    onChange={(e) => {
-                                      if (e.target.value === "__CUSTOM__") {
-                                        updateBcReportField("preacherUJ", "Guest Preacher");
-                                      } else {
-                                        updateBcReportField("preacherUJ", e.target.value);
-                                      }
-                                    }}
-                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
-                                  >
-                                    <option value="">-- Select Teacher --</option>
-                                    {teachers.map((t) => (
-                                      <option key={t.id} value={t.name}>{t.name}</option>
-                                    ))}
-                                    <option value="__CUSTOM__">Other (Type Name)...</option>
-                                  </select>
-                                  {isCustom && (
-                                    <input
-                                      type="text"
-                                      placeholder="Preacher name..."
-                                      value={p}
-                                      onChange={(e) => updateBcReportField("preacherUJ", e.target.value)}
-                                      className="mt-1 w-full text-xs p-1.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
-                                    />
-                                  )}
-                                </div>
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Message Title</label>
+                              <div className="flex items-center justify-between">
+                                <span className="font-extrabold text-xs text-indigo-900">UJ-CHURCH</span>
+                                <span className="text-[10px] text-slate-400 font-semibold uppercase">Preacher</span>
+                              </div>
+                              <div>
+                                <select
+                                  value={isCustom ? "__CUSTOM__" : p}
+                                  onChange={(e) => {
+                                    if (e.target.value === "__CUSTOM__") {
+                                      updateBcReportField("preacherUJ", "Guest Preacher");
+                                    } else {
+                                      updateBcReportField("preacherUJ", e.target.value);
+                                    }
+                                  }}
+                                  className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                                >
+                                  <option value="">-- Select Preacher / Teacher --</option>
+                                  {teachers.map((t) => (
+                                    <option key={t.id} value={t.name}>{t.name}</option>
+                                  ))}
+                                  <option value="__CUSTOM__">Other (Type Name)...</option>
+                                </select>
+                                {isCustom && (
                                   <input
                                     type="text"
-                                    placeholder="Message title..."
-                                    value={bcReportState.messageUJ}
-                                    onChange={(e) => updateBcReportField("messageUJ", e.target.value)}
-                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold uppercase text-slate-800"
+                                    placeholder="Type preacher name..."
+                                    value={p}
+                                    onChange={(e) => updateBcReportField("preacherUJ", e.target.value)}
+                                    className="mt-1.5 w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold uppercase"
                                   />
-                                </div>
+                                )}
+                              </div>
+                              <div className="flex items-center justify-between text-[10px] bg-white/70 px-2.5 py-1.5 rounded-lg border border-slate-200/80 text-slate-500">
+                                <span className="font-bold text-slate-400 uppercase">Message:</span>
+                                <span className="font-semibold text-slate-700 uppercase truncate ml-2">
+                                  {bcReportState.messageTitle?.trim() || <span className="text-slate-400 italic">Apportioned from title above</span>}
+                                </span>
                               </div>
                             </div>
                           );
@@ -2035,47 +2050,43 @@ const ReportExport: React.FC<ReportExportProps> = ({
                           const isCustom = p !== "" && !teachers.some((t) => t.name === p);
                           return (
                             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
-                              <span className="font-extrabold text-xs text-indigo-900">I CHURCH</span>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Preacher</label>
-                                  <select
-                                    value={isCustom ? "__CUSTOM__" : p}
-                                    onChange={(e) => {
-                                      if (e.target.value === "__CUSTOM__") {
-                                        updateBcReportField("preacherI", "Guest Preacher");
-                                      } else {
-                                        updateBcReportField("preacherI", e.target.value);
-                                      }
-                                    }}
-                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
-                                  >
-                                    <option value="">-- Select Teacher --</option>
-                                    {teachers.map((t) => (
-                                      <option key={t.id} value={t.name}>{t.name}</option>
-                                    ))}
-                                    <option value="__CUSTOM__">Other (Type Name)...</option>
-                                  </select>
-                                  {isCustom && (
-                                    <input
-                                      type="text"
-                                      placeholder="Preacher name..."
-                                      value={p}
-                                      onChange={(e) => updateBcReportField("preacherI", e.target.value)}
-                                      className="mt-1 w-full text-xs p-1.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
-                                    />
-                                  )}
-                                </div>
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Message Title</label>
+                              <div className="flex items-center justify-between">
+                                <span className="font-extrabold text-xs text-indigo-900">I CHURCH</span>
+                                <span className="text-[10px] text-slate-400 font-semibold uppercase">Preacher</span>
+                              </div>
+                              <div>
+                                <select
+                                  value={isCustom ? "__CUSTOM__" : p}
+                                  onChange={(e) => {
+                                    if (e.target.value === "__CUSTOM__") {
+                                      updateBcReportField("preacherI", "Guest Preacher");
+                                    } else {
+                                      updateBcReportField("preacherI", e.target.value);
+                                    }
+                                  }}
+                                  className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                                >
+                                  <option value="">-- Select Preacher / Teacher --</option>
+                                  {teachers.map((t) => (
+                                    <option key={t.id} value={t.name}>{t.name}</option>
+                                  ))}
+                                  <option value="__CUSTOM__">Other (Type Name)...</option>
+                                </select>
+                                {isCustom && (
                                   <input
                                     type="text"
-                                    placeholder="Message title..."
-                                    value={bcReportState.messageI}
-                                    onChange={(e) => updateBcReportField("messageI", e.target.value)}
-                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold uppercase text-slate-800"
+                                    placeholder="Type preacher name..."
+                                    value={p}
+                                    onChange={(e) => updateBcReportField("preacherI", e.target.value)}
+                                    className="mt-1.5 w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold uppercase"
                                   />
-                                </div>
+                                )}
+                              </div>
+                              <div className="flex items-center justify-between text-[10px] bg-white/70 px-2.5 py-1.5 rounded-lg border border-slate-200/80 text-slate-500">
+                                <span className="font-bold text-slate-400 uppercase">Message:</span>
+                                <span className="font-semibold text-slate-700 uppercase truncate ml-2">
+                                  {bcReportState.messageTitle?.trim() || <span className="text-slate-400 italic">Apportioned from title above</span>}
+                                </span>
                               </div>
                             </div>
                           );

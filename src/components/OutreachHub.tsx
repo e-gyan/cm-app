@@ -325,6 +325,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     memberId: string;
     currentSessionId: string;
   } | null>(null);
+  const [customRescheduleDate, setCustomRescheduleDate] = useState<string>("");
   const [addMemberModal, setAddMemberModal] = useState<{
     show: boolean;
     sessionId: string;
@@ -577,41 +578,179 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     }
   };
 
-  const toggleVisitForMember = (sessionId: string, memberId: string) => {
+  const toggleVisitForMember = async (sessionId: string, memberId: string) => {
     const sessionIndex = localSessions.findIndex((s) => s.id === sessionId);
     if (sessionIndex === -1) return;
 
     const session = { ...localSessions[sessionIndex] };
     const currentVisited = session.visitedMemberIds || [];
-    let newVisited;
-    let isMarking = false;
+    const isCurrentlyVisited = currentVisited.includes(memberId);
 
-    if (currentVisited.includes(memberId)) {
-      newVisited = currentVisited.filter((id) => id !== memberId);
-    } else {
-      newVisited = [...currentVisited, memberId];
-      isMarking = true;
+    // If marking as visited: save immediately & move to Completed History
+    if (!isCurrentlyVisited) {
+      setLoadingId(sessionId);
+      try {
+        const remainingAssigned = (session.assignedMemberIds || []).filter((id) => id !== memberId);
+        const remainingVisited = (session.visitedMemberIds || []).filter((id) => id !== memberId);
+
+        // Check if an existing completed session exists on that date for this teacher/branch
+        const existingCompleted = localSessions.find(
+          (s) =>
+            s.date === session.date &&
+            s.status === "COMPLETED" &&
+            (!session.teacherId || s.teacherId === session.teacherId)
+        );
+
+        let completedSession: OutreachSession;
+        if (existingCompleted) {
+          completedSession = {
+            ...existingCompleted,
+            assignedMemberIds: Array.from(new Set([...(existingCompleted.assignedMemberIds || []), memberId])),
+            visitedMemberIds: Array.from(new Set([...(existingCompleted.visitedMemberIds || []), memberId])),
+            completedBy: currentUser.name || existingCompleted.completedBy || "Teacher",
+          };
+          await saveOutreachSession(completedSession);
+        } else {
+          if (remainingAssigned.length === 0) {
+            // Only this child was on the schedule: turn session directly to COMPLETED
+            completedSession = {
+              ...session,
+              status: "COMPLETED",
+              assignedMemberIds: [memberId],
+              visitedMemberIds: [memberId],
+              completedBy: currentUser.name || "Teacher",
+            };
+            await saveOutreachSession(completedSession);
+          } else {
+            completedSession = {
+              id: `session_comp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              date: session.date,
+              status: "COMPLETED",
+              assignedMemberIds: [memberId],
+              visitedMemberIds: [memberId],
+              completedBy: currentUser.name || "Teacher",
+              teacherId: session.teacherId,
+              branchId: session.branchId || activeBranchId,
+              sessionType: session.sessionType || "REGULAR",
+            };
+            await saveOutreachSession(completedSession);
+          }
+        }
+
+        // Clean up pending session
+        if (remainingAssigned.length === 0 && !existingCompleted) {
+          setLocalSessions((prev) =>
+            prev.map((s) => (s.id === sessionId ? completedSession : s))
+          );
+        } else if (remainingAssigned.length === 0 && existingCompleted) {
+          await deleteOutreachSession(session.id);
+          setLocalSessions((prev) =>
+            prev.filter((s) => s.id !== session.id).map((s) => (s.id === existingCompleted.id ? completedSession : s))
+          );
+        } else {
+          const updatedPending: OutreachSession = {
+            ...session,
+            assignedMemberIds: remainingAssigned,
+            visitedMemberIds: remainingVisited,
+          };
+          await saveOutreachSession(updatedPending);
+          setLocalSessions((prev) => {
+            const list = prev.map((s) => (s.id === sessionId ? updatedPending : s));
+            if (existingCompleted) {
+              return list.map((s) => (s.id === existingCompleted.id ? completedSession : s));
+            } else {
+              return [...list, completedSession];
+            }
+          });
+        }
+
+        setUnsavedChanges((prev) => {
+          const n = new Set(prev);
+          n.delete(sessionId);
+          return n;
+        });
+        onUpdate();
+      } catch (err) {
+        console.error("Error marking visit completed:", err);
+      } finally {
+        setLoadingId(null);
+      }
     }
+  };
 
-    session.visitedMemberIds = newVisited;
-    setChangeCounts((prev) => ({
-      marked: prev.marked + (isMarking ? 1 : 0),
-      unmarked: prev.unmarked + (isMarking ? 0 : 1),
-    }));
+  const handleUndoVisit = async (completedSessionId: string, memberId: string) => {
+    const sessionIdx = localSessions.findIndex((s) => s.id === completedSessionId);
+    if (sessionIdx === -1) return;
 
-    const allDone = session.assignedMemberIds.every((id) =>
-      newVisited.includes(id),
+    const completedSession = { ...localSessions[sessionIdx] };
+    const remainingAssigned = (completedSession.assignedMemberIds || []).filter((id) => id !== memberId);
+    const remainingVisited = (completedSession.visitedMemberIds || []).filter((id) => id !== memberId);
+
+    const today = new Date().toISOString().split("T")[0];
+    const targetDate = (completedSession.date && completedSession.date >= today) ? completedSession.date : today;
+
+    const existingPending = localSessions.find(
+      (s) =>
+        s.date === targetDate &&
+        s.status === "PENDING" &&
+        (!completedSession.teacherId || s.teacherId === completedSession.teacherId)
     );
-    if (allDone && !session.status.includes("COMPLETED")) {
-      setCompletionConfirm({ show: true, sessionId });
-    } else if (!allDone) {
-      session.status = "PENDING";
+
+    let targetPending: OutreachSession;
+    if (existingPending) {
+      targetPending = {
+        ...existingPending,
+        assignedMemberIds: Array.from(new Set([...(existingPending.assignedMemberIds || []), memberId])),
+      };
+    } else {
+      targetPending = {
+        id: `session_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        date: targetDate,
+        status: "PENDING",
+        assignedMemberIds: [memberId],
+        visitedMemberIds: [],
+        branchId: completedSession.branchId || activeBranchId,
+        teacherId: completedSession.teacherId,
+        sessionType: completedSession.sessionType || "REGULAR",
+      };
     }
 
-    const newSessions = [...localSessions];
-    newSessions[sessionIndex] = session;
-    setLocalSessions(newSessions);
-    setUnsavedChanges((prev) => new Set(prev).add(sessionId));
+    setLoadingId(completedSessionId);
+    try {
+      await saveOutreachSession(targetPending);
+
+      if (remainingAssigned.length === 0 && remainingVisited.length === 0) {
+        await deleteOutreachSession(completedSession.id);
+        setLocalSessions((prev) => {
+          const list = prev.filter((s) => s.id !== completedSession.id);
+          if (existingPending) {
+            return list.map((s) => (s.id === existingPending.id ? targetPending : s));
+          } else {
+            return [...list, targetPending];
+          }
+        });
+      } else {
+        const updatedCompleted: OutreachSession = {
+          ...completedSession,
+          assignedMemberIds: remainingAssigned,
+          visitedMemberIds: remainingVisited,
+        };
+        await saveOutreachSession(updatedCompleted);
+        setLocalSessions((prev) => {
+          const list = prev.map((s) => (s.id === completedSession.id ? updatedCompleted : s));
+          if (existingPending) {
+            return list.map((s) => (s.id === existingPending.id ? targetPending : s));
+          } else {
+            return [...list, targetPending];
+          }
+        });
+      }
+      onUpdate();
+    } catch (err) {
+      console.error("Error undoing completed visit:", err);
+    } finally {
+      setLoadingId(null);
+    }
   };
 
   const confirmCompletion = (confirm: boolean) => {
@@ -635,16 +774,19 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     if (currentIdx === -1) return;
 
     const currentSession = { ...localSessions[currentIdx] };
-    currentSession.assignedMemberIds = currentSession.assignedMemberIds.filter((id) => id !== memberId);
+    currentSession.assignedMemberIds = (currentSession.assignedMemberIds || []).filter((id) => id !== memberId);
     currentSession.visitedMemberIds = (currentSession.visitedMemberIds || []).filter((id) => id !== memberId);
-
-    const newSessions = [...localSessions];
-    newSessions[currentIdx] = currentSession;
-    setLocalSessions(newSessions);
 
     setLoadingId(currentSessionId);
     try {
-      await saveOutreachSession(currentSession);
+      // Clear and delete schedule if no assigned members left
+      if (currentSession.assignedMemberIds.length === 0) {
+        await deleteOutreachSession(currentSessionId);
+        setLocalSessions((prev) => prev.filter((s) => s.id !== currentSessionId));
+      } else {
+        await saveOutreachSession(currentSession);
+        setLocalSessions((prev) => prev.map((s) => (s.id === currentSessionId ? currentSession : s)));
+      }
       setUnsavedChanges((prev) => {
         const n = new Set(prev);
         n.delete(currentSessionId);
@@ -668,38 +810,139 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       return;
     }
 
-    const currentIdx = localSessions.findIndex(
-      (s) => s.id === currentSessionId,
-    );
+    const currentIdx = localSessions.findIndex((s) => s.id === currentSessionId);
+    const targetIdx = localSessions.findIndex((s) => s.id === targetSessionId);
+    if (currentIdx === -1 || targetIdx === -1) {
+      setMoveModal(null);
+      return;
+    }
 
-    if (currentIdx !== -1) {
-      const currentSession = { ...localSessions[currentIdx] };
+    const currentSession = { ...localSessions[currentIdx] };
+    const targetSession = { ...localSessions[targetIdx] };
 
-      // Remove from current
-      currentSession.assignedMemberIds =
-        currentSession.assignedMemberIds.filter((id) => id !== memberId);
-      currentSession.visitedMemberIds = (
-        currentSession.visitedMemberIds || []
-      ).filter((id) => id !== memberId);
+    // Remove from current
+    currentSession.assignedMemberIds = (currentSession.assignedMemberIds || []).filter((id) => id !== memberId);
+    currentSession.visitedMemberIds = (currentSession.visitedMemberIds || []).filter((id) => id !== memberId);
 
-      const newSessions = [...localSessions];
-      newSessions[currentIdx] = currentSession;
+    // Add to target
+    if (!targetSession.assignedMemberIds.includes(memberId)) {
+      targetSession.assignedMemberIds = [...targetSession.assignedMemberIds, memberId];
+    }
 
-      const targetIdx = localSessions.findIndex(
-        (s) => s.id === targetSessionId,
-      );
-      if (targetIdx !== -1) {
-        const targetSession = { ...localSessions[targetIdx] };
-        if (!targetSession.assignedMemberIds.includes(memberId)) {
-          targetSession.assignedMemberIds.push(memberId);
-        }
-        newSessions[targetIdx] = targetSession;
-        setUnsavedChanges((prev) => new Set(prev).add(targetSessionId));
+    setMoveModal(null);
+    setLoadingId(currentSessionId);
+    try {
+      await saveOutreachSession(targetSession);
+
+      // Clear that schedule if no members left!
+      if (currentSession.assignedMemberIds.length === 0) {
+        await deleteOutreachSession(currentSession.id);
+        setLocalSessions((prev) =>
+          prev.filter((s) => s.id !== currentSession.id).map((s) => (s.id === targetSession.id ? targetSession : s))
+        );
+      } else {
+        await saveOutreachSession(currentSession);
+        setLocalSessions((prev) =>
+          prev.map((s) => {
+            if (s.id === currentSession.id) return currentSession;
+            if (s.id === targetSession.id) return targetSession;
+            return s;
+          })
+        );
       }
 
-      setLocalSessions(newSessions);
-      setUnsavedChanges((prev) => new Set(prev).add(currentSessionId));
+      setUnsavedChanges((prev) => {
+        const n = new Set(prev);
+        n.delete(currentSessionId);
+        n.delete(targetSessionId);
+        return n;
+      });
+      onUpdate();
+    } catch (err) {
+      console.error("Error moving member:", err);
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleRescheduleToDate = async (newDate: string) => {
+    if (!moveModal || !newDate) return;
+    const { memberId, currentSessionId } = moveModal;
+
+    const currentIdx = localSessions.findIndex((s) => s.id === currentSessionId);
+    if (currentIdx === -1) {
       setMoveModal(null);
+      return;
+    }
+
+    const currentSession = { ...localSessions[currentIdx] };
+    currentSession.assignedMemberIds = (currentSession.assignedMemberIds || []).filter((id) => id !== memberId);
+    currentSession.visitedMemberIds = (currentSession.visitedMemberIds || []).filter((id) => id !== memberId);
+
+    const existingTarget = localSessions.find(
+      (s) =>
+        s.date === newDate &&
+        s.status === "PENDING" &&
+        (!currentSession.teacherId || s.teacherId === currentSession.teacherId)
+    );
+
+    let targetSession: OutreachSession;
+    if (existingTarget) {
+      targetSession = {
+        ...existingTarget,
+        assignedMemberIds: Array.from(new Set([...(existingTarget.assignedMemberIds || []), memberId])),
+      };
+    } else {
+      targetSession = {
+        id: `session_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        date: newDate,
+        status: "PENDING",
+        assignedMemberIds: [memberId],
+        visitedMemberIds: [],
+        branchId: currentSession.branchId || activeBranchId,
+        teacherId: currentSession.teacherId,
+        sessionType: currentSession.sessionType || "REGULAR",
+      };
+    }
+
+    setMoveModal(null);
+    setLoadingId(currentSessionId);
+    try {
+      await saveOutreachSession(targetSession);
+
+      // Clear old schedule if empty
+      if (currentSession.assignedMemberIds.length === 0) {
+        await deleteOutreachSession(currentSession.id);
+        setLocalSessions((prev) => {
+          const list = prev.filter((s) => s.id !== currentSession.id);
+          if (existingTarget) {
+            return list.map((s) => (s.id === existingTarget.id ? targetSession : s));
+          } else {
+            return [...list, targetSession];
+          }
+        });
+      } else {
+        await saveOutreachSession(currentSession);
+        setLocalSessions((prev) => {
+          const list = prev.map((s) => (s.id === currentSession.id ? currentSession : s));
+          if (existingTarget) {
+            return list.map((s) => (s.id === existingTarget.id ? targetSession : s));
+          } else {
+            return [...list, targetSession];
+          }
+        });
+      }
+
+      setUnsavedChanges((prev) => {
+        const n = new Set(prev);
+        n.delete(currentSessionId);
+        return n;
+      });
+      onUpdate();
+    } catch (err) {
+      console.error("Error rescheduling to date:", err);
+    } finally {
+      setLoadingId(null);
     }
   };
 
@@ -993,12 +1236,15 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
   const sortedVisits = useMemo(() => {
     const all = filteredLocalSessions || [];
+    const today = new Date().toISOString().split("T")[0];
+
+    // Only active (today or future) pending sessions appear in Up Next / Other Pending
     const pending = all
-      .filter((s) => s.status === "PENDING")
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      .filter((s) => s.status === "PENDING" && (!s.date || s.date >= today))
+      .sort((a, b) => new Date(a.date || "").getTime() - new Date(b.date || "").getTime());
     const completed = all
       .filter((s) => s.status === "COMPLETED")
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      .sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime());
     const nextUp = pending.length > 0 ? pending[0] : null;
     const otherPending = pending.length > 0 ? pending.slice(1) : [];
     return { nextUp, otherPending, completed };
@@ -1010,9 +1256,9 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     const list: { memberId: string; date: string; sessionId: string }[] = [];
 
     (filteredLocalSessions || []).forEach((session) => {
-      // If session date is past, find unvisited members
-      if (session.date < today) {
-        session.assignedMemberIds.forEach((mid) => {
+      // If session date has ended (past), find unvisited members
+      if (session.date && session.date < today && session.status !== "COMPLETED") {
+        (session.assignedMemberIds || []).forEach((mid) => {
           if (!session.visitedMemberIds?.includes(mid)) {
             list.push({
               memberId: mid,
@@ -1579,7 +1825,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             {incompleteVisits.length > 0 && (
               <div className="pt-4 border-t border-dashed border-slate-200">
                 <CollapsibleMissedSection
-                  title="Missed & Awaiting Rescheduling"
+                  title="Missed Visits (Awaiting Rescheduling)"
                   items={incompleteVisits}
                   data={data}
                   onReschedule={(mid, sid) =>
@@ -1602,6 +1848,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                   data={data}
                   loadingId={loadingId}
                   onDelete={handleDeleteSession}
+                  onUndoVisit={handleUndoVisit}
                 />
               </div>
             )}
@@ -2588,65 +2835,116 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       )}
 
       {/* MOVE MODAL */}
-      {moveModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="font-bold text-lg mb-1 text-slate-800">
-              Reschedule
-            </h3>
-            <p className="text-sm text-slate-500 mb-4">
-              Choose a new date for this child:
-            </p>
-            <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+      {moveModal && (() => {
+        const member = data.members.find((m) => m.id === moveModal.memberId);
+        const todayStr = new Date().toISOString().split("T")[0];
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4">
+              <div>
+                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                  <ArrowRightLeft size={18} className="text-indigo-600" /> Reschedule Visit
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Reschedule <span className="font-bold text-slate-800">{member?.name || "Child"}</span> to a new date:
+                </p>
+              </div>
+
+              {/* Option 1: Pick Any New Date */}
+              <div className="bg-indigo-50/60 border border-indigo-100 p-3 rounded-2xl space-y-2">
+                <label className="block text-[10px] font-bold text-indigo-900 uppercase">
+                  Pick A New Date
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    min={todayStr}
+                    value={customRescheduleDate}
+                    onChange={(e) => setCustomRescheduleDate(e.target.value)}
+                    className="flex-1 text-xs p-2 bg-white border border-indigo-200 rounded-xl font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    disabled={!customRescheduleDate}
+                    onClick={() => {
+                      handleRescheduleToDate(customRescheduleDate);
+                      setCustomRescheduleDate("");
+                    }}
+                    className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition-colors shadow-sm"
+                  >
+                    Reschedule
+                  </button>
+                </div>
+              </div>
+
+              {/* Option 2: Choose Upcoming Session */}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase px-1">
+                  Or Move To Upcoming Schedule
+                </label>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                  {sortedVisits.nextUp &&
+                    sortedVisits.nextUp.id !== moveModal.currentSessionId && (
+                      <button
+                        onClick={() => handleMoveMember(sortedVisits.nextUp!.id)}
+                        className="w-full p-2.5 text-left border border-slate-200 rounded-xl hover:bg-indigo-50 hover:border-indigo-200 transition-colors group flex items-center justify-between"
+                      >
+                        <div className="font-bold text-xs text-slate-800 group-hover:text-indigo-700">
+                          {formatDateDDMMYYYY(sortedVisits.nextUp.date)}
+                        </div>
+                        <span className="text-[10px] bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded">
+                          Up Next
+                        </span>
+                      </button>
+                    )}
+                  {sortedVisits.otherPending
+                    .filter((s) => s.id !== moveModal.currentSessionId)
+                    .map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => handleMoveMember(s.id)}
+                        className="w-full p-2.5 text-left border border-slate-200 rounded-xl hover:bg-indigo-50 hover:border-indigo-200 transition-colors"
+                      >
+                        <div className="font-bold text-xs text-slate-800">
+                          {formatDateDDMMYYYY(s.date)}
+                        </div>
+                      </button>
+                    ))}
+                  {(!sortedVisits.nextUp || sortedVisits.nextUp.id === moveModal.currentSessionId) &&
+                    sortedVisits.otherPending.filter((s) => s.id !== moveModal.currentSessionId).length === 0 && (
+                      <div className="text-[11px] text-slate-400 italic text-center py-2">
+                        No other upcoming schedules. Use the date picker above to choose any date.
+                      </div>
+                    )}
+                </div>
+              </div>
+
+              {/* Option 3: Remove & Clear Schedule */}
               <button
                 onClick={() => handleMoveMember("REMOVE")}
-                className="w-full p-4 text-left border border-red-100 bg-red-50/30 rounded-2xl hover:bg-red-50 hover:border-red-200 transition-colors group mb-2"
+                className="w-full p-2.5 text-left border border-rose-100 bg-rose-50/40 rounded-xl hover:bg-rose-50 transition-colors group"
               >
-                <div className="font-bold text-red-600 group-hover:text-red-700 flex items-center gap-2">
-                  <Trash2 size={16} /> Remove from Schedule
+                <div className="font-bold text-xs text-rose-600 flex items-center gap-1.5">
+                  <Trash2 size={13} /> Remove and Clear from Schedule
                 </div>
-                <div className="text-xs text-red-400 mt-1">
-                  Will be added back to pool for future generation
+                <div className="text-[10px] text-rose-400 mt-0.5">
+                  Child will be returned to pool for future visits
                 </div>
               </button>
 
-              {sortedVisits.nextUp &&
-                sortedVisits.nextUp.id !== moveModal.currentSessionId && (
-                  <button
-                    onClick={() => handleMoveMember(sortedVisits.nextUp!.id)}
-                    className="w-full p-4 text-left border rounded-2xl hover:bg-indigo-50 hover:border-indigo-200 transition-colors group"
-                  >
-                    <div className="font-bold text-slate-800 group-hover:text-indigo-700">
-                      {formatDateDDMMYYYY(sortedVisits.nextUp.date)}
-                    </div>
-                    <div className="text-xs text-indigo-500 font-bold uppercase mt-1">
-                      Next Session
-                    </div>
-                  </button>
-                )}
-              {sortedVisits.otherPending
-                .filter((s) => s.id !== moveModal.currentSessionId)
-                .map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => handleMoveMember(s.id)}
-                    className="w-full p-4 text-left border rounded-2xl hover:bg-indigo-50 hover:border-indigo-200 transition-colors"
-                  >
-                    <div className="font-bold text-slate-800">
-                      {formatDateDDMMYYYY(s.date)}
-                    </div>
-                  </button>
-                ))}
+              <button
+                onClick={() => {
+                  setMoveModal(null);
+                  setCustomRescheduleDate("");
+                }}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-xs transition-colors"
+              >
+                Cancel
+              </button>
             </div>
-            <button
-              onClick={() => setMoveModal(null)}
-              className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold"
-            >
-              Cancel
-            </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ADD MEMBER MODAL */}
       {addMemberModal && (
@@ -3037,6 +3335,7 @@ const CollapsibleCompletedVisits = ({
   data,
   loadingId,
   onDelete,
+  onUndoVisit,
 }: any) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -3081,6 +3380,7 @@ const CollapsibleCompletedVisits = ({
                   onClick={(e) => onDelete(s.id, e)}
                   disabled={loadingId === s.id}
                   className="text-slate-300 hover:text-red-500 disabled:opacity-50"
+                  title="Delete this completed record"
                 >
                   {loadingId === s.id ? (
                     <Loader2
@@ -3093,15 +3393,25 @@ const CollapsibleCompletedVisits = ({
                 </button>
               </div>
               {s.visitedMemberIds && s.visitedMemberIds.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1 pl-11">
+                <div className="flex flex-wrap gap-1.5 mt-1 pl-11">
                   {s.visitedMemberIds.map((vid) => {
                     const m = data.members.find((mem) => mem.id === vid);
                     return m ? (
                       <span
                         key={vid}
-                        className="text-[9px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded border border-green-200"
+                        className="text-[10px] px-2 py-0.5 bg-green-50 text-green-700 rounded-lg border border-green-200 font-semibold flex items-center gap-1.5"
                       >
-                        {m.name}
+                        <span>{m.name}</span>
+                        {onUndoVisit && (
+                          <button
+                            type="button"
+                            onClick={() => onUndoVisit(s.id, vid)}
+                            title="Undo visit / move back to schedule"
+                            className="text-green-600 hover:text-red-600 hover:bg-red-50 rounded p-0.5 transition-colors font-bold text-xs leading-none"
+                          >
+                            ×
+                          </button>
+                        )}
                       </span>
                     ) : null;
                   })}
