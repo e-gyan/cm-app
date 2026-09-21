@@ -83,7 +83,7 @@ const Finances: React.FC<FinancesProps> = ({
     category: "Offering",
     description: "",
     date: new Date().toISOString().split("T")[0],
-    churchId: activeChurch === "CM" ? "UJ" : activeChurch,
+    churchId: activeChurch === "CM" ? "All" : activeChurch,
   });
 
   // Derived Data
@@ -97,10 +97,10 @@ const Finances: React.FC<FinancesProps> = ({
 
     // Filter by Church
     if (filterChurch !== "All") {
-      txns = txns.filter((t) => t.churchId === filterChurch);
+      txns = txns.filter((t) => t.churchId === filterChurch || t.churchId === "All");
     } else if (!isAdmin) {
       // Safety: If not admin and viewing all, force own church (though logic above handles initial state)
-      txns = txns.filter((t) => t.churchId === currentUser.assignedChurch);
+      txns = txns.filter((t) => t.churchId === currentUser.assignedChurch || t.churchId === "All");
     }
 
     // Filter by Type
@@ -159,10 +159,18 @@ const Finances: React.FC<FinancesProps> = ({
 
   const handleSave = () => {
     if (!formData.amount || !formData.category) return;
-    addTransaction({
-      ...formData,
+    const newTxn: Transaction = {
+      id: "tx-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+      amount: formData.amount,
+      type: formData.type || "INCOME",
+      category: formData.category,
+      description: formData.description || "",
+      date: formData.date || new Date().toISOString().split("T")[0],
+      churchId: formData.churchId || (activeChurch === "CM" ? "All" : activeChurch),
+      branchId: activeBranchId || currentUser.branchId || "branch-main",
       recordedBy: currentUser.name,
-    });
+    };
+    addTransaction(newTxn);
     setIsModalOpen(false);
     setFormData({
       amount: 0,
@@ -170,7 +178,7 @@ const Finances: React.FC<FinancesProps> = ({
       category: "Offering",
       description: "",
       date: new Date().toISOString().split("T")[0],
-      churchId: activeChurch === "CM" ? "UJ" : activeChurch,
+      churchId: activeChurch === "CM" ? "All" : activeChurch,
     });
     onUpdate();
   };
@@ -410,7 +418,9 @@ const Finances: React.FC<FinancesProps> = ({
                   {formData.type === "INCOME"
                     ? [
                         "Offering",
-                        "Tithe",
+                        "Tithes",
+                        "Partnerships",
+                        "First Fruits",
                         "Donation",
                         "Fundraising",
                         "Other",
@@ -488,14 +498,14 @@ const Finances: React.FC<FinancesProps> = ({
                 />
               </div>
 
-              {isAdmin && activeChurch === "CM" && (
+              {isAdmin && (
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-                    Church Branch
+                    Church (or All Churches)
                   </label>
                   <select
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={formData.churchId}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700"
+                    value={formData.churchId || "All"}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
@@ -503,9 +513,10 @@ const Finances: React.FC<FinancesProps> = ({
                       })
                     }
                   >
+                    <option value="All">All Churches (Combined)</option>
                     {availableChurches.map((c) => (
                       <option key={c} value={c}>
-                        {c}
+                        {c} Church
                       </option>
                     ))}
                   </select>

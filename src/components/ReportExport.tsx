@@ -25,6 +25,7 @@ import {
   GitBranch,
   ArrowRight,
   ChevronDown,
+  ChevronUp,
   Calendar,
   Target,
   TrendingUp,
@@ -36,6 +37,9 @@ import {
   Share2,
   Phone,
   MapPin,
+  Clock,
+  DollarSign,
+  Flame,
 } from "lucide-react";
 import { getSundaysInYear } from "../constants";
 import {
@@ -70,6 +74,32 @@ const formatDateDDMMYYYY = (dateStr: string) => {
   });
 };
 
+export interface BCReportState {
+  gcName: string;
+  serviceStarted: string;
+  serviceEnded: string;
+  preacherK: string;
+  messageK: string;
+  preacherLJ: string;
+  messageLJ: string;
+  preacherUJ: string;
+  messageUJ: string;
+  preacherI: string;
+  messageI: string;
+  altarCall: number;
+  cellEvangelism: number;
+  outreachSouls: number;
+  totalSoulsWonOverride?: number | string;
+  cellMeetingsHeld: number;
+  totalCellAttendance: number;
+  newMembersOverride?: number | string;
+  spectacularEvent: string;
+  offeringOverride?: number | string;
+  tithesOverride?: number | string;
+  partnershipsOverride?: number | string;
+  firstFruitsOverride?: number | string;
+}
+
 const ReportExport: React.FC<ReportExportProps> = ({
   data,
   onUpdate,
@@ -83,6 +113,318 @@ const ReportExport: React.FC<ReportExportProps> = ({
   const [copiedTeacherId, setCopiedTeacherId] = useState<string | null>(null);
   const [selectedDivisionChurch, setSelectedDivisionChurch] = useState<string>("ALL");
   const [includeDivisionsInReport, setIncludeDivisionsInReport] = useState(false);
+
+  // Branch Coordinator Report States
+  const branchObj = useMemo(() => {
+    return (
+      data.settings.organization?.zones
+        ?.flatMap((z) => z.branches || [])
+        ?.find(
+          (b) =>
+            b.id === activeBranchId ||
+            b.name === activeBranchId ||
+            b.id === currentUser.branchId ||
+            b.name === currentUser.branchId
+        ) || {
+        id: currentUser.branchId || "branch-main",
+        name: currentUser.branchId || "Branch",
+      }
+    );
+  }, [data.settings.organization, activeBranchId, currentUser.branchId]);
+
+  const [reportFormat, setReportFormat] = useState<"BRANCH_COORDINATOR" | "DEFAULT">("BRANCH_COORDINATOR");
+  const [showBcEditor, setShowBcEditor] = useState<boolean>(true);
+
+  const [bcReportState, setBcReportState] = useState<BCReportState>(() => ({
+    gcName: "",
+    serviceStarted: "9:00pm",
+    serviceEnded: "12:00pm",
+    preacherK: "",
+    messageK: "",
+    preacherLJ: "",
+    messageLJ: "",
+    preacherUJ: "",
+    messageUJ: "",
+    preacherI: "",
+    messageI: "",
+    altarCall: 0,
+    cellEvangelism: 0,
+    outreachSouls: 0,
+    totalSoulsWonOverride: "",
+    cellMeetingsHeld: 0,
+    totalCellAttendance: 0,
+    newMembersOverride: "",
+    spectacularEvent: "",
+    offeringOverride: "",
+    tithesOverride: "",
+    partnershipsOverride: "",
+    firstFruitsOverride: "",
+  }));
+
+  // Synchronize / load saved values from localStorage per branch & date
+  useEffect(() => {
+    if (!selectedDate) return;
+    const defaultGc = (branchObj.name || "THESAURUS").toUpperCase().replace(/\s*BRANCH$/i, "");
+    const storageKey = `cm_bc_report_${branchObj.id || "main"}_${selectedDate}`;
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setBcReportState({
+          gcName: parsed.gcName || defaultGc,
+          serviceStarted: parsed.serviceStarted || "9:00pm",
+          serviceEnded: parsed.serviceEnded || "12:00pm",
+          preacherK: parsed.preacherK || "",
+          messageK: parsed.messageK || "",
+          preacherLJ: parsed.preacherLJ || "",
+          messageLJ: parsed.messageLJ || "",
+          preacherUJ: parsed.preacherUJ || "",
+          messageUJ: parsed.messageUJ || "",
+          preacherI: parsed.preacherI || "",
+          messageI: parsed.messageI || "",
+          altarCall: parsed.altarCall ?? 0,
+          cellEvangelism: parsed.cellEvangelism ?? 0,
+          outreachSouls: parsed.outreachSouls ?? 0,
+          totalSoulsWonOverride: parsed.totalSoulsWonOverride ?? "",
+          cellMeetingsHeld: parsed.cellMeetingsHeld ?? 0,
+          totalCellAttendance: parsed.totalCellAttendance ?? 0,
+          newMembersOverride: parsed.newMembersOverride ?? "",
+          spectacularEvent: parsed.spectacularEvent || "",
+          offeringOverride: parsed.offeringOverride ?? "",
+          tithesOverride: parsed.tithesOverride ?? "",
+          partnershipsOverride: parsed.partnershipsOverride ?? "",
+          firstFruitsOverride: parsed.firstFruitsOverride ?? "",
+        });
+        return;
+      } catch (e) {
+        console.error("Error loading bc report storage", e);
+      }
+    }
+
+    setBcReportState((prev) => ({
+      ...prev,
+      gcName: defaultGc,
+      serviceStarted: "9:00pm",
+      serviceEnded: "12:00pm",
+      preacherK: "",
+      messageK: "",
+      preacherLJ: "",
+      messageLJ: "",
+      preacherUJ: "",
+      messageUJ: "",
+      preacherI: "",
+      messageI: "",
+      altarCall: 0,
+      cellEvangelism: 0,
+      outreachSouls: 0,
+      totalSoulsWonOverride: "",
+      cellMeetingsHeld: 0,
+      totalCellAttendance: 0,
+      newMembersOverride: "",
+      spectacularEvent: "",
+      offeringOverride: "",
+      tithesOverride: "",
+      partnershipsOverride: "",
+      firstFruitsOverride: "",
+    }));
+  }, [selectedDate, branchObj.id, branchObj.name]);
+
+  const updateBcReportField = (field: keyof BCReportState, val: any) => {
+    setBcReportState((prev) => {
+      const updated = { ...prev, [field]: val };
+      if (selectedDate) {
+        const storageKey = `cm_bc_report_${branchObj.id || "main"}_${selectedDate}`;
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      }
+      return updated;
+    });
+  };
+
+  // Teachers mapped to churches for preacher selection
+  const teachersByChurch = useMemo(() => {
+    const isTeacher = (m: Member) =>
+      ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
+      m.type === MemberType.TEACHER ||
+      (m.role && m.role !== "NONE");
+
+    const getFor = (cKey: string) => {
+      return data.members
+        .filter(
+          (m) =>
+            isTeacher(m) &&
+            m.assignedChurch === cKey &&
+            matchesScope(m, activeBranchId || branchObj.id, data.settings?.organization)
+        )
+        .sort((a, b) => a.name.localeCompare(b.name));
+    };
+
+    return {
+      K: getFor("K"),
+      LJ: getFor("LJ"),
+      UJ: getFor("UJ"),
+      I: getFor("I"),
+    };
+  }, [data.members, activeBranchId, branchObj.id, data.settings?.organization]);
+
+  // Aggregate children made members just for that Sunday
+  const autoNewMembersCount = useMemo(() => {
+    if (!selectedDate) return 0;
+    const isTeacher = (m: Member) =>
+      ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
+      m.type === MemberType.TEACHER ||
+      (m.role && m.role !== "NONE");
+
+    return data.members.filter((m) => {
+      if (isTeacher(m)) return false;
+      if (m.type !== MemberType.MEMBER) return false;
+      const joinedOn =
+        m.joinedDate &&
+        (m.joinedDate === selectedDate || m.joinedDate.startsWith(selectedDate));
+      return (
+        joinedOn &&
+        matchesScope(m, activeBranchId || branchObj.id, data.settings?.organization)
+      );
+    }).length;
+  }, [data.members, selectedDate, activeBranchId, branchObj.id, data.settings?.organization]);
+
+  // Aggregate finances for that service/Sunday from data.transactions
+  const serviceFinances = useMemo(() => {
+    if (!selectedDate) {
+      return { offering: 0, tithes: 0, partnerships: 0, firstFruits: 0, total: 0 };
+    }
+    const txns = (data.transactions || []).filter(
+      (t) =>
+        t.date === selectedDate &&
+        t.type === "INCOME" &&
+        matchesScope(t, activeBranchId || branchObj.id, data.settings?.organization)
+    );
+
+    let offering = 0;
+    let tithes = 0;
+    let partnerships = 0;
+    let firstFruits = 0;
+
+    txns.forEach((t) => {
+      const cat = (t.category || "").toLowerCase();
+      if (cat.includes("offering")) {
+        offering += t.amount;
+      } else if (cat.includes("tithe")) {
+        tithes += t.amount;
+      } else if (cat.includes("partner")) {
+        partnerships += t.amount;
+      } else if (cat.includes("first fruit")) {
+        firstFruits += t.amount;
+      } else {
+        offering += t.amount;
+      }
+    });
+
+    const total = offering + tithes + partnerships + firstFruits;
+    return { offering, tithes, partnerships, firstFruits, total };
+  }, [data.transactions, selectedDate, activeBranchId, branchObj.id, data.settings?.organization]);
+
+  // Aggregate attendance: Pastors, Shepherds, Members per church, First Timers, FNF, Total
+  const serviceAttendance = useMemo(() => {
+    if (!selectedDate) {
+      return {
+        pastors: 0,
+        shepherds: 0,
+        countI: 0,
+        countK: 0,
+        countL: 0,
+        countU: 0,
+        countN: 0,
+        firstTimers: 0,
+        fnf: 0,
+        totalAttendance: 0,
+      };
+    }
+
+    const branchRecords = data.attendance.filter(
+      (r) =>
+        r.date === selectedDate &&
+        matchesScope(r, activeBranchId || branchObj.id, data.settings?.organization)
+    );
+
+    const allPresentIds = new Set<string>();
+    branchRecords.forEach((r) => {
+      (r.presentMemberIds || []).forEach((id) => allPresentIds.add(id));
+    });
+
+    const presentMembersList: Member[] = [];
+    allPresentIds.forEach((id) => {
+      const mem = data.members.find((m) => m.id === id);
+      if (mem) presentMembersList.push(mem);
+    });
+
+    // Pastors: Zonal Head, Branch Coordinator, Directorate Head
+    const isPastor = (m: Member) =>
+      m.role === "BRANCH_COORDINATOR" ||
+      m.role === "ZONAL_HEAD" ||
+      m.role === "DIRECTORATE_HEAD" ||
+      m.role?.includes("COORDINATOR") ||
+      m.role?.includes("PASTOR");
+
+    // Shepherds: every other teacher within I, K, LJ, and UJ
+    const isTeacher = (m: Member) =>
+      ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
+      m.type === MemberType.TEACHER ||
+      (m.role && m.role !== "NONE");
+
+    const isShepherd = (m: Member) => !isPastor(m) && isTeacher(m);
+
+    let pastors = 0;
+    let shepherds = 0;
+    presentMembersList.forEach((m) => {
+      if (isPastor(m)) pastors++;
+      else if (isShepherd(m)) shepherds++;
+    });
+
+    // Count regular members per church (not teachers/pastors)
+    const getChurchMembersCount = (cKey: string) => {
+      const rec = branchRecords.find((r) => r.churchId === cKey);
+      if (!rec) return 0;
+      let c = 0;
+      rec.presentMemberIds.forEach((id) => {
+        const m = data.members.find((mem) => mem.id === id);
+        if (m && !isPastor(m) && !isShepherd(m) && m.type === MemberType.MEMBER) {
+          c++;
+        }
+      });
+      return c;
+    };
+
+    const countI = getChurchMembersCount("I");
+    const countK = getChurchMembersCount("K");
+    const countL = getChurchMembersCount("LJ");
+    const countU = getChurchMembersCount("UJ");
+    const countN = getChurchMembersCount("N");
+
+    let firstTimers = 0;
+    let fnf = 0;
+    presentMembersList.forEach((m) => {
+      if (!isPastor(m) && !isShepherd(m)) {
+        if (m.type === MemberType.VISITOR) firstTimers++;
+        else if (m.type === MemberType.FNF) fnf++;
+      }
+    });
+
+    const totalAttendance = presentMembersList.length;
+
+    return {
+      pastors,
+      shepherds,
+      countI,
+      countK,
+      countL,
+      countU,
+      countN,
+      firstTimers,
+      fnf,
+      totalAttendance,
+    };
+  }, [data.attendance, data.members, selectedDate, activeBranchId, branchObj.id, data.settings?.organization]);
+
   const [activeTab, setActiveTab] = useState<
     "WHATSAPP" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL"
   >(() => {
@@ -702,132 +1044,121 @@ const ReportExport: React.FC<ReportExportProps> = ({
     }
 
     // =========================================================================
-    // TIER 2: BRANCH COORDINATOR (Aggregation Per Church - NO CHILD NAMES!)
+    // TIER 2: BRANCH COORDINATOR (Mega Center Service Reporting)
     // =========================================================================
+    const generateBranchCoordinatorReport = () => {
+      const parts = selectedDate.split("-");
+      const dateFormatted = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}.` : `${selectedDate}.`;
+      const gc = (bcReportState.gcName || (branchObj.name || "THESAURUS")).toUpperCase().replace(/\s*BRANCH$/i, "");
+
+      const effectiveOffering =
+        bcReportState.offeringOverride !== undefined && bcReportState.offeringOverride !== ""
+          ? bcReportState.offeringOverride
+          : serviceFinances.offering;
+
+      const effectiveTithes =
+        bcReportState.tithesOverride !== undefined && bcReportState.tithesOverride !== ""
+          ? bcReportState.tithesOverride
+          : (serviceFinances.tithes > 0 ? serviceFinances.tithes : "");
+
+      const effectivePartnerships =
+        bcReportState.partnershipsOverride !== undefined && bcReportState.partnershipsOverride !== ""
+          ? bcReportState.partnershipsOverride
+          : (serviceFinances.partnerships > 0 ? serviceFinances.partnerships : "");
+
+      const effectiveFirstFruits =
+        bcReportState.firstFruitsOverride !== undefined && bcReportState.firstFruitsOverride !== ""
+          ? bcReportState.firstFruitsOverride
+          : (serviceFinances.firstFruits > 0 ? serviceFinances.firstFruits : "");
+
+      const calcTotalFinance =
+        (Number(effectiveOffering) || 0) +
+        (Number(effectiveTithes) || 0) +
+        (Number(effectivePartnerships) || 0) +
+        (Number(effectiveFirstFruits) || 0);
+      const effectiveTotalFinance = calcTotalFinance > 0 ? calcTotalFinance : (serviceFinances.total || 0);
+
+      const effectiveNewMembers =
+        bcReportState.newMembersOverride !== undefined && bcReportState.newMembersOverride !== ""
+          ? bcReportState.newMembersOverride
+          : autoNewMembersCount;
+
+      const effectiveTotalSoulsWon =
+        bcReportState.totalSoulsWonOverride !== undefined && bcReportState.totalSoulsWonOverride !== ""
+          ? bcReportState.totalSoulsWonOverride
+          : (Number(bcReportState.altarCall || 0) +
+             Number(bcReportState.cellEvangelism || 0) +
+             Number(bcReportState.outreachSouls || 0));
+
+      const formatPreacherMessage = (preacher?: string, message?: string) => {
+        const p = (preacher || "").trim();
+        const m = (message || "").trim().toUpperCase();
+        if (!p && !m) return " / ";
+        if (p && !m) return `${p} / `;
+        if (!p && m) return ` / ${m}`;
+        return `${p} / ${m}`;
+      };
+
+      let r = `MEGA CENTER SERVICE\n`;
+      r += `DATE: ${dateFormatted}\n\n`;
+      r += `GC: ${gc}\n`;
+      r += `TOTAL ATTENDANCE\n`;
+      r += `PASTORS - ${serviceAttendance.pastors}\n`;
+      r += `SHEPHERDS - ${serviceAttendance.shepherds}\n\n`;
+
+      r += `MEMBERS:\n`;
+      r += `I CHURCH - ${serviceAttendance.countI}\n`;
+      r += `K CHURCH - ${serviceAttendance.countK}\n`;
+      r += `L CHURCH - ${serviceAttendance.countL}\n`;
+      r += `U CHURCH - ${serviceAttendance.countU}\n`;
+      if (serviceAttendance.countN > 0) {
+        r += `N CHURCH - ${serviceAttendance.countN}\n`;
+      }
+      r += `FIRST TIMERS - ${serviceAttendance.firstTimers}\n`;
+      r += `FRIENDS AND FAMILY - ${serviceAttendance.fnf}\n\n`;
+
+      r += `TOTAL ATTENDANCE : ${serviceAttendance.totalAttendance}\n\n`;
+
+      r += `FINANCE\n`;
+      r += `Offering: GHC ${effectiveOffering}\n`;
+      r += `Tithes: ${effectiveTithes ? `GHC ${effectiveTithes}` : ""}\n`;
+      r += `Partnerships: ${effectivePartnerships ? `GHC ${effectivePartnerships}` : ""}\n`;
+      r += `First Fruits: ${effectiveFirstFruits ? `GHC ${effectiveFirstFruits}` : ""}\n\n`;
+      r += `Total: GHC ${effectiveTotalFinance}\n\n`;
+
+      r += `TIME SERVICE STARTED: ${bcReportState.serviceStarted || "9:00pm"}\n`;
+      r += `TIME SERVICE ENDED: ${bcReportState.serviceEnded || "12:00pm"}\n\n`;
+
+      r += `PREACHER / MESSAGE TITLE:\n`;
+      r += `K CHURCH - ${formatPreacherMessage(bcReportState.preacherK, bcReportState.messageK)}\n`;
+      r += `LJ CHURCH - ${formatPreacherMessage(bcReportState.preacherLJ, bcReportState.messageLJ)}\n`;
+      r += `UJ-CHURCH - ${formatPreacherMessage(bcReportState.preacherUJ, bcReportState.messageUJ)}\n`;
+      r += `I CHURCH - ${formatPreacherMessage(bcReportState.preacherI, bcReportState.messageI)}\n`;
+      r += `NUMBER OF NEW MEMBERS - ${effectiveNewMembers}\n\n`;
+
+      r += `SOUL WINNING REPORT\n`;
+      r += `ALTAR CALL - ${bcReportState.altarCall || 0}\n`;
+      r += `CELL EVANGELISM - ${bcReportState.cellEvangelism || 0}\n`;
+      r += `OUTREACH - ${bcReportState.outreachSouls || 0}\n`;
+      r += `TOTAL SOULS WON WITHIN THE WEEK - ${effectiveTotalSoulsWon}\n\n`;
+
+      r += `CELL SYSTEM REPORT\n`;
+      r += `NUMBER OF CELL MEETINGS HELD - ${bcReportState.cellMeetingsHeld || 0}\n`;
+      r += `TOTAL CELL ATTENDANCE - ${bcReportState.totalCellAttendance || 0}\n\n`;
+
+      r += `SPECTACULAR EVENT: ${bcReportState.spectacularEvent || ""}\n`;
+
+      return r;
+    };
+
     if (
       userRole === "BRANCH_COORDINATOR" ||
+      reportFormat === "BRANCH_COORDINATOR" ||
       (userRole !== "TEACHER" && activeBranchId && !activeBranchId.startsWith("ZONE:") && activeBranchId !== "ALL") ||
       (activeChurch === "All" && userRole !== "TEACHER") ||
       (activeChurch === "CM" && userRole !== "TEACHER")
     ) {
-      const branchObj = data.settings.organization?.zones
-        ?.flatMap((z) => z.branches || [])
-        ?.find((b) => b.id === activeBranchId || b.name === activeBranchId || b.id === currentUser.branchId || b.name === currentUser.branchId) || {
-        id: currentUser.branchId || "branch-main",
-        name: currentUser.branchId || "Branch",
-      };
-
-      let report = `*${branchObj.name.toUpperCase()} - BRANCH SUMMARY REPORT*\n`;
-      report += `${formattedDate}\n`;
-      report += `============================\n\n`;
-
-      let branchTotalAtt = 0;
-      let branchTotalFT = 0;
-      let branchTotalMembers = 0;
-      let branchTotalFNF = 0;
-      let branchTotalTeachers = 0;
-      let hasData = false;
-
-      const globalEventName = data.attendance.find((r) => r.date === selectedDate && r.eventName)?.eventName;
-
-      availableChurches.forEach((churchId) => {
-        const record = data.attendance.find(
-          (r) =>
-            r.date === selectedDate &&
-            r.churchId === churchId &&
-            matchesScope(r, activeBranchId || branchObj.id, data.settings.organization)
-        );
-
-        const getService = (id: string) => record?.serviceMap?.[id] || "JOY";
-
-        let totalJoy = 0;
-        let totalEnlargement = 0;
-        let totalSpecial = 0;
-        let membersCount = 0;
-        let fnfCount = 0;
-        let visitorsCount = 0;
-        let notMembersCount = 0;
-        let teachersCount = 0;
-
-        if (record) {
-          hasData = true;
-          record.presentMemberIds.forEach((id) => {
-            const m = data.members.find((mem) => mem.id === id);
-            if (m) {
-              const isTeacher =
-                ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
-                m.type === MemberType.TEACHER ||
-                (m.role && m.role !== "NONE");
-              if (isTeacher) {
-                teachersCount++;
-              } else {
-                const s = getService(m.id);
-                if (s === "JOY") totalJoy++;
-                else if (s === "ENLARGEMENT") totalEnlargement++;
-                else if (s === "SPECIAL") totalSpecial++;
-
-                if (m.type === MemberType.MEMBER) membersCount++;
-                else if (m.type === MemberType.FNF) fnfCount++;
-                else if (m.type === MemberType.VISITOR) visitorsCount++;
-                else if (m.type === MemberType.NOT_MEMBER) notMembersCount++;
-              }
-            }
-          });
-        }
-
-        const churchTotal = record ? record.presentMemberIds.length : 0;
-
-        if (churchTotal > 0) {
-          const eventNameToUse = record?.eventName || globalEventName;
-
-          report += `*${churchId} CHURCH ATTENDANCE REPORT*\n${formattedDate}\n`;
-          if (eventNameToUse) report += `*${eventNameToUse}*\n`;
-          report += `------------------------------\n`;
-          report += `*TOTAL PRESENT: ${churchTotal}*\n`;
-
-          const splits = [];
-          if (eventNameToUse === "Joint Service") {
-            const totalChildren = totalJoy + totalEnlargement + totalSpecial;
-            if (totalChildren > 0) splits.push(`Joint Service: ${totalChildren}`);
-          } else {
-            if (totalJoy > 0) splits.push(`Joy Service: ${totalJoy}`);
-            if (totalEnlargement > 0) splits.push(`Enlargement Service: ${totalEnlargement}`);
-            if (totalSpecial > 0) splits.push(`${eventNameToUse || "Special"}: ${totalSpecial}`);
-          }
-
-          if (teachersCount > 0) splits.push(`Teachers: ${teachersCount}`);
-
-          if (splits.length > 0) {
-            report += `(${splits.join(" | ")})\n\n`;
-          } else {
-            report += `\n`;
-          }
-
-          if (membersCount > 0) report += `*MEMBERS (${membersCount})*\n`;
-          if (fnfCount > 0) report += `*FNF (${fnfCount})*\n`;
-          if (visitorsCount > 0) report += `*FIRST TIMERS (${visitorsCount})*\n`;
-          if (notMembersCount > 0) report += `*NOT A MEMBER (${notMembersCount})*\n`;
-          if (teachersCount > 0) report += `*TEACHERS (${teachersCount})*\n`;
-          report += `\n`;
-        }
-
-        branchTotalAtt += churchTotal;
-        branchTotalMembers += membersCount;
-        branchTotalFNF += fnfCount;
-        branchTotalFT += visitorsCount;
-        branchTotalTeachers += teachersCount;
-      });
-
-      report += `============================\n`;
-      report += `*BRANCH TOTALS*\n`;
-      report += `• Total Present: ${branchTotalAtt}\n`;
-      report += `• Members: ${branchTotalMembers} | FNF: ${branchTotalFNF}\n`;
-      report += `• First Timers: ${branchTotalFT} | Teachers on Duty: ${branchTotalTeachers}\n`;
-
-      if (!hasData) {
-        report += `\n_No attendance data recorded yet for this date._`;
-      }
-      return report.trim();
+      return generateBranchCoordinatorReport();
     }
 
     // =========================================================================
@@ -1415,61 +1746,514 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
         {/* 1. WHATSAPP REPORT */}
         {activeTab === "WHATSAPP" && (
-          <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2">
-            <div className="flex items-center justify-between p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 text-xs text-indigo-900">
-              <span className="font-bold flex items-center gap-1.5">
-                <Users size={15} className="text-indigo-600" /> Include Teacher Member Allocation in WhatsApp export
-              </span>
-              <button
-                onClick={() => setIncludeDivisionsInReport(!includeDivisionsInReport)}
-                className={`px-3 py-1 rounded-lg font-bold text-xs transition-all ${includeDivisionsInReport ? "bg-indigo-600 text-white shadow-sm" : "bg-white text-slate-600 border border-slate-200"}`}
-              >
-                {includeDivisionsInReport ? "Included (ON)" : "Excluded (OFF)"}
-              </button>
-            </div>
-
-            <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 font-mono text-xs text-slate-700 whitespace-pre-wrap h-64 sm:h-96 overflow-y-auto shadow-inner">
-              {generateReport()}
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <div className="w-full">
-                <div className="relative">
+          <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-2">
+            {/* Top Controls: Date, Format, Allocation Toggle */}
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+              <div className="flex items-center gap-2 flex-1">
+                <div className="relative flex-1 max-w-xs">
                   <Calendar
                     className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                    size={18}
+                    size={16}
                   />
                   <input
                     type="date"
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 appearance-none focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-xs md:text-sm text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
                   />
                 </div>
+                {isAdmin && (
+                  <div className="flex bg-slate-200/80 p-1 rounded-xl text-xs font-bold">
+                    <button
+                      onClick={() => setReportFormat("BRANCH_COORDINATOR")}
+                      className={`px-3 py-1 rounded-lg transition-all ${reportFormat === "BRANCH_COORDINATOR" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
+                    >
+                      Branch Coordinator (Mega Center)
+                    </button>
+                    <button
+                      onClick={() => setReportFormat("DEFAULT")}
+                      className={`px-3 py-1 rounded-lg transition-all ${reportFormat === "DEFAULT" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
+                    >
+                      Summary / Detail
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div className="flex gap-3">
-                <button
-                  onClick={handleCopyReport}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold transition-all ${copiedReport ? "bg-green-600 text-white shadow-lg shadow-green-200" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+              <button
+                onClick={() => setIncludeDivisionsInReport(!includeDivisionsInReport)}
+                className={`px-3 py-2 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${includeDivisionsInReport ? "bg-indigo-600 text-white shadow-sm" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"}`}
+              >
+                <Users size={14} />
+                {includeDivisionsInReport ? "Teacher Divisions (ON)" : "Teacher Divisions (OFF)"}
+              </button>
+            </div>
+
+            {/* Branch Coordinator Service Report Configuration Panel */}
+            {(currentUser.role === "BRANCH_COORDINATOR" || reportFormat === "BRANCH_COORDINATOR" || isAdmin) && (
+              <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm overflow-hidden transition-all">
+                <div
+                  onClick={() => setShowBcEditor(!showBcEditor)}
+                  className="p-4 bg-gradient-to-r from-indigo-50/70 to-slate-50 border-b border-indigo-100/60 flex items-center justify-between cursor-pointer select-none hover:bg-indigo-50/90 transition-colors"
                 >
-                  {copiedReport ? (
-                    <CheckCircle size={18} />
-                  ) : (
-                    <Copy size={18} />
-                  )}
-                  <span className="text-sm">
-                    {copiedReport ? "Copied!" : "Copy"}
-                  </span>
-                </button>
-                <button
-                  onClick={handleOpenWhatsApp}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-[#25D366] text-white rounded-xl font-bold hover:bg-[#20bd5a] shadow-lg shadow-green-100 transition-all active:scale-95"
-                >
-                  <MessageCircle size={18} />{" "}
-                  <span className="text-sm">WhatsApp</span>
-                </button>
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-sm">
+                      <Sparkles size={16} />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-800 flex items-center gap-2">
+                        Branch Coordinator Report Setup
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                          Mega Center Template
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        Configure preachers, sermon titles, soul winning, and cell stats for {selectedDate ? formatDateDDMMYYYY(selectedDate) : "selected Sunday"}.
+                      </p>
+                    </div>
+                  </div>
+                  <button className="p-1 text-slate-400 hover:text-indigo-600 transition-colors">
+                    {showBcEditor ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                  </button>
+                </div>
+
+                {showBcEditor && (
+                  <div className="p-4 md:p-5 space-y-5 animate-in fade-in">
+                    {/* Section 1: GC & Service Times */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1 flex items-center gap-1">
+                          <MapPin size={13} className="text-indigo-600" /> GC / Branch Name
+                        </label>
+                        <input
+                          type="text"
+                          value={bcReportState.gcName}
+                          onChange={(e) => updateBcReportField("gcName", e.target.value.toUpperCase())}
+                          placeholder="e.g. THESAURUS"
+                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs uppercase text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1 flex items-center gap-1">
+                          <Clock size={13} className="text-indigo-600" /> Time Service Started
+                        </label>
+                        <input
+                          type="text"
+                          value={bcReportState.serviceStarted}
+                          onChange={(e) => updateBcReportField("serviceStarted", e.target.value)}
+                          placeholder="e.g. 9:00pm"
+                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1 flex items-center gap-1">
+                          <Clock size={13} className="text-indigo-600" /> Time Service Ended
+                        </label>
+                        <input
+                          type="text"
+                          value={bcReportState.serviceEnded}
+                          onChange={(e) => updateBcReportField("serviceEnded", e.target.value)}
+                          placeholder="e.g. 12:00pm"
+                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Section 2: Preachers & Message Titles */}
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-extrabold text-slate-700 uppercase flex items-center gap-1.5">
+                          <BookOpen size={14} className="text-indigo-600" /> Preacher & Message Title by Church
+                        </label>
+                        <span className="text-[11px] text-slate-400">Message titles are automatically capitalized in the export</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {/* K Church */}
+                        {(() => {
+                          const teachers = teachersByChurch.K || [];
+                          const p = bcReportState.preacherK;
+                          const isCustom = p !== "" && !teachers.some((t) => t.name === p);
+                          return (
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                              <span className="font-extrabold text-xs text-indigo-900">K CHURCH</span>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Preacher</label>
+                                  <select
+                                    value={isCustom ? "__CUSTOM__" : p}
+                                    onChange={(e) => {
+                                      if (e.target.value === "__CUSTOM__") {
+                                        updateBcReportField("preacherK", "Guest Preacher");
+                                      } else {
+                                        updateBcReportField("preacherK", e.target.value);
+                                      }
+                                    }}
+                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                                  >
+                                    <option value="">-- Select Teacher --</option>
+                                    {teachers.map((t) => (
+                                      <option key={t.id} value={t.name}>{t.name}</option>
+                                    ))}
+                                    <option value="__CUSTOM__">Other (Type Name)...</option>
+                                  </select>
+                                  {isCustom && (
+                                    <input
+                                      type="text"
+                                      placeholder="Preacher name..."
+                                      value={p}
+                                      onChange={(e) => updateBcReportField("preacherK", e.target.value)}
+                                      className="mt-1 w-full text-xs p-1.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
+                                    />
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Message Title</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Message title..."
+                                    value={bcReportState.messageK}
+                                    onChange={(e) => updateBcReportField("messageK", e.target.value)}
+                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold uppercase text-slate-800"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* LJ Church */}
+                        {(() => {
+                          const teachers = teachersByChurch.LJ || [];
+                          const p = bcReportState.preacherLJ;
+                          const isCustom = p !== "" && !teachers.some((t) => t.name === p);
+                          return (
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                              <span className="font-extrabold text-xs text-indigo-900">LJ CHURCH</span>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Preacher</label>
+                                  <select
+                                    value={isCustom ? "__CUSTOM__" : p}
+                                    onChange={(e) => {
+                                      if (e.target.value === "__CUSTOM__") {
+                                        updateBcReportField("preacherLJ", "Guest Preacher");
+                                      } else {
+                                        updateBcReportField("preacherLJ", e.target.value);
+                                      }
+                                    }}
+                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                                  >
+                                    <option value="">-- Select Teacher --</option>
+                                    {teachers.map((t) => (
+                                      <option key={t.id} value={t.name}>{t.name}</option>
+                                    ))}
+                                    <option value="__CUSTOM__">Other (Type Name)...</option>
+                                  </select>
+                                  {isCustom && (
+                                    <input
+                                      type="text"
+                                      placeholder="Preacher name..."
+                                      value={p}
+                                      onChange={(e) => updateBcReportField("preacherLJ", e.target.value)}
+                                      className="mt-1 w-full text-xs p-1.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
+                                    />
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Message Title</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Message title..."
+                                    value={bcReportState.messageLJ}
+                                    onChange={(e) => updateBcReportField("messageLJ", e.target.value)}
+                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold uppercase text-slate-800"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* UJ-Church */}
+                        {(() => {
+                          const teachers = teachersByChurch.UJ || [];
+                          const p = bcReportState.preacherUJ;
+                          const isCustom = p !== "" && !teachers.some((t) => t.name === p);
+                          return (
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                              <span className="font-extrabold text-xs text-indigo-900">UJ-CHURCH</span>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Preacher</label>
+                                  <select
+                                    value={isCustom ? "__CUSTOM__" : p}
+                                    onChange={(e) => {
+                                      if (e.target.value === "__CUSTOM__") {
+                                        updateBcReportField("preacherUJ", "Guest Preacher");
+                                      } else {
+                                        updateBcReportField("preacherUJ", e.target.value);
+                                      }
+                                    }}
+                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                                  >
+                                    <option value="">-- Select Teacher --</option>
+                                    {teachers.map((t) => (
+                                      <option key={t.id} value={t.name}>{t.name}</option>
+                                    ))}
+                                    <option value="__CUSTOM__">Other (Type Name)...</option>
+                                  </select>
+                                  {isCustom && (
+                                    <input
+                                      type="text"
+                                      placeholder="Preacher name..."
+                                      value={p}
+                                      onChange={(e) => updateBcReportField("preacherUJ", e.target.value)}
+                                      className="mt-1 w-full text-xs p-1.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
+                                    />
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Message Title</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Message title..."
+                                    value={bcReportState.messageUJ}
+                                    onChange={(e) => updateBcReportField("messageUJ", e.target.value)}
+                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold uppercase text-slate-800"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* I Church */}
+                        {(() => {
+                          const teachers = teachersByChurch.I || [];
+                          const p = bcReportState.preacherI;
+                          const isCustom = p !== "" && !teachers.some((t) => t.name === p);
+                          return (
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                              <span className="font-extrabold text-xs text-indigo-900">I CHURCH</span>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Preacher</label>
+                                  <select
+                                    value={isCustom ? "__CUSTOM__" : p}
+                                    onChange={(e) => {
+                                      if (e.target.value === "__CUSTOM__") {
+                                        updateBcReportField("preacherI", "Guest Preacher");
+                                      } else {
+                                        updateBcReportField("preacherI", e.target.value);
+                                      }
+                                    }}
+                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
+                                  >
+                                    <option value="">-- Select Teacher --</option>
+                                    {teachers.map((t) => (
+                                      <option key={t.id} value={t.name}>{t.name}</option>
+                                    ))}
+                                    <option value="__CUSTOM__">Other (Type Name)...</option>
+                                  </select>
+                                  {isCustom && (
+                                    <input
+                                      type="text"
+                                      placeholder="Preacher name..."
+                                      value={p}
+                                      onChange={(e) => updateBcReportField("preacherI", e.target.value)}
+                                      className="mt-1 w-full text-xs p-1.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
+                                    />
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Message Title</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Message title..."
+                                    value={bcReportState.messageI}
+                                    onChange={(e) => updateBcReportField("messageI", e.target.value)}
+                                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-semibold uppercase text-slate-800"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Number of New Members */}
+                      <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                        <div>
+                          <label className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+                            <Users size={14} className="text-indigo-600" /> Number of New Members
+                          </label>
+                          <p className="text-[11px] text-slate-500">
+                            Auto-counted from children made members on this Sunday across all churches:{" "}
+                            <span className="font-bold text-indigo-700">{autoNewMembersCount}</span>
+                          </p>
+                        </div>
+                        <input
+                          type="number"
+                          value={bcReportState.newMembersOverride !== undefined && bcReportState.newMembersOverride !== "" ? bcReportState.newMembersOverride : autoNewMembersCount}
+                          onChange={(e) => updateBcReportField("newMembersOverride", e.target.value)}
+                          className="w-24 p-2 bg-white border border-indigo-200 rounded-lg font-extrabold text-sm text-center text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Section 3: Soul Winning & Cell System */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Soul Winning Report */}
+                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+                        <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5 uppercase">
+                          <Flame size={14} className="text-amber-500" /> Soul Winning Report
+                        </span>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Altar Call</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={bcReportState.altarCall}
+                              onChange={(e) => updateBcReportField("altarCall", parseInt(e.target.value) || 0)}
+                              className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg font-bold text-center text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Cell Evan.</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={bcReportState.cellEvangelism}
+                              onChange={(e) => updateBcReportField("cellEvangelism", parseInt(e.target.value) || 0)}
+                              className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg font-bold text-center text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Outreach</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={bcReportState.outreachSouls}
+                              onChange={(e) => updateBcReportField("outreachSouls", parseInt(e.target.value) || 0)}
+                              className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg font-bold text-center text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                        </div>
+                        <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-600">Total Souls Won (Week):</span>
+                          <span className="font-extrabold text-indigo-600 text-sm">
+                            {bcReportState.totalSoulsWonOverride !== undefined && bcReportState.totalSoulsWonOverride !== ""
+                              ? bcReportState.totalSoulsWonOverride
+                              : Number(bcReportState.altarCall || 0) + Number(bcReportState.cellEvangelism || 0) + Number(bcReportState.outreachSouls || 0)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Cell System Report */}
+                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+                        <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5 uppercase">
+                          <Users size={14} className="text-indigo-600" /> Cell System Report
+                        </span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Meetings Held</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={bcReportState.cellMeetingsHeld}
+                              onChange={(e) => updateBcReportField("cellMeetingsHeld", parseInt(e.target.value) || 0)}
+                              className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg font-bold text-center text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Cell Attendance</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={bcReportState.totalCellAttendance}
+                              onChange={(e) => updateBcReportField("totalCellAttendance", parseInt(e.target.value) || 0)}
+                              className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg font-bold text-center text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-slate-400 italic pt-1">When there is none, 0 is recorded automatically.</p>
+                      </div>
+                    </div>
+
+                    {/* Section 4: Spectacular Event */}
+                    <div>
+                      <label className="block text-xs font-extrabold text-slate-700 uppercase mb-1">
+                        Spectacular Event Highlights
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={bcReportState.spectacularEvent}
+                        onChange={(e) => updateBcReportField("spectacularEvent", e.target.value)}
+                        placeholder="Notable moments, praise reports, testimonies, special visitations..."
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 resize-none font-medium"
+                      />
+                    </div>
+
+                    {/* Section 5: Finances Overview & Overrides */}
+                    <div className="p-3.5 bg-emerald-50/50 rounded-xl border border-emerald-100/80 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-extrabold text-emerald-900 flex items-center gap-1.5 uppercase">
+                          <DollarSign size={14} className="text-emerald-600" /> Service Finance Summary (Auto-Aggregated)
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">
+                          Live from Treasury
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                        <div className="bg-white p-2 rounded-lg border border-emerald-100 text-center">
+                          <span className="block text-[10px] text-slate-400 font-bold uppercase">Offering</span>
+                          <span className="font-extrabold text-slate-800">GH₵ {serviceFinances.offering}</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg border border-emerald-100 text-center">
+                          <span className="block text-[10px] text-slate-400 font-bold uppercase">Tithes</span>
+                          <span className="font-extrabold text-slate-800">GH₵ {serviceFinances.tithes}</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg border border-emerald-100 text-center">
+                          <span className="block text-[10px] text-slate-400 font-bold uppercase">Partnerships</span>
+                          <span className="font-extrabold text-slate-800">GH₵ {serviceFinances.partnerships}</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg border border-emerald-100 text-center">
+                          <span className="block text-[10px] text-slate-400 font-bold uppercase">First Fruits</span>
+                          <span className="font-extrabold text-slate-800">GH₵ {serviceFinances.firstFruits}</span>
+                        </div>
+                        <div className="bg-emerald-600 p-2 rounded-lg text-white text-center col-span-2 sm:col-span-1 shadow-sm">
+                          <span className="block text-[10px] text-emerald-100 font-bold uppercase">Total</span>
+                          <span className="font-extrabold text-sm">GH₵ {serviceFinances.total}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
+            )}
+
+            {/* Monospace Report Preview */}
+            <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 font-mono text-xs text-slate-700 whitespace-pre-wrap h-64 sm:h-96 overflow-y-auto shadow-inner">
+              {generateReport()}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={handleCopyReport}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold transition-all ${copiedReport ? "bg-green-600 text-white shadow-lg shadow-green-200" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+              >
+                {copiedReport ? <CheckCircle size={18} /> : <Copy size={18} />}
+                <span className="text-sm">{copiedReport ? "Copied!" : "Copy"}</span>
+              </button>
+              <button
+                onClick={handleOpenWhatsApp}
+                className="flex-1 flex items-center justify-center gap-2 py-3 bg-[#25D366] text-white rounded-xl font-bold hover:bg-[#20bd5a] shadow-lg shadow-green-100 transition-all active:scale-95"
+              >
+                <MessageCircle size={18} /> <span className="text-sm">WhatsApp</span>
+              </button>
             </div>
           </div>
         )}
