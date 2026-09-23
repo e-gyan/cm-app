@@ -265,6 +265,52 @@ const updateMainDoc = async (updates: Partial<AppData>): Promise<void> => {
   });
 };
 
+// Actor helper for audit notifications
+const getLoggedInActorName = (): string => {
+  try {
+    const raw = sessionStorage.getItem("currentUser") || localStorage.getItem("cmd_current_user");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.name) return parsed.name;
+    }
+  } catch {}
+  return auth.currentUser?.displayName || auth.currentUser?.email || "User";
+};
+
+// Centralized activity notification recorder
+export const recordActivityNotification = async (payload: {
+  message: string;
+  type: string;
+  branchId?: string;
+  zoneId?: string;
+  targetChurch?: string;
+  relatedMemberId?: string;
+  actorName?: string;
+}) => {
+  const current = memoryCache || (await loadData());
+  const actor = payload.actorName || getLoggedInActorName();
+  const newNotif: Notification = {
+    id: crypto.randomUUID ? crypto.randomUUID() : `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    message: payload.message,
+    type: payload.type,
+    branchId: payload.branchId || "ALL",
+    zoneId: payload.zoneId,
+    targetChurch: payload.targetChurch || "ALL",
+    relatedMemberId: payload.relatedMemberId,
+    actorName: actor,
+    createdAt: new Date().toISOString(),
+    isRead: false,
+    read: false,
+  };
+
+  const notifications = [newNotif, ...(current.notifications || [])].slice(0, 150);
+  memoryCache = { ...current, notifications };
+  saveLocalCache(memoryCache);
+  notifySubscribers(memoryCache);
+  updateMainDoc({ notifications }).catch(console.error);
+  return newNotif;
+};
+
 // Optimistic Member Operations
 export const saveMembers = async (members: Member[]) => {
   const current = memoryCache || (await loadData());
@@ -288,6 +334,15 @@ export const addMember = async (member: Member) => {
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
   updateMainDoc({ members }).catch(console.error);
+
+  recordActivityNotification({
+    message: `New member registered: ${member.name} (${member.assignedChurch || "General"})`,
+    type: "MEMBER_ADDED",
+    branchId: member.branchId || "ALL",
+    zoneId: member.zoneId,
+    targetChurch: member.assignedChurch || "ALL",
+    relatedMemberId: member.id,
+  }).catch(console.error);
 };
 
 export const addMembers = async (newMembersList: Member[]) => {
@@ -298,15 +353,42 @@ export const addMembers = async (newMembersList: Member[]) => {
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
   updateMainDoc({ members }).catch(console.error);
+
+  recordActivityNotification({
+    message: `${newMembersList.length} new members imported/registered`,
+    type: "MEMBER_ADDED",
+    branchId: newMembersList[0]?.branchId || "ALL",
+    targetChurch: newMembersList[0]?.assignedChurch || "ALL",
+  }).catch(console.error);
 };
 
 export const updateMember = async (id: string, updates: Partial<Member>) => {
   const current = memoryCache || (await loadData());
+  const targetMember = current.members.find((m) => m.id === id);
   const members = current.members.map((m) => (m.id === id ? { ...m, ...updates } : m));
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
   updateMainDoc({ members }).catch(console.error);
+
+  if (targetMember && updates.status && updates.status !== targetMember.status) {
+    recordActivityNotification({
+      message: `Status of ${targetMember.name} changed to ${updates.status}`,
+      type: "STATUS_CHANGE",
+      branchId: updates.branchId || targetMember.branchId || "ALL",
+      targetChurch: updates.assignedChurch || targetMember.assignedChurch || "ALL",
+      relatedMemberId: id,
+    }).catch(console.error);
+  } else if (targetMember && updates.assignedChurch && updates.assignedChurch !== targetMember.assignedChurch) {
+    recordActivityNotification({
+      message: `${targetMember.name} transferred/promoted to ${updates.assignedChurch} Church`,
+      type: "PROMOTION",
+      branchId: updates.branchId || targetMember.branchId || "ALL",
+      targetChurch: updates.assignedChurch,
+      relatedMemberId: id,
+    }).catch(console.error);
+  }
+
   return { success: true, message: "" };
 };
 
@@ -355,6 +437,18 @@ export const saveAttendance = async (id: string, records: AttendanceRecord[]) =>
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
   updateMainDoc({ attendance: att }).catch(console.error);
+
+  if (records.length > 0) {
+    const first = records[0];
+    const presentCount = records.reduce((acc, r) => acc + (r.presentMemberIds?.length || 0), 0);
+    const eventName = first.eventName || (first.churchId ? `${first.churchId} Church` : "Sunday Service");
+    recordActivityNotification({
+      message: `Attendance recorded for ${eventName} (${presentCount} present)`,
+      type: "ATTENDANCE",
+      branchId: first.branchId || "ALL",
+      targetChurch: first.churchId || "ALL",
+    }).catch(console.error);
+  }
 };
 
 export const deleteAttendanceRecord = async (id: string) => {
@@ -390,10 +484,169 @@ export const saveRolePermissions = async (permissions: Record<string, string[]>)
   return updatedSettings;
 };
 
+// Cascade Branch Renaming throughout the entire application and dependencies
+export const renameBranchCascade = async (
+  oldBranchId: string,
+  oldBranchName: string,
+  newBranchName: string,
+  updatedSettings: AppSettings,
+  actorName?: string
+) => {
+  const current = memoryCache || (await loadData());
+  const trimmedNewName = newBranchName.trim();
+  const trimmedOldName = oldBranchName.trim();
+
+  // If names match, just persist settings
+  if (trimmedNewName === trimmedOldName && oldBranchId) {
+    await updateSettings(updatedSettings);
+    return;
+  }
+
+  // 1. Cascade to members
+  const members = current.members.map((m) => {
+    let changed = false;
+    let newBranchId = m.branchId;
+    let newAssignedChurch = m.assignedChurch;
+
+    if (
+      m.branchId === trimmedOldName ||
+      (oldBranchId && m.branchId === oldBranchId)
+    ) {
+      newBranchId = trimmedNewName;
+      changed = true;
+    }
+
+    if (m.assignedChurch === trimmedOldName) {
+      newAssignedChurch = trimmedNewName;
+      changed = true;
+    }
+
+    return changed ? { ...m, branchId: newBranchId, assignedChurch: newAssignedChurch } : m;
+  });
+
+  // 2. Cascade to attendance
+  const attendance = current.attendance.map((a) => {
+    if (
+      a.branchId === trimmedOldName ||
+      (oldBranchId && a.branchId === oldBranchId)
+    ) {
+      return { ...a, branchId: trimmedNewName };
+    }
+    return a;
+  });
+
+  // 3. Cascade to transactions
+  const transactions = (current.transactions || []).map((t) => {
+    if (
+      t.branchId === trimmedOldName ||
+      (oldBranchId && t.branchId === oldBranchId)
+    ) {
+      return { ...t, branchId: trimmedNewName };
+    }
+    return t;
+  });
+
+  // 4. Cascade to outreach sessions
+  const outreachSessions = (current.outreachSessions || []).map((s) => {
+    if (
+      s.branchId === trimmedOldName ||
+      (oldBranchId && s.branchId === oldBranchId)
+    ) {
+      return { ...s, branchId: trimmedNewName };
+    }
+    return s;
+  });
+
+  // 5. Cascade to prayer schedule
+  const prayerSchedule = (current.prayerSchedule || []).map((p) => {
+    if (
+      p.branchId === trimmedOldName ||
+      (oldBranchId && p.branchId === oldBranchId)
+    ) {
+      return { ...p, branchId: trimmedNewName };
+    }
+    return p;
+  });
+
+  // 6. Cascade to existing notifications
+  const updatedExistingNotifs = (current.notifications || []).map((n) => {
+    if (
+      n.branchId === trimmedOldName ||
+      (oldBranchId && n.branchId === oldBranchId)
+    ) {
+      return { ...n, branchId: trimmedNewName };
+    }
+    return n;
+  });
+
+  // 7. Create notification for branch renaming
+  const actor = actorName || getLoggedInActorName();
+  const renameNotif: Notification = {
+    id: crypto.randomUUID ? crypto.randomUUID() : `notif-${Date.now()}`,
+    message: `Branch "${trimmedOldName}" was renamed to "${trimmedNewName}" across the organization`,
+    type: "ORGANIZATION",
+    branchId: trimmedNewName,
+    targetChurch: "ALL",
+    actorName: actor,
+    createdAt: new Date().toISOString(),
+    isRead: false,
+    read: false,
+  };
+  const notifications = [renameNotif, ...updatedExistingNotifs].slice(0, 150);
+
+  // 8. Update browser active branch session/local storage
+  try {
+    const active = sessionStorage.getItem("activeBranchId");
+    if (active === trimmedOldName || (oldBranchId && active === oldBranchId)) {
+      sessionStorage.setItem("activeBranchId", trimmedNewName);
+    }
+    const savedUserRaw = sessionStorage.getItem("currentUser") || localStorage.getItem("cmd_current_user");
+    if (savedUserRaw) {
+      const u = JSON.parse(savedUserRaw);
+      if (u.branchId === trimmedOldName || (oldBranchId && u.branchId === oldBranchId)) {
+        u.branchId = trimmedNewName;
+        sessionStorage.setItem("currentUser", JSON.stringify(u));
+        localStorage.setItem("cmd_current_user", JSON.stringify(u));
+      }
+    }
+  } catch (e) {
+    console.warn("Could not update session branch info:", e);
+  }
+
+  // 9. Atomic commit to memoryCache, local storage, and Firestore
+  const updatedData: AppData = {
+    ...current,
+    settings: updatedSettings,
+    members,
+    attendance,
+    transactions,
+    outreachSessions,
+    prayerSchedule,
+    notifications,
+  };
+
+  memoryCache = updatedData;
+  saveLocalCache(memoryCache);
+  notifySubscribers(memoryCache);
+
+  pendingUpdates = {
+    ...pendingUpdates,
+    settings: updatedSettings,
+    members,
+    attendance,
+    transactions,
+    outreachSessions,
+    prayerSchedule,
+    notifications,
+  };
+
+  await flushPendingWrites();
+};
+
 // Optimistic Notifications Operations
 export const addNotification = async (notification: Notification) => {
   const current = memoryCache || (await loadData());
-  const notifications = [...(current.notifications || []), notification];
+  const notifications = [notification, ...(current.notifications || [])].slice(0, 150);
   memoryCache = { ...current, notifications };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
@@ -450,6 +703,14 @@ export const addTransaction = async (t: any) => {
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
   await updateMainDoc({ transactions });
+
+  recordActivityNotification({
+    message: `${t.type === "INCOME" ? "Income" : "Expense"} of GHS ${t.amount} recorded for "${t.description}"`,
+    type: "TRANSACTION",
+    branchId: t.branchId || "ALL",
+    targetChurch: t.churchId || "ALL",
+  }).catch(console.error);
+
   return { success: true, message: "" };
 };
 
@@ -467,6 +728,7 @@ export const saveOutreachSession = async (session: OutreachSession) => {
   const current = memoryCache || (await loadData());
   const outreachSessions = [...(current.outreachSessions || [])];
   const idx = outreachSessions.findIndex((x) => x.id === session.id);
+  const isNew = idx < 0;
   if (idx >= 0) outreachSessions[idx] = session;
   else outreachSessions.push(session);
 
@@ -474,6 +736,14 @@ export const saveOutreachSession = async (session: OutreachSession) => {
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
   updateMainDoc({ outreachSessions }).catch(console.error);
+
+  recordActivityNotification({
+    message: isNew
+      ? `New outreach session scheduled (${session.sessionType || "Outreach"})`
+      : `Outreach session updated: ${session.outcome || session.status || "Completed"}`,
+    type: "OUTREACH",
+    branchId: session.branchId || "ALL",
+  }).catch(console.error);
 };
 
 export const deleteOutreachSession = async (id: string) => {
@@ -489,6 +759,7 @@ export const savePrayerSlot = async (slot: PrayerSlot) => {
   const current = memoryCache || (await loadData());
   const prayerSchedule = [...(current.prayerSchedule || [])];
   const idx = prayerSchedule.findIndex((x) => x.id === slot.id);
+  const isNew = idx < 0;
   if (idx >= 0) prayerSchedule[idx] = slot;
   else prayerSchedule.push(slot);
 
@@ -496,6 +767,16 @@ export const savePrayerSlot = async (slot: PrayerSlot) => {
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
   updateMainDoc({ prayerSchedule }).catch(console.error);
+
+  if (isNew || slot.isCompleted) {
+    recordActivityNotification({
+      message: slot.isCompleted
+        ? `Prayer slot on ${slot.dayOfWeek || slot.date} marked completed`
+        : `Prayer slot scheduled for ${slot.dayOfWeek || slot.date}`,
+      type: "PRAYER",
+      branchId: slot.branchId || "ALL",
+    }).catch(console.error);
+  }
 };
 
 export const deletePrayerSlot = async (id: string) => {

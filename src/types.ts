@@ -40,7 +40,19 @@ export const Role = {
 } as const;
 export type Role = "BRANCH_COORDINATOR" | "DIRECTORATE_HEAD" | "ZONAL_HEAD" | "ADMIN" | "SUPER_ADMIN" | "NONE" | "TEACHER" | "VOLUNTEER";
 export type ServiceType = "JOY" | "ENLARGEMENT" | "SPECIAL";
-export type NotificationType = "TRANSFER_REQUEST" | "BIRTHDAY" | "GENERAL" | "STATUS_CHANGE" | "PROMOTION" | "GENERAL_INFO";
+export type NotificationType =
+  | "TRANSFER_REQUEST"
+  | "BIRTHDAY"
+  | "GENERAL"
+  | "STATUS_CHANGE"
+  | "PROMOTION"
+  | "GENERAL_INFO"
+  | "ATTENDANCE"
+  | "MEMBER_ADDED"
+  | "TRANSACTION"
+  | "OUTREACH"
+  | "PRAYER"
+  | "ORGANIZATION";
 
 export interface PromotionRecord {
   date: string;
@@ -77,6 +89,7 @@ export interface Member {
 
 export interface Notification {
   branchId?: string;
+  zoneId?: string;
   id: string;
   message: string;
   read?: boolean;
@@ -85,6 +98,8 @@ export interface Notification {
   type?: string;
   relatedMemberId?: string;
   targetChurch?: string;
+  actorName?: string;
+  targetRole?: string;
 }
 
 export interface Transaction {

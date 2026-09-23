@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { AppData, Member, AppSettings } from "../types";
-import { updateSettings } from "../services/storageService";
+import { updateSettings, renameBranchCascade } from "../services/storageService";
 import { hasRoleSubfeature } from "../lib/permissions";
 import { doc, getDoc } from "firebase/firestore";
 import { db, loginWithGoogle } from "../services/firebase";
@@ -746,6 +746,47 @@ const Settings: React.FC<SettingsProps> = ({
                   updateOrg({ ...org, zones: updatedZones });
                 };
 
+                const handleRenameBranch = async (zoneIndex: number, branchIndex: number, branch: any) => {
+                  const newName = editingBranchName.trim();
+                  const oldName = branch.name;
+                  if (!newName || newName === oldName) {
+                    setEditingBranchId(null);
+                    return;
+                  }
+
+                  const branchId = branch.id || `branch-${zoneIndex}-${branchIndex}`;
+                  const updatedZones = [...org.zones];
+                  updatedZones[zoneIndex].branches[branchIndex] = {
+                    ...updatedZones[zoneIndex].branches[branchIndex],
+                    name: newName,
+                  };
+                  const updatedOrg = { ...org, zones: updatedZones };
+                  const updatedSettings = {
+                    ...localSettings,
+                    organization: updatedOrg,
+                  };
+
+                  setLocalSettings(updatedSettings);
+                  setEditingBranchId(null);
+
+                  try {
+                    await renameBranchCascade(branchId, oldName, newName, updatedSettings, currentUser.name);
+                    setStatusMsg({
+                      type: "success",
+                      text: `Branch "${oldName}" renamed to "${newName}" and updated across all records.`,
+                    });
+                    setTimeout(() => setStatusMsg(null), 4000);
+                    onUpdate();
+                  } catch (err) {
+                    console.error("Error cascading branch rename:", err);
+                    setStatusMsg({
+                      type: "error",
+                      text: "Failed to update branch name across application.",
+                    });
+                    setTimeout(() => setStatusMsg(null), 4000);
+                  }
+                };
+
                 return (
                   <div className="space-y-6">
                     {/* TOP SUMMARY & ACTION BAR */}
@@ -930,7 +971,7 @@ const Settings: React.FC<SettingsProps> = ({
                                       className="flex items-center gap-2 group cursor-pointer"
                                       title="Click to rename zone"
                                     >
-                                      <span className="font-extrabold text-base text-slate-800 group-hover:text-indigo-600 transition-colors truncate">
+                                      <span className="font-extrabold text-base text-slate-800 group-hover:text-indigo-600 transition-colors break-words whitespace-normal leading-snug">
                                         {zone.name}
                                       </span>
                                       <Edit2 size={13} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
@@ -966,9 +1007,9 @@ const Settings: React.FC<SettingsProps> = ({
                                     key={branch.id || bIndex}
                                     className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-3.5 space-y-2.5 hover:shadow-sm hover:bg-white transition-all group"
                                   >
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                                        <Building2 size={16} className="text-slate-400 shrink-0" />
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="flex items-start gap-2 flex-1 min-w-0">
+                                        <Building2 size={16} className="text-slate-400 shrink-0 mt-0.5" />
                                         {editingBranchId === (branch.id || `branch-${zIndex}-${bIndex}`) ? (
                                           <div className="flex items-center gap-1 w-full">
                                             <input
@@ -977,13 +1018,7 @@ const Settings: React.FC<SettingsProps> = ({
                                               onChange={(e) => setEditingBranchName(e.target.value)}
                                               onKeyDown={(e) => {
                                                 if (e.key === "Enter") {
-                                                  const updatedZones = [...org.zones];
-                                                  updatedZones[zIndex].branches[bIndex] = {
-                                                    ...updatedZones[zIndex].branches[bIndex],
-                                                    name: editingBranchName.trim() || branch.name,
-                                                  };
-                                                  updateOrg({ ...org, zones: updatedZones });
-                                                  setEditingBranchId(null);
+                                                  handleRenameBranch(zIndex, bIndex, branch);
                                                 } else if (e.key === "Escape") {
                                                   setEditingBranchId(null);
                                                 }
@@ -993,15 +1028,7 @@ const Settings: React.FC<SettingsProps> = ({
                                             />
                                             <button
                                               type="button"
-                                              onClick={() => {
-                                                const updatedZones = [...org.zones];
-                                                updatedZones[zIndex].branches[bIndex] = {
-                                                  ...updatedZones[zIndex].branches[bIndex],
-                                                  name: editingBranchName.trim() || branch.name,
-                                                };
-                                                updateOrg({ ...org, zones: updatedZones });
-                                                setEditingBranchId(null);
-                                              }}
+                                              onClick={() => handleRenameBranch(zIndex, bIndex, branch)}
                                               className="p-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded transition-colors shrink-0"
                                               title="Save Branch Name"
                                             >
@@ -1022,19 +1049,19 @@ const Settings: React.FC<SettingsProps> = ({
                                               setEditingBranchId(branch.id || `branch-${zIndex}-${bIndex}`);
                                               setEditingBranchName(branch.name);
                                             }}
-                                            className="flex items-center gap-1.5 flex-1 min-w-0 group cursor-pointer"
+                                            className="flex items-start gap-1.5 flex-1 min-w-0 group cursor-pointer"
                                             title="Click to rename branch"
                                           >
-                                            <span className="text-xs font-bold text-slate-800 truncate group-hover:text-indigo-600 transition-colors">
+                                            <span className="text-xs font-bold text-slate-800 break-words whitespace-normal leading-snug group-hover:text-indigo-600 transition-colors">
                                               {branch.name}
                                             </span>
-                                            <Edit2 size={12} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                                            <Edit2 size={12} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5" />
                                           </div>
                                         )}
                                       </div>
                                       <button
                                         onClick={() => handleRemoveBranch(zIndex, bIndex, branch.name)}
-                                        className="opacity-40 group-hover:opacity-100 text-slate-400 hover:text-red-600 p-1 hover:bg-red-50 rounded-lg transition-all shrink-0"
+                                        className="opacity-40 group-hover:opacity-100 text-slate-400 hover:text-red-600 p-1 hover:bg-red-50 rounded-lg transition-all shrink-0 mt-0.5"
                                         title="Remove Branch"
                                       >
                                         <Trash2 size={14} />
@@ -1582,7 +1609,7 @@ const Settings: React.FC<SettingsProps> = ({
                                 <span className="p-1.5 bg-indigo-100 text-indigo-700 rounded-lg shrink-0">
                                   {React.createElement(getFeatureIconComponent(feature.iconName), { size: 14 })}
                                 </span>
-                                <span className="truncate">{feature.name}</span>
+                                <span className="break-words whitespace-normal leading-snug">{feature.name}</span>
                               </td>
                               {ROLES_LIST.map((r) => {
                                 const active = hasRoleFeature(r.id, feature.id);
@@ -1609,7 +1636,7 @@ const Settings: React.FC<SettingsProps> = ({
                               })
                               .map((sf) => (
                                 <tr key={sf.id} className="hover:bg-slate-50 transition-colors">
-                                  <td className="sticky left-0 bg-white z-10 px-4 py-2.5 pl-9 min-w-[240px] border-r border-slate-200 shadow-sm text-slate-600 font-medium truncate">
+                                  <td className="sticky left-0 bg-white z-10 px-4 py-2.5 pl-9 min-w-[240px] border-r border-slate-200 shadow-sm text-slate-600 font-medium break-words whitespace-normal leading-snug">
                                     <span className="text-slate-400 mr-1.5">&bull;</span>
                                     {sf.name}
                                   </td>

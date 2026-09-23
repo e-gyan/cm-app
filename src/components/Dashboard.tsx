@@ -1322,7 +1322,7 @@ const ChurchDashboard: React.FC<{
       const churchDiv = divisions[activeChurch];
 
       const isTeacherUser = !isAdmin &&
-        (currentUser.type === "Teacher" || currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.type === "Helper" || currentUser.type === MemberType.HELPER) &&
+        (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.type === MemberType.HELPER) &&
         currentUser.role !== "BRANCH_COORDINATOR" && currentUser.role !== "ZONAL_HEAD" && currentUser.role !== "DIRECTORATE_HEAD";
 
       let assignedKids: Member[] = [];

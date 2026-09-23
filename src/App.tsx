@@ -334,15 +334,124 @@ const App: React.FC = () => {
     }
   };
 
+  const normalizedName = currentUser?.name?.toLowerCase().trim() || "";
+  const isSuperAdminUser =
+    normalizedName === "emmanuel gyan" ||
+    normalizedName === "admin" ||
+    normalizedName === "main admin" ||
+    currentUser?.role === "SUPER_ADMIN";
+  const isAdmin = currentUser?.role === "ADMIN" || isSuperAdminUser;
+
   const myNotifications = useMemo(() => {
     if (!data.notifications || !currentUser) return [];
-    return data.notifications.filter(
-      (n) =>
-        !n.isRead &&
-        (n.targetChurch === activeChurch ||
-          (currentUser.role === "ADMIN" && activeChurch === "CM")),
-    );
-  }, [data.notifications, activeChurch, currentUser]);
+
+    return data.notifications
+      .filter((n) => {
+        if (n.isRead) return false;
+
+        // 1. Full Central Access: SUPER_ADMIN, ADMIN, DIRECTORATE_HEAD see all activities
+        if (
+          currentUser.role === "SUPER_ADMIN" ||
+          currentUser.role === "ADMIN" ||
+          currentUser.role === "DIRECTORATE_HEAD" ||
+          isSuperAdminUser
+        ) {
+          // If viewing a specific branch scope, allow filtering or show all
+          if (activeBranchId && activeBranchId !== "ALL") {
+            if (activeBranchId.startsWith("ZONE:")) {
+              const targetZoneId = activeBranchId.replace("ZONE:", "");
+              const zone = data.settings.organization?.zones?.find((z) => z.id === targetZoneId);
+              const branchIds = (zone?.branches || []).flatMap((b) => [b.id, b.name].filter(Boolean));
+              return (
+                n.branchId === "ALL" ||
+                !n.branchId ||
+                n.zoneId === targetZoneId ||
+                branchIds.includes(n.branchId)
+              );
+            }
+            return (
+              n.branchId === "ALL" ||
+              !n.branchId ||
+              n.branchId === activeBranchId ||
+              n.branchId.trim().toLowerCase() === activeBranchId.trim().toLowerCase()
+            );
+          }
+          return true;
+        }
+
+        // 2. Zonal Head: Activities inside their assigned zone
+        if (currentUser.role === "ZONAL_HEAD") {
+          const userZoneId = currentUser.zoneId;
+          if (!userZoneId) return true;
+          if (n.zoneId && n.zoneId === userZoneId) return true;
+          const zone = data.settings.organization?.zones?.find((z) => z.id === userZoneId);
+          const branchIds = (zone?.branches || []).flatMap((b) => [b.id, b.name].filter(Boolean));
+          return (
+            n.branchId === "ALL" ||
+            !n.branchId ||
+            (n.branchId && branchIds.includes(n.branchId))
+          );
+        }
+
+        // 3. Branch Coordinator: Activities inside their branch
+        if (currentUser.role === "BRANCH_COORDINATOR") {
+          const userBranch = currentUser.branchId;
+          if (!userBranch) return true;
+          const matchBranch =
+            n.branchId === "ALL" ||
+            !n.branchId ||
+            n.branchId === userBranch ||
+            n.branchId.trim().toLowerCase() === userBranch.trim().toLowerCase();
+          return matchBranch;
+        }
+
+        // 4. Teacher & Volunteer: Activities matching their assigned church class or branch
+        const matchesChurch =
+          !n.targetChurch ||
+          n.targetChurch === "ALL" ||
+          n.targetChurch === currentUser.assignedChurch ||
+          n.targetChurch === activeChurch;
+
+        const matchesBranch =
+          !n.branchId ||
+          n.branchId === "ALL" ||
+          !currentUser.branchId ||
+          n.branchId === currentUser.branchId ||
+          n.branchId === activeBranchId;
+
+        return matchesChurch && matchesBranch;
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [data.notifications, activeChurch, activeBranchId, currentUser, isSuperAdminUser, data.settings.organization]);
+
+  // Dispatch browser desktop notifications when new activities occur in user context
+  useEffect(() => {
+    if (!currentUser || myNotifications.length === 0) return;
+
+    const newItems = myNotifications.filter((n) => !prevNotificationIds.current.has(n.id));
+
+    if (newItems.length > 0) {
+      if (
+        typeof window !== "undefined" &&
+        "Notification" in window &&
+        Notification.permission === "granted" &&
+        document.visibilityState === "hidden"
+      ) {
+        newItems.slice(0, 3).forEach((n) => {
+          try {
+            new Notification("Children's Ministry Activity", {
+              body: n.message,
+              icon: "/favicon.ico",
+            });
+          } catch (e) {
+            console.warn("Could not dispatch browser notification", e);
+          }
+        });
+      }
+    }
+
+    prevNotificationIds.current = new Set(myNotifications.map((n) => n.id));
+  }, [myNotifications, currentUser]);
 
   const branchTrendData = useMemo(() => {
     if (!data.attendance || data.attendance.length === 0) return [];
@@ -375,14 +484,6 @@ const App: React.FC = () => {
     clearNotifications();
     refreshData();
   };
-
-  const normalizedName = currentUser?.name?.toLowerCase().trim() || "";
-  const isSuperAdminUser =
-    normalizedName === "emmanuel gyan" ||
-    normalizedName === "admin" ||
-    normalizedName === "main admin" ||
-    currentUser?.role === "SUPER_ADMIN";
-  const isAdmin = currentUser?.role === "ADMIN" || isSuperAdminUser;
 
   const hasPermission = (moduleName: string, subfeature?: string) => {
     if (!currentUser) return false;
@@ -503,62 +604,95 @@ const App: React.FC = () => {
   );
 
   const NotificationDropdown = () => (
-    <div className="absolute top-12 right-0 w-80 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-[100] animate-in fade-in zoom-in-95 origin-top-right">
-      <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-          Notifications ({myNotifications.length})
+    <div className="absolute top-12 right-0 w-84 sm:w-96 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden z-[100] animate-in fade-in zoom-in-95 origin-top-right">
+      <div className="p-3.5 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+        <span className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
+          Activity Notifications ({myNotifications.length})
         </span>
         {myNotifications.length > 0 && (
           <button
             onClick={handleClearAll}
-            className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
+            className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
           >
             Clear All
           </button>
         )}
       </div>
-      <div className="max-h-80 overflow-y-auto">
+      <div className="max-h-96 overflow-y-auto divide-y divide-slate-100">
         {myNotifications.length === 0 ? (
           <div className="p-8 text-center text-slate-400 text-sm">
-            No new notifications
+            No new activity notifications in your scope
           </div>
         ) : (
-          myNotifications.map((n) => (
-            <div
-              key={n.id}
-              className="p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors relative group"
-            >
-              <div className="flex gap-3">
-                <div
-                  className={`shrink-0 w-2 h-2 mt-2 rounded-full ${
-                    n.type === "BIRTHDAY"
-                      ? "bg-pink-500"
-                      : n.type === "PROMOTION"
-                        ? "bg-indigo-500"
-                        : n.type === "STATUS_CHANGE"
-                          ? "bg-green-500"
-                          : "bg-amber-500"
-                  }`}
-                ></div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-slate-800 leading-tight">
-                    {n.message}
-                  </p>
-                  <span className="text-[10px] font-bold text-slate-400 mt-1 block">
-                    {n.type.replace("_", " ")} •{" "}
-                    {new Date(n.createdAt).toLocaleDateString()}
-                  </span>
+          myNotifications.map((n) => {
+            const typeConfig = (() => {
+              switch (n.type) {
+                case "ATTENDANCE":
+                  return { label: "Attendance", color: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50" };
+                case "MEMBER_ADDED":
+                  return { label: "Member Added", color: "bg-blue-600", text: "text-blue-700", bg: "bg-blue-50" };
+                case "TRANSACTION":
+                  return { label: "Finances", color: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50" };
+                case "OUTREACH":
+                  return { label: "Outreach", color: "bg-purple-600", text: "text-purple-700", bg: "bg-purple-50" };
+                case "PRAYER":
+                  return { label: "Prayer", color: "bg-sky-500", text: "text-sky-700", bg: "bg-sky-50" };
+                case "ORGANIZATION":
+                  return { label: "Organization", color: "bg-rose-500", text: "text-rose-700", bg: "bg-rose-50" };
+                case "PROMOTION":
+                  return { label: "Promotion", color: "bg-indigo-600", text: "text-indigo-700", bg: "bg-indigo-50" };
+                case "STATUS_CHANGE":
+                  return { label: "Status Update", color: "bg-teal-500", text: "text-teal-700", bg: "bg-teal-50" };
+                case "BIRTHDAY":
+                  return { label: "Birthday", color: "bg-pink-500", text: "text-pink-700", bg: "bg-pink-50" };
+                default:
+                  return { label: (n.type || "Activity").replace("_", " "), color: "bg-slate-500", text: "text-slate-700", bg: "bg-slate-50" };
+              }
+            })();
+
+            const formattedTime = (() => {
+              try {
+                const d = new Date(n.createdAt);
+                return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} • ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+              } catch {
+                return n.createdAt;
+              }
+            })();
+
+            return (
+              <div
+                key={n.id}
+                className="p-3.5 hover:bg-slate-50/80 transition-colors relative group"
+              >
+                <div className="flex items-start gap-3">
+                  <span className={`shrink-0 w-2.5 h-2.5 mt-1.5 rounded-full ${typeConfig.color}`}></span>
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className="text-xs font-semibold text-slate-800 break-words whitespace-normal leading-relaxed">
+                      {n.message}
+                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-slate-400 font-medium">
+                      <span className={`px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${typeConfig.bg} ${typeConfig.text}`}>
+                        {typeConfig.label}
+                      </span>
+                      {n.actorName && <span>by {n.actorName}</span>}
+                      {n.branchId && n.branchId !== "ALL" && (
+                        <span className="font-semibold text-slate-500">[{n.branchId}]</span>
+                      )}
+                      <span>• {formattedTime}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleMarkRead(n.id)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-slate-100 shrink-0"
+                    title="Mark as read"
+                  >
+                    <Check size={15} />
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleMarkRead(n.id)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-slate-400 hover:text-indigo-600"
-                  title="Mark as read"
-                >
-                  <Check size={16} />
-                </button>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
