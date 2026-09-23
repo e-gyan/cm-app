@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { AppData, type Church, Member, MemberType, MemberStatus } from "../types";
 import { calculateChurchDivisions, matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
+import { isSundayAttendance } from "../lib/dateUtils";
 import {
   AreaChart,
   Area,
@@ -479,13 +480,13 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
   const chartData = useMemo(() => {
     const { start, end } = getDateRange();
 
-    // Filter records strictly within range and scope
+    // Filter records strictly within range, scope, and Sunday mainstream
     let records = data.attendance.filter((r) => {
       const d = new Date(r.date);
       const churchMatch =
         effectiveChurch === "All" ? true : r.churchId === effectiveChurch;
       const scopeMatch = matchesScope(r, activeBranchId, data.settings?.organization);
-      return d >= start && d <= end && churchMatch && scopeMatch;
+      return isSundayAttendance(r) && d >= start && d <= end && churchMatch && scopeMatch;
     });
 
     // Sort chronological
@@ -623,7 +624,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
 
     const records = data.attendance.filter((r) => {
       const d = new Date(r.date);
-      return d >= start && d <= end && availableChurches.includes(r.churchId);
+      return isSundayAttendance(r) && d >= start && d <= end && availableChurches.includes(r.churchId);
     });
 
     records.forEach((record) => {
@@ -908,14 +909,15 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
 
   const predictionModel = useMemo(() => {
     const today = new Date();
-    const sortedDates = [...new Set(data.attendance.map(a => a.date))]
+    const sundayRecords = data.attendance.filter((r) => isSundayAttendance(r));
+    const sortedDates = [...new Set(sundayRecords.map(a => a.date))]
       .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
       .filter(d => new Date(d) <= today);
     
     const recent4Dates = sortedDates.slice(0, 4);
     if (recent4Dates.length === 0) return null;
 
-    const relevantAttendance = data.attendance.filter(a => 
+    const relevantAttendance = sundayRecords.filter(a => 
       effectiveChurch === "All" ? true : a.churchId === effectiveChurch
     );
 

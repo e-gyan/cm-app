@@ -7,6 +7,7 @@ import {
   MemberStatus,
   ServiceType,
 } from "../types";
+import { getPrecedingWednesday } from "../lib/dateUtils";
 import {
   Copy,
   FileText,
@@ -166,6 +167,33 @@ const ReportExport: React.FC<ReportExportProps> = ({
     firstFruitsOverride: "",
   }));
 
+  // Auto-aggregate Wednesday cell attendance for the current branch and selected Sunday
+  const autoWednesdayCellAttendance = useMemo(() => {
+    if (!selectedDate) return 0;
+    const precedingWedStr = getPrecedingWednesday(selectedDate);
+    const branchCellRecords = data.attendance.filter((r) => {
+      const isTargetDate =
+        r.date === precedingWedStr ||
+        (r.attendanceType === "CELL" && r.date < selectedDate && r.date >= precedingWedStr);
+      return (
+        isTargetDate &&
+        matchesScope(r, activeBranchId || branchObj.id, data.settings?.organization, data.members)
+      );
+    });
+
+    const attendeeIds = new Set<string>();
+    branchCellRecords.forEach((r) => {
+      (r.presentMemberIds || []).forEach((id) => {
+        const mem = data.members.find((m) => m.id === id);
+        if (mem && (!mem.branchId || matchesScope(mem, activeBranchId || branchObj.id, data.settings?.organization))) {
+          attendeeIds.add(id);
+        }
+      });
+    });
+
+    return attendeeIds.size;
+  }, [data.attendance, data.members, selectedDate, activeBranchId, branchObj.id, data.settings?.organization]);
+
   // Synchronize / load saved values from localStorage per branch & date
   useEffect(() => {
     if (!selectedDate) return;
@@ -192,8 +220,8 @@ const ReportExport: React.FC<ReportExportProps> = ({
           cellEvangelism: parsed.cellEvangelism ?? 0,
           outreachSouls: parsed.outreachSouls ?? 0,
           totalSoulsWonOverride: parsed.totalSoulsWonOverride ?? "",
-          cellMeetingsHeld: parsed.cellMeetingsHeld ?? 0,
-          totalCellAttendance: parsed.totalCellAttendance ?? 0,
+          cellMeetingsHeld: (parsed.cellMeetingsHeld !== undefined && parsed.cellMeetingsHeld !== 0) ? parsed.cellMeetingsHeld : (autoWednesdayCellAttendance > 0 ? 1 : 0),
+          totalCellAttendance: (parsed.totalCellAttendance !== undefined && parsed.totalCellAttendance !== 0) ? parsed.totalCellAttendance : autoWednesdayCellAttendance,
           newMembersOverride: parsed.newMembersOverride ?? "",
           spectacularEvent: parsed.spectacularEvent || "",
           offeringOverride: parsed.offeringOverride ?? "",
@@ -225,8 +253,8 @@ const ReportExport: React.FC<ReportExportProps> = ({
       cellEvangelism: 0,
       outreachSouls: 0,
       totalSoulsWonOverride: "",
-      cellMeetingsHeld: 0,
-      totalCellAttendance: 0,
+      cellMeetingsHeld: autoWednesdayCellAttendance > 0 ? 1 : 0,
+      totalCellAttendance: autoWednesdayCellAttendance,
       newMembersOverride: "",
       spectacularEvent: "",
       offeringOverride: "",
@@ -234,7 +262,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       partnershipsOverride: "",
       firstFruitsOverride: "",
     }));
-  }, [selectedDate, branchObj.id, branchObj.name]);
+  }, [selectedDate, branchObj.id, branchObj.name, autoWednesdayCellAttendance]);
 
   const updateBcReportField = (field: keyof BCReportState, val: any) => {
     setBcReportState((prev) => {
@@ -1158,9 +1186,19 @@ const ReportExport: React.FC<ReportExportProps> = ({
       r += `OUTREACH - ${bcReportState.outreachSouls || 0}\n`;
       r += `TOTAL SOULS WON WITHIN THE WEEK - ${effectiveTotalSoulsWon}\n\n`;
 
+      const effectiveCellAttendance =
+        bcReportState.totalCellAttendance !== undefined && bcReportState.totalCellAttendance !== 0
+          ? bcReportState.totalCellAttendance
+          : autoWednesdayCellAttendance;
+
+      const effectiveCellMeetings =
+        bcReportState.cellMeetingsHeld !== undefined && bcReportState.cellMeetingsHeld !== 0
+          ? bcReportState.cellMeetingsHeld
+          : (effectiveCellAttendance > 0 ? 1 : 0);
+
       r += `CELL SYSTEM REPORT\n`;
-      r += `NUMBER OF CELL MEETINGS HELD - ${bcReportState.cellMeetingsHeld || 0}\n`;
-      r += `TOTAL CELL ATTENDANCE - ${bcReportState.totalCellAttendance || 0}\n\n`;
+      r += `NUMBER OF CELL MEETINGS HELD - ${effectiveCellMeetings}\n`;
+      r += `TOTAL CELL ATTENDANCE - ${effectiveCellAttendance}\n\n`;
 
       r += `SPECTACULAR EVENT: ${bcReportState.spectacularEvent || ""}\n`;
 
@@ -2302,17 +2340,32 @@ const ReportExport: React.FC<ReportExportProps> = ({
                             />
                           </div>
                           <div>
-                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Cell Attendance</label>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5 flex items-center justify-between">
+                              <span>Cell Attendance</span>
+                              {autoWednesdayCellAttendance > 0 && (
+                                <span className="text-emerald-600 font-bold lowercase text-[10px]">
+                                  (wednesday: {autoWednesdayCellAttendance})
+                                </span>
+                              )}
+                            </label>
                             <input
                               type="number"
                               min="0"
-                              value={bcReportState.totalCellAttendance}
+                              value={
+                                bcReportState.totalCellAttendance !== undefined && bcReportState.totalCellAttendance !== 0
+                                  ? bcReportState.totalCellAttendance
+                                  : (autoWednesdayCellAttendance || 0)
+                              }
                               onChange={(e) => updateBcReportField("totalCellAttendance", parseInt(e.target.value) || 0)}
                               className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg font-bold text-center text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
                             />
                           </div>
                         </div>
-                        <p className="text-[11px] text-slate-400 italic pt-1">When there is none, 0 is recorded automatically.</p>
+                        <p className="text-[11px] text-slate-400 italic pt-1">
+                          {autoWednesdayCellAttendance > 0
+                            ? `Auto-aggregated from Wednesday cell attendance (${autoWednesdayCellAttendance} present). Enter manual override if needed.`
+                            : "When there is none, 0 is recorded automatically."}
+                        </p>
                       </div>
                     </div>
 

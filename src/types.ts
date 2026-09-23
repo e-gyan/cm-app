@@ -39,7 +39,7 @@ export const Role = {
   VOLUNTEER: "VOLUNTEER",
 } as const;
 export type Role = "BRANCH_COORDINATOR" | "DIRECTORATE_HEAD" | "ZONAL_HEAD" | "ADMIN" | "SUPER_ADMIN" | "NONE" | "TEACHER" | "VOLUNTEER";
-export type ServiceType = "JOY" | "ENLARGEMENT" | "SPECIAL";
+export type ServiceType = "JOY" | "ENLARGEMENT" | "SPECIAL" | "CELL";
 export type NotificationType =
   | "TRANSFER_REQUEST"
   | "BIRTHDAY"
@@ -150,6 +150,7 @@ export interface AttendanceRecord {
   presentMemberIds: string[];
   serviceMap?: any;
   lastUpdated?: number | string;
+  attendanceType?: "SUNDAY" | "CELL";
 }
 
 export interface CloudConfig {

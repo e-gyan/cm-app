@@ -34,6 +34,13 @@ import {
 import { sanitizeInput, determineGenderByName } from "../services/securityService";
 import { matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
 import { MemberAvatar } from "./MemberAvatar";
+import {
+  isSunday,
+  isWednesday,
+  getNextSunday,
+  getActiveSunday,
+  getActiveWednesday,
+} from "../lib/dateUtils";
 
 interface AttendanceTakerProps {
   data: AppData;
@@ -143,6 +150,16 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     [currentYear],
   );
 
+  const isWednesdayCell = useMemo(
+    () => isWednesday(selectedDate) || (!isSunday(selectedDate) && selectedDate !== ""),
+    [selectedDate],
+  );
+
+  const targetSundayForCell = useMemo(
+    () => (selectedDate ? getNextSunday(selectedDate) : ""),
+    [selectedDate],
+  );
+
   // Helper to determine which branches are relevant based on mode and filter
   const getRelevantBranches = (
     churchFilter: Church | "COMBINED",
@@ -160,19 +177,36 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     if (sundaysCurrentYear.length > 0) {
       if (!selectedDate) {
         const today = new Date();
-        const dayOfWeek = today.getDay();
-        const currentSunday = new Date(today);
-        currentSunday.setDate(today.getDate() - dayOfWeek);
-        const currentSundayStr = currentSunday.toISOString().split("T")[0];
-        const exists = sundaysCurrentYear.some(
-          (d) => d.toISOString().split("T")[0] === currentSundayStr,
-        );
+        const isTodayWed = today.getDay() === 3;
+        if (isTodayWed) {
+          setSelectedDate(getActiveWednesday(today));
+          setCurrentService("CELL");
+        } else {
+          const currentSundayStr = getActiveSunday(today);
+          const exists = sundaysCurrentYear.some(
+            (d) => d.toISOString().split("T")[0] === currentSundayStr,
+          );
 
-        if (exists) setSelectedDate(currentSundayStr);
-        else setSelectedDate(sundaysCurrentYear[0].toISOString().split("T")[0]);
+          if (exists) setSelectedDate(currentSundayStr);
+          else setSelectedDate(sundaysCurrentYear[0].toISOString().split("T")[0]);
+        }
       }
     }
   }, [sundaysCurrentYear]);
+
+  // Synchronize service selection when date changes between Sunday and Wednesday
+  useEffect(() => {
+    if (!selectedDate) return;
+    if (isWednesday(selectedDate) || (!isSunday(selectedDate) && selectedDate !== "")) {
+      if (currentService !== "CELL") {
+        setCurrentService("CELL");
+      }
+    } else if (isSunday(selectedDate)) {
+      if (currentService === "CELL") {
+        setCurrentService("JOY");
+      }
+    }
+  }, [selectedDate]);
 
   const getDraftKey = () =>
     `attendance_draft_${effectiveChurch}_${attendanceMode}_${selectedDate}`;
@@ -583,6 +617,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         hasActualChanges = true;
         const effectiveBranchId = existingRecord?.branchId || activeBranchId || currentUser.branchId || undefined;
         const id = `${selectedDate}_${churchId}`;
+        const recordEventName = isWednesdayCell
+          ? (specialEventName || existingRecord?.eventName || "Wednesday Cell")
+          : newEventName;
         saveAttendance(id, [{
           id,
           date: selectedDate,
@@ -591,7 +628,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           presentMemberIds: finalPresent,
           punctualMemberIds: finalPunctual,
           serviceMap: finalServiceMap,
-          eventName: newEventName,
+          eventName: recordEventName,
+          attendanceType: isWednesdayCell ? "CELL" : "SUNDAY",
           lastUpdated: Date.now()
         }]);
       }
@@ -813,45 +851,93 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         {/* SERVICE TOGGLE (Visible only in Member Mode for UJ, I, K, LJ) */}
         {attendanceMode === "MEMBERS" &&
           (effectiveChurch !== "CM" || isCombinedView) && (
-            <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100 mb-1 overflow-x-auto hide-scrollbar">
-              <button
-                onClick={() => setCurrentService("JOY")}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "JOY" ? "bg-amber-100 text-amber-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
-              >
-                <Sun
-                  size={18}
-                  fill={currentService === "JOY" ? "currentColor" : "none"}
-                />{" "}
-                Joy Service
-              </button>
-              <button
-                onClick={() => setCurrentService("ENLARGEMENT")}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "ENLARGEMENT" ? "bg-sky-100 text-sky-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
-              >
-                <Zap
-                  size={18}
-                  fill={
-                    currentService === "ENLARGEMENT" ? "currentColor" : "none"
-                  }
-                />{" "}
-                Enlargement
-              </button>
-              <button
-                onClick={() => setCurrentService("SPECIAL")}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "SPECIAL" ? "bg-purple-100 text-purple-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
-              >
-                <Crown
-                  size={18}
-                  fill={currentService === "SPECIAL" ? "currentColor" : "none"}
-                />{" "}
-                Special
-              </button>
-            </div>
+            isWednesdayCell ? (
+              <div className="flex items-center justify-between bg-emerald-50/90 rounded-2xl px-4 py-2.5 shadow-xs border border-emerald-200/80 mb-1">
+                <div className="flex items-center gap-2 text-emerald-900 text-xs font-bold">
+                  <span className="text-sm">🌿</span>
+                  <span>Midweek Cell Attendance Active</span>
+                </div>
+                <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-lg bg-emerald-600 text-white shadow-2xs tracking-wide">
+                  Cell Meeting
+                </span>
+              </div>
+            ) : (
+              <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100 mb-1 overflow-x-auto hide-scrollbar">
+                <button
+                  onClick={() => setCurrentService("JOY")}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "JOY" ? "bg-amber-100 text-amber-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
+                >
+                  <Sun
+                    size={18}
+                    fill={currentService === "JOY" ? "currentColor" : "none"}
+                  />{" "}
+                  Joy Service
+                </button>
+                <button
+                  onClick={() => setCurrentService("ENLARGEMENT")}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "ENLARGEMENT" ? "bg-sky-100 text-sky-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
+                >
+                  <Zap
+                    size={18}
+                    fill={
+                      currentService === "ENLARGEMENT" ? "currentColor" : "none"
+                    }
+                  />{" "}
+                  Enlargement
+                </button>
+                <button
+                  onClick={() => setCurrentService("SPECIAL")}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "SPECIAL" ? "bg-purple-100 text-purple-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
+                >
+                  <Crown
+                    size={18}
+                    fill={currentService === "SPECIAL" ? "currentColor" : "none"}
+                  />{" "}
+                  Special
+                </button>
+              </div>
+            )
           )}
 
         {/* Row 1: Main Controls */}
         <div className="bg-white rounded-3xl p-3 md:p-4 shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-3">
-          <div className="flex gap-2 w-full items-center">
+          <div className="flex flex-wrap sm:flex-nowrap gap-2 w-full items-center">
+            {/* Sunday vs Wednesday Meeting Switcher */}
+            <div className="flex bg-slate-100 p-1 rounded-2xl shrink-0 border border-slate-200/60 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDate(getActiveSunday());
+                  if (currentService === "CELL") setCurrentService("JOY");
+                }}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  !isWednesdayCell
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+                title="Switch to Sunday Service"
+              >
+                <Sun size={14} className={!isWednesdayCell ? "text-amber-500" : "text-slate-400"} />
+                <span className="hidden xs:inline">Sunday</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDate(getActiveWednesday());
+                  setCurrentService("CELL");
+                }}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                  isWednesdayCell
+                    ? "bg-emerald-600 text-white shadow-xs"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+                title="Switch to Wednesday Cell Meeting"
+              >
+                <span>🌿</span>
+                <span className="hidden xs:inline">Wednesday Cell</span>
+              </button>
+            </div>
+
             {activeChurch === "CM" && (
               <div className="relative w-28 md:w-48 shrink-0">
                 <div className="absolute inset-y-0 left-0 flex items-center pl-2 pointer-events-none text-indigo-600">
@@ -954,6 +1040,35 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             )}
           </div>
         </div>
+
+        {/* Wednesday Cell Meeting Banner */}
+        {isWednesdayCell && (
+          <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200/80 rounded-2xl p-3 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+            <div className="flex items-center gap-3">
+              <span className="w-9 h-9 rounded-xl bg-emerald-100/90 text-emerald-800 flex items-center justify-center text-lg shrink-0 shadow-2xs">
+                🌿
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-emerald-950 uppercase tracking-wide">
+                    Wednesday Cell Meeting Attendance
+                  </span>
+                  <span className="text-[10px] bg-emerald-200/80 text-emerald-900 font-bold px-2 py-0.5 rounded-full">
+                    Midweek
+                  </span>
+                </div>
+                <p className="text-emerald-850 text-[11px] font-medium mt-0.5">
+                  Attendees here will be automatically inserted into the <strong>Total Cell Attendance</strong> on the next Sunday's Branch Coordinator report ({formatDateDDMMYYYY(targetSundayForCell)}). Excluded from Sunday dashboard metrics.
+                </p>
+              </div>
+            </div>
+            <div className="shrink-0 self-end sm:self-center">
+              <span className="text-[11px] font-bold bg-white text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg shadow-2xs inline-block">
+                For Sunday: {formatDateDDMMYYYY(targetSundayForCell)}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Row 2: Search & Filters */}
         <div className="bg-white/80 backdrop-blur-md rounded-2xl md:rounded-3xl p-2 shadow-sm border border-slate-100">
@@ -1072,7 +1187,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               Add First Timer(s)
             </h3>
             <p className="text-xs text-slate-500 mb-3">
-              Add one or multiple First Timers to directory and mark them present for this Sunday ({formatDateDDMMYYYY(selectedDate)}). Type or paste names separated by new lines or commas.
+              Add one or multiple First Timers to directory and mark them present for this {isWednesdayCell ? "Wednesday" : "Sunday"} ({formatDateDDMMYYYY(selectedDate)}). Type or paste names separated by new lines or commas.
             </p>
             
             {newMemberNames.map((name, index) => (
@@ -1228,7 +1343,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             let iconStyle = "bg-slate-100 text-slate-300";
 
             if (isPresent) {
-              if (assignedService === "JOY") {
+              if (assignedService === "CELL" || isWednesdayCell) {
+                cardStyle =
+                  "bg-emerald-50 border-emerald-300 shadow-md shadow-emerald-100 transform scale-[1.01]";
+                textStyle = "text-emerald-950";
+                iconStyle = "bg-white text-emerald-600 border border-emerald-200";
+              } else if (assignedService === "JOY") {
                 cardStyle =
                   "bg-amber-50 border-amber-300 shadow-md shadow-amber-100 transform scale-[1.01]";
                 textStyle = "text-amber-900";
@@ -1284,14 +1404,30 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                     {/* Service Badge if Present */}
                     {isPresent && assignedService && (
                       <div
-                        className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase border ${assignedService === "JOY" ? "bg-amber-100 text-amber-700 border-amber-200" : "bg-sky-100 text-sky-700 border-sky-200"}`}
+                        className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase border ${
+                          assignedService === "CELL" || isWednesdayCell
+                            ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                            : assignedService === "JOY"
+                              ? "bg-amber-100 text-amber-700 border-amber-200"
+                              : "bg-sky-100 text-sky-700 border-sky-200"
+                        }`}
                       >
-                        {assignedService === "JOY" ? (
-                          <Sun size={10} />
+                        {assignedService === "CELL" || isWednesdayCell ? (
+                          <>
+                            <span className="text-[11px]">🌿</span>
+                            <span>Cell</span>
+                          </>
+                        ) : assignedService === "JOY" ? (
+                          <>
+                            <Sun size={10} />
+                            <span>JOY</span>
+                          </>
                         ) : (
-                          <Zap size={10} />
+                          <>
+                            <Zap size={10} />
+                            <span>{assignedService}</span>
+                          </>
                         )}
-                        {assignedService}
                       </div>
                     )}
                     </div>
