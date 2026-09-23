@@ -55,6 +55,39 @@ export const loginWithGoogle = async () => {
   }
 };
 
+import { getStorage, ref as storageRef, uploadString, getDownloadURL } from "firebase/storage";
+
+export const storage = getStorage(app);
+
+export const uploadMemberPhoto = async (memberId: string, dataUrl: string): Promise<string> => {
+  // 1. Try Firebase Cloud Storage first
+  if (firebaseConfig.storageBucket) {
+    try {
+      const fileRef = storageRef(storage, `members/photos/${memberId}.webp`);
+      await uploadString(fileRef, dataUrl, "data_url", { contentType: "image/webp" });
+      const downloadUrl = await getDownloadURL(fileRef);
+      return downloadUrl;
+    } catch (storageError) {
+      console.warn("Firebase Storage upload failed, attempting Firestore fallback collection:", storageError);
+    }
+  }
+
+  // 2. Resilient Fallback: Store in dedicated 'memberPhotos' Firestore collection
+  // (isolated from appData/main, ensuring zero size bloat on main app state)
+  try {
+    const photoDocRef = doc(db, "memberPhotos", memberId);
+    await setDoc(photoDocRef, {
+      memberId,
+      photoDataUrl: dataUrl,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+    return dataUrl;
+  } catch (firestoreError) {
+    console.error("Failed to store member photo in fallback collection:", firestoreError);
+    return dataUrl;
+  }
+};
+
 export const logoutGoogle = async () => {
   return signOut(auth);
 };

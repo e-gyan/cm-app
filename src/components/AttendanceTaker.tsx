@@ -33,6 +33,7 @@ import {
 } from "../services/storageService";
 import { sanitizeInput, determineGenderByName } from "../services/securityService";
 import { matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
+import { MemberAvatar } from "./MemberAvatar";
 
 interface AttendanceTakerProps {
   data: AppData;
@@ -1257,12 +1258,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                             `}
               >
                 <div className="flex justify-between items-start">
-                  <div className="flex-1 min-w-0 pr-2">
-                    <h4
-                      className={`font-bold text-lg leading-tight break-words ${textStyle}`}
-                    >
-                      {member.name}
-                    </h4>
+                  <div className="flex items-center gap-3 flex-1 min-w-0 pr-2">
+                    <MemberAvatar member={member} size="sm" showBorder={!isPresent} />
+                    <div className="flex-1 min-w-0">
+                      <h4
+                        className={`font-bold text-lg leading-tight break-words ${textStyle}`}
+                      >
+                        {member.name}
+                      </h4>
                     <div className="flex flex-wrap gap-1 mt-1">
                       <p
                         className={`text-xs font-medium uppercase tracking-wider ${isPresent ? "opacity-80" : "text-slate-400"}`}
@@ -1291,6 +1294,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                         {assignedService}
                       </div>
                     )}
+                    </div>
                   </div>
                   <div
                     className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${iconStyle}`}

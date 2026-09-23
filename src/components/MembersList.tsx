@@ -44,10 +44,14 @@ import {
   CheckCircle,
   Sparkles,
   Search,
+  Camera,
 } from "lucide-react";
 import { updateMember, addMember, deleteMember, bulkArchiveMembers, bulkDeleteMembers } from "../services/storageService";
+import { uploadMemberPhoto } from "../services/firebase";
 import { sanitizeInput } from "../services/securityService";
 import { matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
+import { MemberAvatar } from "./MemberAvatar";
+import { PhotoStudioModal } from "./PhotoStudioModal";
 import {
   BarChart,
   Bar,
@@ -164,6 +168,9 @@ const MembersList: React.FC<MembersListProps> = ({
   // TOAST NOTIFICATION
   const [toastMessage, setToastMessage] = useState<{title: string, message: string} | null>(null);
 
+  // PHOTO STUDIO STATE
+  const [isPhotoStudioOpen, setIsPhotoStudioOpen] = useState(false);
+
   // FORM DATA
   const [formData, setFormData] = useState<Partial<Member>>({
     name: "",
@@ -180,11 +187,27 @@ const MembersList: React.FC<MembersListProps> = ({
     gpsCoordinates: "",
     branchId: activeBranchId === "ALL" ? "" : activeBranchId,
     zoneId: currentUser.zoneId || "",
+    photoUrl: "",
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [vacationMember, setVacationMember] = useState<Member | null>(null);
   const [vacationStart, setVacationStart] = useState("");
   const [vacationEnd, setVacationEnd] = useState("");
+
+  const handleSavePhotoStudio = async (dataUrl: string) => {
+    try {
+      const targetId = editingId || `temp-${Date.now()}`;
+      const uploadedUrl = await uploadMemberPhoto(targetId, dataUrl);
+      setFormData((prev) => ({ ...prev, photoUrl: uploadedUrl }));
+      setToastMessage({
+        title: "Portrait Saved",
+        message: "Studio portrait applied to record.",
+      });
+      setTimeout(() => setToastMessage(null), 4000);
+    } catch (err) {
+      console.error("Failed to save portrait:", err);
+    }
+  };
 
   const openEditModal = (member: Member) => {
     setEditingId(member.id);
@@ -204,6 +227,7 @@ const MembersList: React.FC<MembersListProps> = ({
       branchId: member.branchId || "",
       zoneId: member.zoneId || "",
       gender: member.gender || undefined,
+      photoUrl: member.photoUrl || "",
     });
     setIsEditModalOpen(true);
   };
@@ -226,6 +250,7 @@ const MembersList: React.FC<MembersListProps> = ({
       branchId: activeBranchId === "ALL" ? "" : activeBranchId,
       zoneId: currentUser.zoneId || "",
       gender: undefined,
+      photoUrl: "",
     });
     setIsCreateModalOpen(true);
   };
@@ -956,9 +981,7 @@ const MembersList: React.FC<MembersListProps> = ({
 
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-full ${badgeClass}`}>
-                              <Icon size={16} />
-                            </div>
+                            <MemberAvatar member={member} size="sm" />
                             <div>
                               <div className="font-semibold text-gray-900 flex items-center gap-2">
                                 {member.name}
@@ -1174,11 +1197,7 @@ const MembersList: React.FC<MembersListProps> = ({
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex items-start gap-3 flex-1">
-                        <div
-                          className={`mt-1 p-2 rounded-full shrink-0 ${badgeClass}`}
-                        >
-                          <Icon size={20} />
-                        </div>
+                        <MemberAvatar member={member} size="md" className="mt-0.5" />
                         <div className="flex-1 min-w-0">
                           <h4 className="font-bold text-gray-900 text-lg flex flex-wrap gap-2 items-center break-words">
                             {member.name}
@@ -1560,6 +1579,44 @@ const MembersList: React.FC<MembersListProps> = ({
         <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-2 text-sm uppercase tracking-wider">
           <UserCircle size={16} className="text-indigo-500" /> Personal Info
         </h4>
+
+        {/* Photo Studio / Avatar Section */}
+        <div className="flex items-center gap-4 p-4 bg-gradient-to-br from-slate-50 to-indigo-50/40 rounded-2xl border border-indigo-100/60 shadow-inner">
+          <MemberAvatar
+            photoUrl={formData.photoUrl}
+            name={formData.name || "Member"}
+            size="xl"
+            className="ring-4 ring-white shadow-md shrink-0"
+          />
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-extrabold text-slate-800">
+              {formData.photoUrl ? "Studio Portrait Attached" : "No Portrait Photo"}
+            </div>
+            <p className="text-[11px] text-slate-500 font-medium leading-snug mt-0.5">
+              Take a webcam photo or upload an image with a constant studio backdrop
+            </p>
+            <div className="flex items-center gap-2 mt-2.5">
+              <button
+                type="button"
+                onClick={() => setIsPhotoStudioOpen(true)}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 active:scale-95"
+              >
+                <Camera size={13} />
+                {formData.photoUrl ? "Change Photo" : "Photo Studio"}
+              </button>
+              {formData.photoUrl && (
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, photoUrl: "" })}
+                  className="px-2.5 py-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-semibold transition-colors"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div>
           <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
             Full Name <span className="text-red-500">*</span>
@@ -2298,6 +2355,15 @@ const MembersList: React.FC<MembersListProps> = ({
           </div>
         </div>
       )}
+
+      {/* PHOTO STUDIO MODAL */}
+      <PhotoStudioModal
+        isOpen={isPhotoStudioOpen}
+        onClose={() => setIsPhotoStudioOpen(false)}
+        onSave={handleSavePhotoStudio}
+        currentPhotoUrl={formData.photoUrl}
+        memberName={formData.name || (editingId ? "Member" : "New Member")}
+      />
 
       {/* HISTORY MODAL */}
       {historyMemberId && (

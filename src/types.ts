@@ -85,6 +85,7 @@ export interface Member {
   vacationStartDate?: string;
   vacationEndDate?: string;
   assignedTeacherId?: string;
+  photoUrl?: string;
 }
 
 export interface Notification {
