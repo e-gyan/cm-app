@@ -58,6 +58,11 @@ const activeSubscribers = new Set<(data: AppData) => void>();
 
 const CACHE_STORAGE_KEY = "cmd_app_cache_v2";
 
+const isThesaurusHQ = (name?: string): boolean => {
+  if (!name) return false;
+  return /^thesaurus\s*hq$/i.test(name.trim());
+};
+
 const parseAppDataDoc = (docData: any): AppData => {
   const data: AppData = {
     members: Array.isArray(docData?.members) ? docData.members : [],
@@ -83,6 +88,112 @@ const parseAppDataDoc = (docData: any): AppData => {
   );
   data.attendance = data.attendance.filter((a) => !(a as any).isMock);
 
+  // Automatic Migration: Attach all data and records of "Thesaurus HQ" to "Thesaurus"
+  let hasThesaurusMigrations = false;
+
+  if (data.settings?.organization?.zones) {
+    data.settings.organization.zones = data.settings.organization.zones.map((zone) => ({
+      ...zone,
+      branches: (zone.branches || []).map((b) => {
+        if (isThesaurusHQ(b.name)) {
+          hasThesaurusMigrations = true;
+          return { ...b, name: "Thesaurus" };
+        }
+        return b;
+      }),
+    }));
+  }
+
+  data.members = data.members.map((m) => {
+    let changed = false;
+    let bId = m.branchId;
+    let ch = m.assignedChurch;
+    if (isThesaurusHQ(bId)) {
+      bId = "Thesaurus";
+      changed = true;
+    }
+    if (isThesaurusHQ(ch)) {
+      ch = "Thesaurus";
+      changed = true;
+    }
+    if (changed) {
+      hasThesaurusMigrations = true;
+      return { ...m, branchId: bId, assignedChurch: ch };
+    }
+    return m;
+  });
+
+  data.attendance = data.attendance.map((a) => {
+    if (isThesaurusHQ(a.branchId)) {
+      hasThesaurusMigrations = true;
+      return { ...a, branchId: "Thesaurus" };
+    }
+    return a;
+  });
+
+  data.transactions = (data.transactions || []).map((t) => {
+    if (isThesaurusHQ(t.branchId)) {
+      hasThesaurusMigrations = true;
+      return { ...t, branchId: "Thesaurus" };
+    }
+    return t;
+  });
+
+  data.outreachSessions = (data.outreachSessions || []).map((s) => {
+    if (isThesaurusHQ(s.branchId)) {
+      hasThesaurusMigrations = true;
+      return { ...s, branchId: "Thesaurus" };
+    }
+    return s;
+  });
+
+  data.prayerSchedule = (data.prayerSchedule || []).map((p) => {
+    if (isThesaurusHQ(p.branchId)) {
+      hasThesaurusMigrations = true;
+      return { ...p, branchId: "Thesaurus" };
+    }
+    return p;
+  });
+
+  data.notifications = (data.notifications || []).map((n) => {
+    if (isThesaurusHQ(n.branchId)) {
+      hasThesaurusMigrations = true;
+      return { ...n, branchId: "Thesaurus" };
+    }
+    return n;
+  });
+
+  // If any records were migrated from Thesaurus HQ, queue persistence so cloud data is updated permanently
+  if (hasThesaurusMigrations) {
+    setTimeout(() => {
+      updateMainDoc({
+        settings: data.settings,
+        members: data.members,
+        attendance: data.attendance,
+        transactions: data.transactions,
+        outreachSessions: data.outreachSessions,
+        prayerSchedule: data.prayerSchedule,
+        notifications: data.notifications,
+      }).catch(console.error);
+    }, 150);
+
+    try {
+      const active = sessionStorage.getItem("activeBranchId");
+      if (isThesaurusHQ(active)) {
+        sessionStorage.setItem("activeBranchId", "Thesaurus");
+      }
+      const savedUserRaw = sessionStorage.getItem("currentUser") || localStorage.getItem("cmd_current_user");
+      if (savedUserRaw) {
+        const u = JSON.parse(savedUserRaw);
+        if (isThesaurusHQ(u.branchId)) {
+          u.branchId = "Thesaurus";
+          sessionStorage.setItem("currentUser", JSON.stringify(u));
+          localStorage.setItem("cmd_current_user", JSON.stringify(u));
+        }
+      }
+    } catch {}
+  }
+
   return data;
 };
 
@@ -93,7 +204,7 @@ const loadLocalCache = (): AppData | null => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.members)) {
-        return parsed;
+        return parseAppDataDoc(parsed);
       }
     }
   } catch (e) {
@@ -502,21 +613,28 @@ export const renameBranchCascade = async (
     return;
   }
 
+  const isTargetBranch = (val?: string): boolean => {
+    if (!val) return false;
+    const v = val.trim();
+    if (v.toLowerCase() === trimmedOldName.toLowerCase()) return true;
+    if (oldBranchId && v === oldBranchId) return true;
+    if (trimmedOldName.toLowerCase() === "thesaurus" && isThesaurusHQ(v)) return true;
+    if (isThesaurusHQ(trimmedOldName) && v.toLowerCase() === "thesaurus") return true;
+    return false;
+  };
+
   // 1. Cascade to members
   const members = current.members.map((m) => {
     let changed = false;
     let newBranchId = m.branchId;
     let newAssignedChurch = m.assignedChurch;
 
-    if (
-      m.branchId === trimmedOldName ||
-      (oldBranchId && m.branchId === oldBranchId)
-    ) {
+    if (isTargetBranch(m.branchId)) {
       newBranchId = trimmedNewName;
       changed = true;
     }
 
-    if (m.assignedChurch === trimmedOldName) {
+    if (isTargetBranch(m.assignedChurch)) {
       newAssignedChurch = trimmedNewName;
       changed = true;
     }
@@ -526,10 +644,7 @@ export const renameBranchCascade = async (
 
   // 2. Cascade to attendance
   const attendance = current.attendance.map((a) => {
-    if (
-      a.branchId === trimmedOldName ||
-      (oldBranchId && a.branchId === oldBranchId)
-    ) {
+    if (isTargetBranch(a.branchId)) {
       return { ...a, branchId: trimmedNewName };
     }
     return a;
@@ -537,10 +652,7 @@ export const renameBranchCascade = async (
 
   // 3. Cascade to transactions
   const transactions = (current.transactions || []).map((t) => {
-    if (
-      t.branchId === trimmedOldName ||
-      (oldBranchId && t.branchId === oldBranchId)
-    ) {
+    if (isTargetBranch(t.branchId)) {
       return { ...t, branchId: trimmedNewName };
     }
     return t;
@@ -548,10 +660,7 @@ export const renameBranchCascade = async (
 
   // 4. Cascade to outreach sessions
   const outreachSessions = (current.outreachSessions || []).map((s) => {
-    if (
-      s.branchId === trimmedOldName ||
-      (oldBranchId && s.branchId === oldBranchId)
-    ) {
+    if (isTargetBranch(s.branchId)) {
       return { ...s, branchId: trimmedNewName };
     }
     return s;
@@ -559,10 +668,7 @@ export const renameBranchCascade = async (
 
   // 5. Cascade to prayer schedule
   const prayerSchedule = (current.prayerSchedule || []).map((p) => {
-    if (
-      p.branchId === trimmedOldName ||
-      (oldBranchId && p.branchId === oldBranchId)
-    ) {
+    if (isTargetBranch(p.branchId)) {
       return { ...p, branchId: trimmedNewName };
     }
     return p;
@@ -570,10 +676,7 @@ export const renameBranchCascade = async (
 
   // 6. Cascade to existing notifications
   const updatedExistingNotifs = (current.notifications || []).map((n) => {
-    if (
-      n.branchId === trimmedOldName ||
-      (oldBranchId && n.branchId === oldBranchId)
-    ) {
+    if (isTargetBranch(n.branchId)) {
       return { ...n, branchId: trimmedNewName };
     }
     return n;
@@ -597,13 +700,13 @@ export const renameBranchCascade = async (
   // 8. Update browser active branch session/local storage
   try {
     const active = sessionStorage.getItem("activeBranchId");
-    if (active === trimmedOldName || (oldBranchId && active === oldBranchId)) {
+    if (isTargetBranch(active || undefined)) {
       sessionStorage.setItem("activeBranchId", trimmedNewName);
     }
     const savedUserRaw = sessionStorage.getItem("currentUser") || localStorage.getItem("cmd_current_user");
     if (savedUserRaw) {
       const u = JSON.parse(savedUserRaw);
-      if (u.branchId === trimmedOldName || (oldBranchId && u.branchId === oldBranchId)) {
+      if (isTargetBranch(u.branchId)) {
         u.branchId = trimmedNewName;
         sessionStorage.setItem("currentUser", JSON.stringify(u));
         localStorage.setItem("cmd_current_user", JSON.stringify(u));

@@ -387,12 +387,21 @@ export const matchesScope = (
   if (item.branchId) {
     if (item.branchId === activeBranchId) return true;
     if (item.branchId.trim().toLowerCase() === activeBranchId.trim().toLowerCase()) return true;
+
+    // Seamlessly match Thesaurus and Thesaurus HQ aliases
+    const itemNorm = item.branchId.trim().toLowerCase().replace(/\s+hq$/i, "");
+    const activeNorm = activeBranchId.trim().toLowerCase().replace(/\s+hq$/i, "");
+    if (itemNorm === activeNorm && itemNorm.length > 0) return true;
+
     // Cross-match branch ID with branch Name in organization
     const branch = organization?.zones
       ?.flatMap((z) => z.branches || [])
       .find((b) => b.id === activeBranchId || b.name === activeBranchId);
-    if (branch && (item.branchId === branch.id || item.branchId === branch.name)) {
-      return true;
+    if (branch) {
+      if (item.branchId === branch.id || item.branchId === branch.name) return true;
+      if (item.branchId.trim().toLowerCase() === branch.name.trim().toLowerCase()) return true;
+      const bNorm = branch.name.trim().toLowerCase().replace(/\s+hq$/i, "");
+      if (itemNorm === bNorm && itemNorm.length > 0) return true;
     }
     return false;
   }
@@ -448,5 +457,7 @@ export const getScopeDisplayLabel = (
   const branch = organization?.zones
     ?.flatMap((z) => z.branches || [])
     .find((b) => b.id === activeBranchId || b.name === activeBranchId);
-  return branch ? branch.name : activeBranchId;
+  if (branch) return branch.name;
+  if (/^thesaurus\s*hq$/i.test(activeBranchId.trim())) return "Thesaurus";
+  return activeBranchId;
 };
