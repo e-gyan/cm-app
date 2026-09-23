@@ -27,7 +27,7 @@ v1.6.0
    - Mobile card: Shows a subtle version pill linking to the interactive release notes.
 3. **Application Navigation**:
    - Desktop sidebar footer: Interactive version badge with sparkle icon opening the **Release Notes / Changelog Modal**.
-   - **Settings & Config**: Displays platform version, release name, and a **View Release Notes** button.
+   - **Settings and Config**: Displays platform version, release name, and a **View Release Notes** button.
 
 ### How to Increment the Version
 When introducing changes:
