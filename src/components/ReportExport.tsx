@@ -31,7 +31,8 @@ import {
   TrendingUp,
   Save,
   Briefcase,
-  Sparkles,
+  FileSpreadsheet,
+  Award,
   Edit3,
   Users,
   Share2,
@@ -730,7 +731,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
         {!execReportContent && !isGeneratingExec ? (
           <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-            <Sparkles className="mx-auto text-indigo-300 mb-3" size={40} />
+            <FileSpreadsheet className="mx-auto text-indigo-300 mb-3" size={40} />
             <h4 className="font-bold text-slate-700 mb-1">Ready to Generate</h4>
             <p className="text-xs text-slate-400 mb-4">
               Create a high-level report for the last{" "}
@@ -1166,18 +1167,113 @@ const ReportExport: React.FC<ReportExportProps> = ({
       return r;
     };
 
-    const isTeacher =
-      userRole === "TEACHER" ||
-      currentUser.role === "TEACHER" ||
-      currentUser.type === MemberType.TEACHER;
+    const isActuallyTeacher =
+      (userRole === "TEACHER" || currentUser.role === "TEACHER") &&
+      currentUser.role !== "BRANCH_COORDINATOR" &&
+      !isAdmin;
 
     const isBranchCoordinator =
-      !isTeacher &&
-      (currentUser.role === "BRANCH_COORDINATOR" ||
-        (isAdmin && reportFormat === "BRANCH_COORDINATOR"));
+      currentUser.role === "BRANCH_COORDINATOR" ||
+      (isAdmin && reportFormat === "BRANCH_COORDINATOR");
 
-    if (isBranchCoordinator) {
+    // Branch Coordinator Mega Center Template priority
+    if (isBranchCoordinator && reportFormat === "BRANCH_COORDINATOR") {
       return generateBranchCoordinatorReport();
+    }
+
+    // =========================================================================
+    // MULTI-CHURCH CONSOLIDATION FOR ALL / CM CHURCH (Branch-wide / Admin)
+    // =========================================================================
+    function renderMultiChurchBranchReport() {
+      const branchRecords = data.attendance.filter(
+        (r) =>
+          r.date === selectedDate &&
+          availableChurches.includes(r.churchId) &&
+          matchesScope(r, activeBranchId, data.settings.organization, data.members)
+      );
+
+      if (branchRecords.length === 0) {
+        return "";
+      }
+
+      const allPresentIds = new Set<string>();
+      branchRecords.forEach((r) => {
+        r.presentMemberIds.forEach((id) => allPresentIds.add(id));
+      });
+
+      const presentMembers = data.members.filter((m) => allPresentIds.has(m.id));
+      presentMembers.sort((a, b) => a.name.localeCompare(b.name));
+
+      const teachers = presentMembers.filter(
+        (m) =>
+          ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
+          m.type === MemberType.TEACHER ||
+          (m.role && m.role !== "NONE"),
+      );
+
+      const allChildren = presentMembers.filter(
+        (m) =>
+          !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+          m.type !== MemberType.TEACHER &&
+          (!m.role || m.role === "NONE"),
+      );
+
+      const globalEventName = branchRecords.find((r) => r.eventName)?.eventName;
+      const totalCount = allChildren.length + teachers.length;
+
+      const branchTitle = (branchObj?.name || "ALL CHURCH").toUpperCase().replace(/\s*BRANCH$/i, "");
+      let report = `*${branchTitle} CONSOLIDATED ATTENDANCE REPORT*\n${formattedDate}\n`;
+      if (globalEventName) report += `*${globalEventName}*\n`;
+      report += `------------------------------\n`;
+      report += `*TOTAL PRESENT: ${totalCount}*\n`;
+
+      // Church department breakdown
+      const churchCounts: string[] = [];
+      availableChurches.forEach((c) => {
+        const cRec = branchRecords.find((r) => r.churchId === c);
+        if (cRec && cRec.presentMemberIds.length > 0) {
+          churchCounts.push(`${c}: ${cRec.presentMemberIds.length}`);
+        }
+      });
+      if (churchCounts.length > 0) {
+        report += `(${churchCounts.join(" | ")})\n\n`;
+      } else {
+        report += `\n`;
+      }
+
+      // Render breakdown for each department with attendees
+      availableChurches.forEach((c) => {
+        const cRec = branchRecords.find((r) => r.churchId === c);
+        if (!cRec || cRec.presentMemberIds.length === 0) return;
+
+        const cMembers = allChildren.filter((m) => cRec.presentMemberIds.includes(m.id));
+        const cTeachers = teachers.filter((m) => cRec.presentMemberIds.includes(m.id));
+        const cTotal = cMembers.length + cTeachers.length;
+
+        report += `==============================\n`;
+        report += `*${c} CHURCH (${cTotal})*\n`;
+        report += `==============================\n`;
+
+        const members = cMembers.filter((m) => m.type === MemberType.MEMBER);
+        const fnfs = cMembers.filter((m) => m.type === MemberType.FNF);
+        const visitors = cMembers.filter((m) => m.type === MemberType.VISITOR);
+        const notMembers = cMembers.filter((m) => m.type === MemberType.NOT_MEMBER);
+
+        if (members.length > 0) report += renderListWithServices(members, "MEMBERS", cRec);
+        else report += `*MEMBERS (0)*\n_None_\n\n`;
+
+        if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNF", cRec);
+        if (visitors.length > 0) report += renderListWithServices(visitors, "FIRST TIMERS", cRec);
+        if (notMembers.length > 0) report += renderListWithServices(notMembers, "NOT A MEMBER", cRec);
+
+        if (cTeachers.length > 0) {
+          report += `*TEACHERS (${cTeachers.length})*\n`;
+          cTeachers.forEach((m, i) => (report += `${i + 1}. ${m.name}\n`));
+          report += `\n`;
+        }
+      });
+
+      return report.trim();
     }
 
     // =========================================================================
@@ -1267,9 +1363,20 @@ const ReportExport: React.FC<ReportExportProps> = ({
       ? { id: currentUser.branchId, name: currentUser.branchId }
       : undefined;
 
-    let churchReport = renderSingleChurch(activeChurch, currentBranchObj);
-    if (!churchReport)
-      return `No attendance data recorded for ${selectedDate} in ${activeChurch} Church.`;
+    let churchReport = "";
+    if (activeChurch === "All" || activeChurch === "CM") {
+      churchReport = renderMultiChurchBranchReport();
+    } else {
+      churchReport = renderSingleChurch(activeChurch, currentBranchObj);
+    }
+
+    if (!churchReport) {
+      const scopeName =
+        activeChurch === "All" || activeChurch === "CM"
+          ? (branchObj?.name || "the branch")
+          : `${activeChurch} Church`;
+      return `No attendance data recorded for ${selectedDate} in ${scopeName}.`;
+    }
     let finalReport = churchReport;
 
     // Add Church Outreach and Prayer Summary
@@ -1470,7 +1577,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                     </div>
                     {churchKey === "UJ" && div.omittedTeachers.length > 0 && (
                       <p className="text-xs text-amber-600 font-medium mt-1 flex items-center gap-1">
-                        <Sparkles size={12} />
+                        <Award size={12} />
                         Branch Head omitted from division:{" "}
                         <span className="font-bold">
                           {div.omittedTeachers.map((t) => t.name).join(", ")}
@@ -1820,7 +1927,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                 >
                   <div className="flex items-center gap-2.5">
                     <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-sm">
-                      <Sparkles size={16} />
+                      <FileSpreadsheet size={16} />
                     </div>
                     <div>
                       <h4 className="font-extrabold text-sm text-slate-800 flex items-center gap-2">

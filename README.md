@@ -1,7 +1,7 @@
 # Children's Ministry Directorate (CMD) Platform
 
-[![Version](https://img.shields.io/badge/version-1.5.0-indigo.svg)](src/version.ts)
-[![Release](https://img.shields.io/badge/release-Children's%20Photo%20Studio%20%26%20Dynamic%20Backdrops-emerald.svg)](src/version.ts)
+[![Version](https://img.shields.io/badge/version-1.6.0-indigo.svg)](src/version.ts)
+[![Release](https://img.shields.io/badge/release-Consolidated%20Reports,%20Dual%20Camera%20%26%20Subject%20Cutout-emerald.svg)](src/version.ts)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)](tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-cyan.svg)](package.json)
 
@@ -14,10 +14,10 @@ A modern, cloud-synchronized multi-tenant application for Children's Ministry at
 The platform follows **Semantic Versioning (SemVer: `MAJOR.MINOR.PATCH`)**:
 
 ```
-v1.5.0
+v1.6.0
  ┬ ┬ ┬
  │ │ └─ PATCH: Bug fixes, UI adjustments, text-wrapping tweaks, performance improvements.
- │ └─── MINOR: New functional modules (e.g., Photo Studio, Branch Cascade, Notification Engine).
+ │ └─── MINOR: New functional modules (e.g., Photo Studio, Dual Camera, Cutout Engine, Notification Engine).
  └───── MAJOR: Breaking architectural shifts, database restructure, or fundamental workflow redesigns.
 ```
 
@@ -87,19 +87,20 @@ When introducing changes:
 
 ## 🌟 Core Modules & Capabilities
 
-### 1. Children's Photo Studio & Constant Studio Backgrounds
-- **Interactive Capture**: Teachers and staff can snap a live photo using their laptop or mobile webcam, or upload an image from file storage.
-- **Framing & Alignment**: Circular framing overlay with real-time drag-to-pan, zoom (0.8x to 2.5x), and rotation controls.
-- **Constant Studio Backgrounds**:
-  - Eliminates inconsistent home or church lighting by compositing the child's silhouette onto uniform studio backdrops:
-    - **Church Indigo** (`linear-gradient(135deg, #4338ca, #6366f1)`)
-    - **Royal Blue** (`linear-gradient(135deg, #1e3a8a, #3b82f6)`)
-    - **Warm Amber** (`linear-gradient(135deg, #b45309, #f59e0b)`)
-    - **Studio Slate** (`linear-gradient(135deg, #1e293b, #475569)`)
-    - **Fresh Emerald** (`linear-gradient(135deg, #065f46, #10b981)`)
-    - **Clean Light** (`#f8fafc`)
-    - **Original Photo** (standard centered crop)
-  - Features an edge-softness slider for smooth portrait blending and subtle studio spotlight vignetting.
+### 1. Children's Photo Studio, Dual Mobile Camera & Intelligent Background Removal
+- **Dual Mobile Camera Support**:
+  - Direct integration with phone front (selfie) and rear cameras with native OS capture triggers (`capture="user"` and `capture="environment"`).
+  - Live WebRTC camera viewfinder with real-time **Front/Rear flip button**.
+  - Gallery and file upload fallback for all mobile and desktop devices.
+- **Intelligent Client-Side Subject Cutout (Background Removal)**:
+  - High-performance portrait segmentation engine executed 100% in-browser on HTML5 canvas.
+  - Automatically models boundary/background tones and detects central facial and melanin skin geography to protect the child.
+  - Smooth alpha matting isolates the child from busy home, wall, or church backgrounds.
+  - Interactive **Cutout Sensitivity** slider (15% to 85%) and toggle to fine-tune portrait matting.
+- **Dynamic & Constant Studio Backdrops**:
+  - **Presets**: Church Indigo, Royal Blue, Warm Amber, Studio Slate, Fresh Emerald, Clean Light, Transparent PNG, and Original Photo.
+  - **Custom Color Picker**: Interactive HTML5 color wheel and hex input (`#rrggbb`) for custom ministry theme backdrops.
+  - **Custom Backdrop Image Upload**: Upload any custom church banner, stage photo, or graphic to place behind the child.
 - **Storage-Optimized WebP Export**: Automatically scales and exports 256×256 WebP payloads (~15–25 KB) to Firebase Cloud Storage. If Cloud Storage is not yet provisioned, it automatically falls back to a dedicated `memberPhotos` collection to protect the main document.
 - **Roster & Directory Avatars**: Integrated via [`MemberAvatar.tsx`](src/components/MemberAvatar.tsx) across the Member directory, Member side drawer, and Attendance check-in rosters, with deterministic initials fallback.
 
@@ -136,12 +137,15 @@ When introducing changes:
 - **Punctuality Counter**: Tracks punctuality rewards with custom thresholds (e.g., first 30 attendees).
 - Full-text search and class filters for instantaneous check-in.
 
-### 6. WhatsApp & Telegram Reporting Hub
-- Generates copy-ready formatted reports with one click:
-  - **Detailed Department Report** (separated by regular members, FNF, first timers, teachers, and service totals).
-  - **Summary Report** (high-level counts).
-  - **Consolidated Leadership Report** (aggregated cross-church figures).
-  - **Annual Attendance Breakdown**.
+### 6. WhatsApp & Telegram Reporting Hub & Multi-Department Consolidation
+- **Consolidated Branch Attendance (All / CM Church)**:
+  - Automatically aggregates attendance across all available departments (`UJ`, `LJ`, `K`, `I`, `N`) when "All" or "CM" is selected.
+  - Prevents false "No attendance data" messages for Branch Coordinators and Admins.
+  - Generates full consolidated figures with service breakdowns (Joy, Enlargement, Special) and church-by-church member rosters.
+- **Branch Coordinator Mega Center Service Report**:
+  - Provisioned reporting template for Sunday services including Preacher/Message per church, financial collections (Offering, Tithes, Partnerships, First Fruits), soul winning, and cell meeting statistics.
+  - Explicit role prioritization ensures Branch Coordinators always see their provisioned template.
+- **Department Detail & Summary Reports**: Individual class rosters and high-level summaries copy-ready for instant dispatch.
 
 ---
 

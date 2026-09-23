@@ -48,7 +48,6 @@ import {
   Map as MapIcon,
   CalendarPlus,
   ExternalLink,
-  Sparkles,
   UserCheck,
   Search,
   Users,
@@ -2051,7 +2050,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                       : "bg-teal-50 text-teal-700 hover:bg-teal-100"
                   }`}
                 >
-                  <Sparkles size={12} />
+                  <UserPlus size={12} />
                   <span>First Timers</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${memberCategoryFilter === "VISITOR" ? "bg-teal-700 text-white" : "bg-teal-200/70 text-teal-800"}`}>
                     {firstTimers.length}
@@ -2120,7 +2119,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 title="First Timers (Follow Up)"
                 members={firstTimers}
                 color="teal"
-                icon={Sparkles}
+                icon={UserPlus}
                 defaultOpen={memberCategoryFilter === "VISITOR" || memberCategoryFilter === "ALL"}
                 onTrackCall={handleTrackCall}
                 onMessageClick={handleMessageClick}
@@ -2734,7 +2733,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                   (m) => m.type === MemberType.VISITOR,
                 )}
                 data={data}
-                icon={Sparkles}
+                icon={UserPlus}
                 color="teal"
               />
             </div>
@@ -3709,7 +3708,7 @@ const CollapsibleProgressSection = ({
                       )}
                       {isVisitor && (
                         <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1 shrink-0">
-                          <Sparkles size={8} /> First Timer
+                          <UserPlus size={8} /> First Timer
                         </span>
                       )}
                     </h4>
@@ -3883,7 +3882,7 @@ const CollapsibleContactSection = ({
                         )}
                         {isVisitor && (
                           <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-100 flex items-center gap-1 shrink-0">
-                            <Sparkles size={10} /> First Timer
+                            <UserPlus size={10} /> First Timer
                           </span>
                         )}
                         {isFnf && (

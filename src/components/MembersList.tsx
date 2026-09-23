@@ -42,7 +42,7 @@ import {
   UserCircle,
   BadgeCheck,
   CheckCircle,
-  Sparkles,
+  UserPlus,
   Search,
   Camera,
 } from "lucide-react";
@@ -992,7 +992,7 @@ const MembersList: React.FC<MembersListProps> = ({
                                 )}
                                 {member.type === MemberType.VISITOR && (
                                   <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1">
-                                    <Sparkles size={8} /> First Timer
+                                    <UserPlus size={8} /> First Timer
                                   </span>
                                 )}
                               </div>
@@ -1208,7 +1208,7 @@ const MembersList: React.FC<MembersListProps> = ({
                             )}
                             {member.type === MemberType.VISITOR && (
                               <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1">
-                                <Sparkles size={10} /> First Timer
+                                <UserPlus size={10} /> First Timer
                               </span>
                             )}
                             {bdayWeek && (
@@ -1541,7 +1541,7 @@ const MembersList: React.FC<MembersListProps> = ({
           {renderMemberTableSection({
             title: "First Timers",
             members: membersToShow.filter((m) => m.type === MemberType.VISITOR),
-            icon: Sparkles,
+            icon: UserPlus,
             colorClass: "text-teal-600",
             badgeClass: "bg-teal-100 text-teal-700",
           })}

@@ -1,5 +1,5 @@
 import React from "react";
-import { X, Sparkles, Calendar, CheckCircle2, Tag } from "lucide-react";
+import { X, History, Calendar, CheckCircle2, Tag } from "lucide-react";
 import { APP_VERSION, APP_RELEASE_NAME, APP_BUILD_DATE, CHANGELOG } from "../version";
 
 interface ChangelogModalProps {
@@ -17,7 +17,7 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({ isOpen, onClose 
         <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-indigo-50/40">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-2xl bg-indigo-600 text-white shadow-md shadow-indigo-200">
-              <Sparkles size={20} />
+              <History size={20} />
             </div>
             <div>
               <div className="flex items-center gap-2">

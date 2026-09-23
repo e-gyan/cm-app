@@ -4,7 +4,7 @@ import {
   ArrowRight,
   AlertCircle, Database,
   Users,
-  Sparkles,
+  Tag,
   RefreshCw,
   Cloud,
   Eye,
@@ -14,6 +14,7 @@ import { sanitizeInput } from "../services/securityService";
 import { loadData, verifyPasscode } from "../services/storageService";
 import { APP_VERSION, APP_RELEASE_NAME } from "../version";
 import { ChangelogModal } from "./ChangelogModal";
+import { AppLogoSlot } from "./AppLogoSlot";
 
 interface LoginProps {
   onLogin: (user: Member) => void;
@@ -203,7 +204,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
           <div>
             <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 shadow-inner">
-              <Sparkles className="text-white" size={24} />
+              <AppLogoSlot size={26} className="text-white" />
             </div>
             <h1 className="text-4xl font-bold mb-4 tracking-tight">
               Children's Ministry Directorate
@@ -224,7 +225,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             >
               <span>© {new Date().getFullYear()} CMD Platform</span>
               <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-bold group-hover:bg-white/30 transition-all flex items-center gap-1">
-                <Sparkles size={10} /> v{APP_VERSION}
+                <Tag size={10} /> v{APP_VERSION}
               </span>
             </button>
             <span className="flex items-center gap-1 opacity-70">
@@ -357,7 +358,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 className="hover:text-indigo-600 transition-colors font-bold flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-indigo-50/60"
                 title="View Release Changelog"
               >
-                <Sparkles size={13} className="text-indigo-600" />
+                <Tag size={13} className="text-indigo-600" />
                 <span>v{APP_VERSION}</span>
                 <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">
                   • What's New

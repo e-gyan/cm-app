@@ -26,7 +26,6 @@ import {
   MapPin,
   Heart,
   HeartHandshake,
-  Sparkles,
   Loader2,
   RefreshCw,
   Wallet,
@@ -1094,13 +1093,13 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
           className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-3xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden"
         >
           <div className="absolute top-0 right-0 p-8 opacity-10">
-            <Sparkles size={160} />
+            <Target size={160} />
           </div>
           <div className="relative z-10 flex flex-col xl:flex-row gap-8 justify-between items-start xl:items-center">
             <div className="max-w-lg">
               <div className="flex items-center gap-2 mb-3">
                 <div className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles size={12} className="text-amber-300" /> Attendance Targets
+                  <Target size={12} className="text-amber-300" /> Attendance Targets
                 </div>
                 <span className="text-xs font-medium text-indigo-200">Next Sunday Goal</span>
               </div>

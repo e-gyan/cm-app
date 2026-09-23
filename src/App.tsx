@@ -37,7 +37,7 @@ import {
   Settings as SettingsIcon,
   Maximize,
   Minimize,
-  Sparkles,
+  Tag,
 } from "lucide-react";
 import { DEFAULT_SETTINGS } from "./constants";
 import { matchesScope, getScopeDisplayLabel } from "./lib/teacherDivision";
@@ -835,7 +835,7 @@ const App: React.FC = () => {
                   className="text-[11px] text-slate-400 hover:text-indigo-600 transition-colors font-bold pl-4 flex items-center gap-1.5 group text-left mt-0.5"
                   title="View What's New"
                 >
-                  <Sparkles size={11} className="text-indigo-500 group-hover:rotate-12 transition-transform" />
+                  <Tag size={11} className="text-indigo-500 group-hover:rotate-12 transition-transform" />
                   <span>v{APP_VERSION}</span>
                 </button>
               </div>

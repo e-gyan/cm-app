@@ -16,16 +16,29 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.5.0";
-export const APP_RELEASE_NAME = "Children's Photo Studio & Dynamic Backdrops";
+export const APP_VERSION = "1.6.0";
+export const APP_RELEASE_NAME = "Consolidated Reports, Dual Camera & Subject Background Removal";
 export const APP_BUILD_DATE = "2026-09-23";
 
 export const CHANGELOG: ReleaseLog[] = [
   {
+    version: "1.6.0",
+    date: "2026-09-23",
+    title: "Consolidated Reports, Dual Camera & Subject Background Removal",
+    badge: "Current Release",
+    changes: [
+      "Permanent resolution of Branch Coordinator & Admin 'All / CM Church' report generation with multi-department consolidation across UJ, LJ, K, I, and N",
+      "Corrected Branch Coordinator role evaluation preventing teacher profile classifications from suppressing the Mega Center reporting template",
+      "Dual mobile phone camera integration with front/rear switching and native OS camera capture fallbacks",
+      "Intelligent client-side portrait background removal (subject cutout) isolating child from room backgrounds",
+      "Custom backdrop image upload and custom solid color picker with live preview and hex entry",
+      "Removed generic sparkles across the entire application and introduced extensible AppLogoSlot brand architecture",
+    ],
+  },
+  {
     version: "1.5.0",
     date: "2026-09-23",
     title: "Children's Photo Studio & Constant Studio Backgrounds",
-    badge: "Current Release",
     changes: [
       "In-browser Photo Studio with live webcam capture and drag-and-drop file upload",
       "Preset constant studio backgrounds (Church Indigo, Royal Blue, Warm Amber, Studio Slate, Fresh Emerald, Clean Light)",

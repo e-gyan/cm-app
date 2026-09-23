@@ -29,7 +29,7 @@ import {
   ShieldCheck,
   Check,
   Search,
-  Sparkles,
+  Tag,
   RotateCcw,
   LayoutDashboard,
   Users,
@@ -531,7 +531,7 @@ const Settings: React.FC<SettingsProps> = ({
           <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-2.5 mt-4">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Sparkles size={13} className="text-indigo-600" /> Platform Version
+                <Tag size={13} className="text-indigo-600" /> Platform Version
               </span>
               <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-black">
                 v{APP_VERSION}
@@ -545,7 +545,7 @@ const Settings: React.FC<SettingsProps> = ({
               onClick={() => setIsChangelogOpen(true)}
               className="w-full py-2 px-3 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl text-xs font-bold transition-all border border-slate-200/60 flex items-center justify-center gap-1.5 active:scale-95"
             >
-              <Sparkles size={12} className="text-indigo-500" />
+              <Tag size={12} className="text-indigo-500" />
               View Release Notes
             </button>
           </div>
