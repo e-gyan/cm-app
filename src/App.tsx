@@ -37,9 +37,12 @@ import {
   Settings as SettingsIcon,
   Maximize,
   Minimize,
+  Sparkles,
 } from "lucide-react";
 import { DEFAULT_SETTINGS } from "./constants";
 import { matchesScope, getScopeDisplayLabel } from "./lib/teacherDivision";
+import { APP_VERSION } from "./version";
+import { ChangelogModal } from "./components/ChangelogModal";
 
 enum View {
   DASHBOARD = "Dashboard",
@@ -105,6 +108,7 @@ const App: React.FC = () => {
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -825,9 +829,15 @@ const App: React.FC = () => {
                     {currentUser.name}
                   </div>
                 </div>
-                <div className="text-[10px] text-slate-300 font-medium pl-4">
-                  v1.1.0
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsChangelogOpen(true)}
+                  className="text-[11px] text-slate-400 hover:text-indigo-600 transition-colors font-bold pl-4 flex items-center gap-1.5 group text-left mt-0.5"
+                  title="View What's New"
+                >
+                  <Sparkles size={11} className="text-indigo-500 group-hover:rotate-12 transition-transform" />
+                  <span>v{APP_VERSION}</span>
+                </button>
               </div>
             )}
           </div>
@@ -1297,6 +1307,12 @@ const App: React.FC = () => {
           )}
         </nav>
       </main>
+
+      {/* Release Notes / Changelog Modal */}
+      <ChangelogModal
+        isOpen={isChangelogOpen}
+        onClose={() => setIsChangelogOpen(false)}
+      />
     </div>
   );
 };

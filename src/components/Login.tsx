@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { sanitizeInput } from "../services/securityService";
 import { loadData, verifyPasscode } from "../services/storageService";
-import { APP_VERSION } from "../constants";
+import { APP_VERSION, APP_RELEASE_NAME } from "../version";
+import { ChangelogModal } from "./ChangelogModal";
 
 interface LoginProps {
   onLogin: (user: Member) => void;
@@ -25,6 +26,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
 
   // Check if data is loaded or default
   const [dataCount, setDataCount] = useState(0);
@@ -213,11 +215,19 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               for a thriving family.
             </p>
           </div>
-          <div className="flex justify-between items-center text-sm text-indigo-200 opacity-60">
-            <span>
-              © {new Date().getFullYear()} CMD Platform v{APP_VERSION}
-            </span>
-            <span className="flex items-center gap-1">
+          <div className="flex justify-between items-center text-sm text-indigo-200">
+            <button
+              type="button"
+              onClick={() => setIsChangelogOpen(true)}
+              className="hover:text-white transition-colors flex items-center gap-2 font-semibold group text-left"
+              title="View Release Changelog"
+            >
+              <span>© {new Date().getFullYear()} CMD Platform</span>
+              <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-bold group-hover:bg-white/30 transition-all flex items-center gap-1">
+                <Sparkles size={10} /> v{APP_VERSION}
+              </span>
+            </button>
+            <span className="flex items-center gap-1 opacity-70">
               <Cloud size={12} /> Connected
             </span>
           </div>
@@ -339,23 +349,43 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               </button>
             </form>
 
-            {/* Manual Sync for Desktop (Text Link) */}
-            <div className="mt-6 text-center">
+            {/* Version & Sync Footer */}
+            <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
               <button
+                type="button"
+                onClick={() => setIsChangelogOpen(true)}
+                className="hover:text-indigo-600 transition-colors font-bold flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-indigo-50/60"
+                title="View Release Changelog"
+              >
+                <Sparkles size={13} className="text-indigo-600" />
+                <span>v{APP_VERSION}</span>
+                <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">
+                  • What's New
+                </span>
+              </button>
+
+              <button
+                type="button"
                 onClick={handleSync}
                 disabled={isSyncing}
-                className="text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors flex items-center justify-center gap-1 mx-auto"
+                className="font-bold text-slate-400 hover:text-indigo-600 transition-colors flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-slate-50"
               >
                 <RefreshCw
                   size={12}
-                  className={isSyncing ? "animate-spin" : ""}
+                  className={isSyncing ? "animate-spin text-indigo-600" : ""}
                 />
-                {isSyncing ? "Syncing..." : "Refresh Database"}
+                {isSyncing ? "Syncing..." : "Refresh Data"}
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Changelog Modal */}
+      <ChangelogModal
+        isOpen={isChangelogOpen}
+        onClose={() => setIsChangelogOpen(false)}
+      />
     </div>
   );
 };

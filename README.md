@@ -1,192 +1,187 @@
-# Children's Ministry Attendance
+# Children's Ministry Directorate (CMD) Platform
 
-A church attendance tracking, outreach management, and WhatsApp reporting application for multiple churches and branches.
+[![Version](https://img.shields.io/badge/version-1.5.0-indigo.svg)](src/version.ts)
+[![Release](https://img.shields.io/badge/release-Children's%20Photo%20Studio%20%26%20Dynamic%20Backdrops-emerald.svg)](src/version.ts)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)](tsconfig.json)
+[![React](https://img.shields.io/badge/React-19-cyan.svg)](package.json)
+
+A modern, cloud-synchronized multi-tenant application for Children's Ministry attendance tracking, child photo studio management, pastoral outreach, financial ledger accounting, granular role-based permissions, and automated WhatsApp/Telegram reporting.
 
 ---
 
-## Codebase Structure
+## 📌 Version Control & Release Protocol
 
-The application is structured into three clean layers: 
+The platform follows **Semantic Versioning (SemVer: `MAJOR.MINOR.PATCH`)**:
 
 ```
-├── .github/
-│   └── workflows/
-│       ├── ci.yml                 # Automated linting, type-checking, and build verification
-│       └── deploy.yml             # Production deployment workflow
+v1.5.0
+ ┬ ┬ ┬
+ │ │ └─ PATCH: Bug fixes, UI adjustments, text-wrapping tweaks, performance improvements.
+ │ └─── MINOR: New functional modules (e.g., Photo Studio, Branch Cascade, Notification Engine).
+ └───── MAJOR: Breaking architectural shifts, database restructure, or fundamental workflow redesigns.
+```
+
+### Where Version Information is Surfaced
+1. **Central Definition**: [src/version.ts](src/version.ts) maintains `APP_VERSION`, `APP_RELEASE_NAME`, `APP_BUILD_DATE`, and a full interactive `CHANGELOG`.
+2. **Login Interface**:
+   - Desktop sidebar: Shows current version with a direct **"What's New"** modal trigger.
+   - Mobile card: Shows a subtle version pill linking to the interactive release notes.
+3. **Application Navigation**:
+   - Desktop sidebar footer: Interactive version badge with sparkle icon opening the **Release Notes / Changelog Modal**.
+   - **Settings & Config**: Displays platform version, release name, and a **"View Release Notes"** button.
+
+### How to Increment the Version
+When introducing changes:
+1. Update `APP_VERSION`, `APP_RELEASE_NAME`, and `APP_BUILD_DATE` in [`src/version.ts`](src/version.ts).
+2. Append a new release entry to the `CHANGELOG` array in [`src/version.ts`](src/version.ts).
+3. Update `"version"` in [`package.json`](package.json).
+4. Run `npm run lint` and `npm run build` to verify clean compilation.
+
+---
+
+## 🏗️ Architecture & Technology Stack
+
+- **Frontend**: React 19, TypeScript 5.8, Tailwind CSS, Lucide React icons, Recharts, Motion.
+- **Backend & Serving**: Node.js & Express 5 (bootstrap in `server.ts`), Vite 6 bundler, esbuild.
+- **Cloud Database**: Cloud Firestore (`appData/main` root document with 0ms `localStorage` caching and real-time `onSnapshot` listeners).
+- **Media & Avatar Storage**: Firebase Cloud Storage (`members/photos/{id}.webp`) with an isolated Firestore fallback collection (`memberPhotos/{id}`) guaranteeing the 1 MB main document limit is never exceeded.
+- **AI Analytics**: Google GenAI SDK (`@google/genai`) for attendance trend summaries and ministry insights.
+
+```
+├── server/                        # Express API & Server Middleware
+│   ├── config/gemini.ts           # Google GenAI SDK configuration
+│   ├── middleware/security.ts     # Security headers & payload validators
+│   └── app.ts                     # API routes & static client serving
 │
-├── server/                        # Backend (Node.js & Express)
-│   ├── config/
-│   │   └── gemini.ts              # Google GenAI SDK configuration
-│   ├── middleware/
-│   │   └── security.ts            # Security headers (nosniff, SAMEORIGIN) & request validators
-│   ├── routes/
-│   │   └── api.ts                 # API routes (/api/health, /api/generate-insight, etc.)
-│   └── app.ts                     # Express app setup, API routing & Vite/SPA static serving
-│
-├── src/                           # Frontend (React 19, TypeScript, Tailwind CSS)
-│   ├── components/                # Application view components
-│   │   ├── Dashboard.tsx          # Key metrics, attendance summary & quick actions
-│   │   ├── AttendanceTaker.tsx    # Single-tap attendance check-in for services
-│   │   ├── MembersList.tsx        # Member & teacher directory, filters, and import/export
-│   │   ├── OutreachHub.tsx        # Follow-up radar, teacher outreach & schedules
-│   │   ├── AnalyticsHub.tsx       # Attendance trends, charts, and AI insights
-│   │   ├── ReportExport.tsx       # Formatted WhatsApp exports and summaries
-│   │   ├── Finances.tsx           # Income, expenses, tithes, and offerings
-│   │   ├── Settings.tsx           # Zones, branches, churches, classes & passcode
-│   │   └── Login.tsx              # Role-based login and session authentication
+├── src/
+│   ├── components/                # Modular UI Views & Dialogs
+│   │   ├── Dashboard.tsx          # Key metrics, attendance targets, and charts
+│   │   ├── AttendanceTaker.tsx    # Single-tap check-in, punctuality, and avatar roster
+│   │   ├── MembersList.tsx        # Directory, search, filters, drawer & Photo Studio
+│   │   ├── PhotoStudioModal.tsx   # Webcam capture, framing, constant backdrops & WebP export
+│   │   ├── MemberAvatar.tsx       # Reusable avatar with initials fallback
+│   │   ├── ChangelogModal.tsx     # Interactive version notes and release timeline
+│   │   ├── OutreachHub.tsx        # Pastoral follow-up radar, teacher outreach & calendar
+│   │   ├── AnalyticsHub.tsx       # Interactive charts and AI insights
+│   │   ├── Finances.tsx           # Weekly Sunday collections, tithes & category ledgers
+│   │   ├── ReportExport.tsx       # WhatsApp and Telegram copy-ready reports
+│   │   ├── Settings.tsx           # Organization, zones, branches, and RBAC matrix
+│   │   └── Login.tsx              # Passcode/Google authentication & session restoration
+│   │
 │   ├── services/
-│   │   ├── storageService.ts      # Fast local cache, Firestore sync, and batch writes
-│   │   ├── firebase.ts            # Firebase app initialization & Firestore references
-│   │   └── securityService.ts    # Input sanitization and data validation
+│   │   ├── storageService.ts      # Cloud Firestore sync, offline cache, branch rename cascade
+│   │   ├── firebase.ts            # Firebase App, Firestore DB, and Storage uploads
+│   │   └── securityService.ts     # Input sanitization, SHA-256 passcodes, and gender helpers
+│   │
 │   ├── lib/
-│   │   ├── teacherDivision.ts     # Fair division of children among teachers for outreach
-│   │   └── theme.ts               # Church color themes and styles
-│   ├── types.ts                   # TypeScript interfaces and enum definitions
-│   ├── constants.ts               # Default values and configuration constants
-│   ├── App.tsx                    # Root component, view routing & session restoration
-│   └── index.tsx                  # React DOM entry point
-│
-├── index.html                     # HTML shell
-├── server.ts                      # Server bootstrap entry point (port 3000)
-├── vite.config.ts                 # Vite bundler configuration
-├── tsconfig.json                  # TypeScript compiler options
-└── package.json                   # Project dependencies and run scripts
+│   │   ├── permissions.ts         # Granular Role-Based Access Control (RBAC) engine
+│   │   ├── teacherDivision.ts     # Fair pastoral allocation and Thesaurus alias resolver
+│   │   └── theme.ts               # Theme tokens and dynamic palette application
+│   │
+│   ├── version.ts                 # Centralized SemVer metadata & release changelog
+│   ├── types.ts                   # Strict TypeScript definitions
+│   └── constants.ts               # Default configurations, registry, and fallback settings
 ```
 
 ---
 
-## What the App Is Made Up Of
+## 🌟 Core Modules & Capabilities
 
-### 1. Dashboard
-- Displays key statistics: **Total Members**, **Present Today**, **First Timers**, and **FNF**.
-- Shows attendance target progress bars for each church.
-- Quick navigation shortcuts to **Attendance**, **Members**, **Outreach Hub**, and **Reports**.
+### 1. Children's Photo Studio & Constant Studio Backgrounds
+- **Interactive Capture**: Teachers and staff can snap a live photo using their laptop or mobile webcam, or upload an image from file storage.
+- **Framing & Alignment**: Circular framing overlay with real-time drag-to-pan, zoom (0.8x to 2.5x), and rotation controls.
+- **Constant Studio Backgrounds**:
+  - Eliminates inconsistent home or church lighting by compositing the child's silhouette onto uniform studio backdrops:
+    - **Church Indigo** (`linear-gradient(135deg, #4338ca, #6366f1)`)
+    - **Royal Blue** (`linear-gradient(135deg, #1e3a8a, #3b82f6)`)
+    - **Warm Amber** (`linear-gradient(135deg, #b45309, #f59e0b)`)
+    - **Studio Slate** (`linear-gradient(135deg, #1e293b, #475569)`)
+    - **Fresh Emerald** (`linear-gradient(135deg, #065f46, #10b981)`)
+    - **Clean Light** (`#f8fafc`)
+    - **Original Photo** (standard centered crop)
+  - Features an edge-softness slider for smooth portrait blending and subtle studio spotlight vignetting.
+- **Storage-Optimized WebP Export**: Automatically scales and exports 256×256 WebP payloads (~15–25 KB) to Firebase Cloud Storage. If Cloud Storage is not yet provisioned, it automatically falls back to a dedicated `memberPhotos` collection to protect the main document.
+- **Roster & Directory Avatars**: Integrated via [`MemberAvatar.tsx`](src/components/MemberAvatar.tsx) across the Member directory, Member side drawer, and Attendance check-in rosters, with deterministic initials fallback.
 
-### 2. Attendance
-- **Church Selector**: Switch between churches:
-  - **I** 
-  - **K** 
-  - **LJ** (Lower Juniors)
-  - **UJ** (Upper Juniors)
-  - **CM** (Children's Ministry / Admin)
-- **Service Selection**: Mark attendance for **Joy Service**, **Enlargement Service**, **Joint Service**, or **Special**.
-- **Single-Tap Check-In**: Tap any child or teacher to toggle attendance instantly.
-- **Filters**: View by age class, status (**All**, **Present**, **Absent**), or search by name.
-- **Bulk Check-In**: Select multiple children to check in at once.
-- **Quick Add Visitor**: Register a new visitor or first timer on the spot.
+### 2. Organization Hierarchy & Cascade Branch Renaming
+- **Multi-Level Organization**: Manage Directorate $\rightarrow$ Zones $\rightarrow$ Branches $\rightarrow$ Churches/Classes (Upper Junior, Lower Junior, Kindergarten, Infants, Nursery).
+- **Thesaurus Auto-Attachment**: Built-in automatic self-healing migration attaching all historical and incoming records from `"Thesaurus HQ"` to `"Thesaurus"`.
+- **Atomic Cascade Renaming**: Renaming any branch in Settings propagates across all dependent entities:
+  - Members (`branchId` and `assignedChurch`).
+  - Attendance history.
+  - Financial income and expense transactions.
+  - Outreach sessions and prayer bookings.
+  - Existing notifications and browser active sessions.
 
-### 3. Members
-- Directory of all registered individuals categorized by **Member Type**:
-  - **Member** (Regular attendee)
-  - **FNF** (Friends & Family)
-  - **Visitor / First Timer**
-  - **Not Member**
-  - **Teacher / Helper / Volunteer**
-- Filter by status: **Active**, **Inconsistent**, **Archived**, **Transferred**, **Not Active**, or **Vacation**.
-- View details: Parent phone numbers, address, birthday, gender, and promotion history.
-- **Import / Export**: Batch upload members via CSV/Excel or export the roster.
+### 3. Role-Based Access Control (RBAC) Permissions Matrix
+- Comprehensive permissions matrix in **Settings $\rightarrow$ Role Permissions** allowing Super Admins to toggle access to features and subfeatures across roles:
+  - `SUPER_ADMIN` & `ADMIN` (Full global governance).
+  - `DIRECTORATE_HEAD` (Cross-zonal oversight).
+  - `ZONAL_HEAD` (Scoped to assigned zone).
+  - `BRANCH_COORDINATOR` (Scoped to assigned branch).
+  - `TEACHER` & `VOLUNTEER` (Scoped to assigned church and class).
 
-### 4. Outreach Hub
-- **Follow-up Tab**:
-  - Automatically identifies children who **Missed 2+ Sundays** or **Missed 3+ Sundays**.
-  - Direct WhatsApp link to chat with parents.
-  - Log follow-up calls, home visits, and prayer requests.
-- **Progress Tab**:
-  - Focuses on the logged-in teacher's assigned church.
-  - Displays **Monthly outreach trend** and **Teacher outreach** performance.
-- **Fair Division**: Evenly distributes children, FNF, and first timers among teachers for pastoral follow-up.
+### 4. Context-Aware Activity Notification Engine
+- Real-time logging of all critical ministry events:
+  - Attendance submissions.
+  - Member additions, transfers, and status updates.
+  - Financial transactions.
+  - Outreach logs and prayer slot bookings.
+  - Organization changes.
+- Automatically filtered in the top notification bell based on the user's logged-in functional context, with desktop browser notification alerts when minimized.
 
-### 5. Analytics
-- Interactive charts:
-  - Attendance trends over time.
-  - Service comparison (**Joy Service** vs. **Enlargement Service**).
-  - Gender and class distributions.
-- **AI Insights**: Generate weekly attendance summaries and trends via the integrated AI helper.
+### 5. Attendance & Punctuality System
+- Single-tap check-in with visual color indicators.
+- **Dual-Service Support**: Separate tracking for **Joy Service** and **Enlargement Service**.
+- **Punctuality Counter**: Tracks punctuality rewards with custom thresholds (e.g., first 30 attendees).
+- Full-text search and class filters for instantaneous check-in.
 
-### 6. Reports (WhatsApp Export)
-- Generate clean, copy-ready reports formatted specifically for WhatsApp and Telegram church groups:
-  - **Detailed Report**: Numbered list of attendees separated by Members, FNF, First Timers, and Teachers, with service totals.
-  - **Summary Report**: High-level counts and service splits.
-  - **Consolidated Report**: Combined figures across all churches (UJ, LJ, K, I) for administrators.
-  - **Annual Export**: Full-year breakdown for end-of-year reviews.
-- Tap **Copy** to place the formatted text directly onto your clipboard.
-
-### 7. Finances
-- Record weekly Sunday collections: tithes, offerings, thanksgiving, and special project funds.
-- Categorize transactions by service and church branch.
-- View total income, expenses, and transaction logs.
-
-### 8. Settings
-- **General**: Set church name, theme colors, and administrator passcode.
-- **Zones & Branches**: Organize church branches into zones.
-- **Classes**: Configure Sunday school classes and age brackets.
-- **Cloud Sync**: View Firebase connection status, trigger manual syncs, or backup data.
+### 6. WhatsApp & Telegram Reporting Hub
+- Generates copy-ready formatted reports with one click:
+  - **Detailed Department Report** (separated by regular members, FNF, first timers, teachers, and service totals).
+  - **Summary Report** (high-level counts).
+  - **Consolidated Leadership Report** (aggregated cross-church figures).
+  - **Annual Attendance Breakdown**.
 
 ---
 
-## How to Make Use of the App
-
-### Taking Attendance on Sunday
-1. Log in with your teacher or admin credentials.
-2. Select your **Church** (e.g., **K**, **LJ**, or **UJ**) from the top bar.
-3. Tap **Attendance** in the navigation.
-4. Confirm the **Date** and select the **Service** (**Joy Service** or **Enlargement Service**).
-5. Tap each child's name as they arrive. The card highlights green once present.
-6. If a first-time guest arrives, tap **+ Quick Add**, fill in their name and parent phone number, and tap Save.
-
-### Sharing the Sunday Report on WhatsApp
-1. After service ends, tap **Reports** in the navigation.
-2. Verify the selected **Date** matches today's date.
-3. Choose **Detailed Report** (for department groups) or **Consolidated Report** (for general church leadership).
-4. Tap **Copy Report**.
-5. Open WhatsApp, navigate to your leadership group, and paste the message.
-
-### Doing Mid-Week Follow-Up (Outreach Hub)
-1. Tap **Outreach Hub** in the navigation.
-2. In the **Follow-up** tab, click **Missed 2+ Sundays** to view children who were absent recently.
-3. Tap the green **WhatsApp** icon next to a child's name to send a message to their parent.
-4. Tap **Log Outreach** to record whether you called, visited, or messaged, along with any prayer notes.
-5. In the **Progress** tab, view your monthly outreach trend and teacher outreach summary.
-
-### Adding or Updating Members
-1. Tap **Members** in the navigation.
-2. To add one child: tap **+ Add Member**, enter their details, select their **Member Type** (**Member**, **FNF**, or **Visitor**), and save.
-3. To update details: click on any member's row to edit their phone number, class, or status.
-
----
-
-## Local Development & Setup
+## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js (v18 or higher)
-- npm
+- Node.js (v18.0.0 or higher)
+- npm (v9.0.0 or higher)
 
 ### Installation
 ```bash
 # 1. Clone the repository
-git clone <repo-url>
-cd childrens-ministry-attendance
+git clone https://github.com/e-gyan/cm-app.git
+cd cm-app
 
 # 2. Install dependencies
 npm install
 
 # 3. Configure environment variables
-cp .env.example .env
-# Edit .env with your GEMINI_API_KEY and Firebase config if using cloud sync
+# Ensure .env contains:
+# VITE_FIREBASE_API_KEY=...
+# VITE_FIREBASE_AUTH_DOMAIN=...
+# VITE_FIREBASE_PROJECT_ID=...
+# VITE_FIREBASE_STORAGE_BUCKET=...
+# VITE_FIREBASE_DATABASE_ID=...
+# GEMINI_API_KEY=...
 ```
 
-### Run Locally
+### Running Locally
 ```bash
 npm run dev
 ```
 Open **http://localhost:3000** in your browser.
 
-### Verification & Build
+### Quality Verification & Production Build
 ```bash
-# Run TypeScript linting / type-check
+# Type check and linting (TypeScript strict)
 npm run lint
 
-# Build for production (Vite client + esbuild server bundle)
+# Compile production bundle (Vite + esbuild server)
 npm run build
 
 # Start production server
@@ -195,8 +190,13 @@ npm start
 
 ---
 
-## CI/CD Workflows
+## 🔒 Security Best Practices
+- **Passcode Protection**: Passcodes are hashed with SHA-256 and verified using constant-time comparison in [`securityService.ts`](src/services/securityService.ts).
+- **Sanitized Inputs**: All member names, phone numbers, and notes are sanitized to prevent XSS.
+- **Firestore Isolation**: Heavy media binaries are never stored in the main `appData/main` document.
+- **Strict Role Enforcement**: UI components, views, and navigation tabs check `hasRoleFeature` and `hasRoleSubfeature` before rendering.
 
-Automated GitHub Actions workflows are located in `.github/workflows/`:
-- **`ci.yml`**: Runs on all pushes and pull requests to `main` and `master`. Performs dependency installation, TypeScript linting (`npm run lint`), and builds the production bundle (`npm run build`).
-- **`deploy.yml`**: Triggers production deployment checks upon merging into `main` or `master`.
+---
+
+## 📄 License
+Internal Children's Ministry Directorate Platform. All rights reserved.

@@ -4,6 +4,8 @@ import { updateSettings, renameBranchCascade } from "../services/storageService"
 import { hasRoleSubfeature } from "../lib/permissions";
 import { doc, getDoc } from "firebase/firestore";
 import { db, loginWithGoogle } from "../services/firebase";
+import { APP_VERSION, APP_RELEASE_NAME } from "../version";
+import { ChangelogModal } from "./ChangelogModal";
 import {
   Settings as SettingsIcon,
   Cloud,
@@ -94,6 +96,7 @@ const Settings: React.FC<SettingsProps> = ({
     text: string;
   } | null>(null);
   const [selectedConfigChurch, setSelectedConfigChurch] = useState(activeChurch);
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
 
   const [duplicateRecords, setDuplicateRecords] = useState<{
     date: string;
@@ -523,6 +526,29 @@ const Settings: React.FC<SettingsProps> = ({
               </button>
             );
           })}
+
+          {/* System Version & Release Notes Card */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-2.5 mt-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Sparkles size={13} className="text-indigo-600" /> Platform Version
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-black">
+                v{APP_VERSION}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 font-medium leading-tight">
+              {APP_RELEASE_NAME}
+            </p>
+            <button
+              type="button"
+              onClick={() => setIsChangelogOpen(true)}
+              className="w-full py-2 px-3 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl text-xs font-bold transition-all border border-slate-200/60 flex items-center justify-center gap-1.5 active:scale-95"
+            >
+              <Sparkles size={12} className="text-indigo-500" />
+              View Release Notes
+            </button>
+          </div>
         </div>
 
         {/* Content Area */}
@@ -1877,6 +1903,12 @@ const Settings: React.FC<SettingsProps> = ({
           </button>
         </div>
       )}
+
+      {/* Changelog Modal */}
+      <ChangelogModal
+        isOpen={isChangelogOpen}
+        onClose={() => setIsChangelogOpen(false)}
+      />
     </div>
   );
 };
