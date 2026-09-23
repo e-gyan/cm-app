@@ -104,8 +104,7 @@ When introducing changes:
 - **Roster and Directory Avatars**: Integrated via [`MemberAvatar.tsx`](src/components/MemberAvatar.tsx) across the Member directory, Member side drawer, and Attendance check-in rosters, with deterministic initials fallback.
 
 ### 2. Organization Hierarchy and Cascade Branch Renaming
-- **Multi-Level Organization**: Manage Directorate $\rightarrow$ Zones $\rightarrow$ Branches $\rightarrow$ Churches/Classes (Upper Junior, Lower Junior, Kindergarten, Infants, Nursery).
-- **Thesaurus Auto-Attachment**: Built-in automatic self-healing migration attaching all historical and incoming records from `"Thesaurus HQ"` to `"Thesaurus"`.
+- **Multi-Level Organization**: Manage Directorate $\rightarrow$ Zones $\rightarrow$ Branches $\rightarrow$ Churches/Classes (Upper Junior, Lower Junior, K, I).
 - **Atomic Cascade Renaming**: Renaming any branch in Settings propagates across all dependent entities:
   - Members (`branchId` and `assignedChurch`).
   - Attendance history.
