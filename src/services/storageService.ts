@@ -535,7 +535,7 @@ export const bulkDeleteMembers = async (ids: string[]) => {
   return { success: true, message: "" };
 };
 
-// Optimistic Attendance Operations
+// Optimistic Attendance Operations with immediate Firestore synchronization
 export const saveAttendance = async (id: string, records: AttendanceRecord[]) => {
   const current = memoryCache || (await loadData());
   let att = [...current.attendance];
@@ -547,7 +547,8 @@ export const saveAttendance = async (id: string, records: AttendanceRecord[]) =>
   memoryCache = { ...current, attendance: att };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  updateMainDoc({ attendance: att }).catch(console.error);
+  pendingUpdates = { ...pendingUpdates, attendance: att };
+  await flushPendingWrites();
 
   if (records.length > 0) {
     const first = records[0];
@@ -568,7 +569,8 @@ export const deleteAttendanceRecord = async (id: string) => {
   memoryCache = { ...current, attendance };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  updateMainDoc({ attendance }).catch(console.error);
+  pendingUpdates = { ...pendingUpdates, attendance };
+  await flushPendingWrites();
 };
 
 // Settings Operations with immediate Firestore synchronization

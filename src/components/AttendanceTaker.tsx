@@ -32,7 +32,7 @@ import {
   updateMember,
 } from "../services/storageService";
 import { sanitizeInput, determineGenderByName } from "../services/securityService";
-import { matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
+import { matchesScope, getScopeDisplayLabel, isStaffOrTeacher } from "../lib/teacherDivision";
 import { MemberAvatar } from "./MemberAvatar";
 import {
   isSunday,
@@ -73,9 +73,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const availableChurches = Array.isArray(data.settings?.churches) ? data.settings?.churches : ["UJ", "LJ", "K", "I", "N"];
 
   // State
-  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [selectedDate, setSelectedDate] = useState<string>(
+    () => sessionStorage.getItem("attendance_selectedDate") || "",
+  );
   const [presentIds, setPresentIds] = useState<Set<string>>(new Set());
   const [punctualIds, setPunctualIds] = useState<Set<string>>(new Set());
+  const [isSaving, setIsSaving] = useState(false);
 
   // New State for Service Logic
   const [serviceMap, setServiceMap] = useState<any>({});
@@ -116,6 +119,11 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   );
 
   // Persist State
+  useEffect(() => {
+    if (selectedDate) {
+      sessionStorage.setItem("attendance_selectedDate", selectedDate);
+    }
+  }, [selectedDate]);
   useEffect(() => {
     sessionStorage.setItem("attendance_filterType", filterType);
   }, [filterType]);
@@ -165,7 +173,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     churchFilter: Church | "COMBINED",
     mode: "MEMBERS" | "STAFF",
   ): Church[] => {
-    if (churchFilter !== "COMBINED") return [churchFilter];
+    if (churchFilter !== "COMBINED") {
+      if (mode === "STAFF") {
+        return Array.from(new Set([churchFilter, "CM", "All"] as Church[]));
+      }
+      return [churchFilter];
+    }
     return [...availableChurches, "CM", "All"];
   };
 
@@ -176,19 +189,24 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
     if (sundaysCurrentYear.length > 0) {
       if (!selectedDate) {
-        const today = new Date();
-        const isTodayWed = today.getDay() === 3;
-        if (isTodayWed) {
-          setSelectedDate(getActiveWednesday(today));
-          setCurrentService("CELL");
+        const savedDate = sessionStorage.getItem("attendance_selectedDate");
+        if (savedDate) {
+          setSelectedDate(savedDate);
         } else {
-          const currentSundayStr = getActiveSunday(today);
-          const exists = sundaysCurrentYear.some(
-            (d) => d.toISOString().split("T")[0] === currentSundayStr,
-          );
+          const today = new Date();
+          const isTodayWed = today.getDay() === 3;
+          if (isTodayWed) {
+            setSelectedDate(getActiveWednesday(today));
+            setCurrentService("CELL");
+          } else {
+            const currentSundayStr = getActiveSunday(today);
+            const exists = sundaysCurrentYear.some(
+              (d) => d.toISOString().split("T")[0] === currentSundayStr,
+            );
 
-          if (exists) setSelectedDate(currentSundayStr);
-          else setSelectedDate(sundaysCurrentYear[0].toISOString().split("T")[0]);
+            if (exists) setSelectedDate(currentSundayStr);
+            else setSelectedDate(sundaysCurrentYear[0].toISOString().split("T")[0]);
+          }
         }
       }
     }
@@ -263,7 +281,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           const targetIds = record.presentMemberIds.filter((id) => {
             const m = data.members.find((mem) => mem.id === id);
             if (!m) return false;
-            const isStaff = ["Teacher", "Helper", "Volunteer"].includes(m.type);
+            const isStaff = isStaffOrTeacher(m);
             return attendanceMode === "STAFF" ? isStaff : !isStaff;
           });
 
@@ -271,9 +289,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             (id) => {
               const m = data.members.find((mem) => mem.id === id);
               if (!m) return false;
-              const isStaff = ["Teacher", "Helper", "Volunteer"].includes(
-                m.type,
-              );
+              const isStaff = isStaffOrTeacher(m);
               return attendanceMode === "STAFF" ? isStaff : !isStaff;
             },
           );
@@ -479,7 +495,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   };
 
   const handleSave = async () => {
-    if (!selectedDate) return;
+    if (!selectedDate || isSaving) return;
 
     const hasSpecialMembers = Object.values(serviceMap).includes("SPECIAL");
     if (
@@ -490,160 +506,176 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       return;
     }
 
-    confirmSave();
+    await confirmSave();
   };
 
   const confirmSave = async (
     overridePresentIds?: Set<string>,
     overrideServiceMap?: Record<string, ServiceType>,
   ) => {
-    const activePresentIds = overridePresentIds || presentIds;
-    const activeServiceMap = overrideServiceMap || serviceMap;
+    if (isSaving) return;
+    setIsSaving(true);
 
-    // Notify saving started if desired, but user wants it swift, so we just calculate and save directly.
-    const branchesToSave = getRelevantBranches(effectiveChurch, attendanceMode);
-    let hasActualChanges = false;
-    const allMembers = data.members;
+    try {
+      const activePresentIds = overridePresentIds || presentIds;
+      const activeServiceMap = overrideServiceMap || serviceMap;
 
-    branchesToSave.forEach((churchId) => {
-      const existingRecord = data.attendance.find(
-        (r) => r.date === selectedDate && r.churchId === churchId,
-      );
+      const branchesToSave = getRelevantBranches(effectiveChurch, attendanceMode);
+      let hasActualChanges = false;
+      const allMembers = data.members;
+      const recordsToSave: any[] = [];
 
-      const currentBranchPresentIds: string[] = [...activePresentIds].filter((id) => {
-        const m = allMembers.find((mem) => mem.id === id);
-        if (!m) return false;
-        if (isCombinedView) return m.assignedChurch === churchId;
-        return churchId === effectiveChurch;
-      });
+      branchesToSave.forEach((churchId) => {
+        const existingRecord = data.attendance.find(
+          (r) => r.date === selectedDate && r.churchId === churchId,
+        );
 
-      const currentBranchPunctualIds: string[] = [...punctualIds].filter(
-        (id) => {
+        const currentBranchPresentIds: string[] = [...activePresentIds].filter((id) => {
           const m = allMembers.find((mem) => mem.id === id);
           if (!m) return false;
-          if (isCombinedView) return m.assignedChurch === churchId;
+          if (isCombinedView) {
+            if (m.assignedChurch === churchId) return true;
+            if ((!m.assignedChurch || !availableChurches.includes(m.assignedChurch as Church)) && (churchId === "CM" || churchId === "All")) return true;
+            return false;
+          }
           return churchId === effectiveChurch;
-        },
-      );
+        });
 
-      let finalPresent: string[] = [];
-      let finalPunctual: string[] = [];
-      // Ensure initial map is strictly typed
-      let finalServiceMap: Record<string, ServiceType> =
-        existingRecord?.serviceMap ? { ...existingRecord.serviceMap } : {};
+        const currentBranchPunctualIds: string[] = [...punctualIds].filter(
+          (id) => {
+            const m = allMembers.find((mem) => mem.id === id);
+            if (!m) return false;
+            if (isCombinedView) {
+              if (m.assignedChurch === churchId) return true;
+              if ((!m.assignedChurch || !availableChurches.includes(m.assignedChurch as Church)) && (churchId === "CM" || churchId === "All")) return true;
+              return false;
+            }
+            return churchId === effectiveChurch;
+          },
+        );
 
-      if (existingRecord) {
-        if (attendanceMode === "STAFF") {
-          const existingMembers = existingRecord.presentMemberIds.filter(
-            (id) => {
+        let finalPresent: string[] = [];
+        let finalPunctual: string[] = [];
+        // Ensure initial map is strictly typed
+        let finalServiceMap: Record<string, ServiceType> =
+          existingRecord?.serviceMap ? { ...existingRecord.serviceMap } : {};
+
+        if (existingRecord) {
+          if (attendanceMode === "STAFF") {
+            const existingMembers = existingRecord.presentMemberIds.filter(
+              (id) => {
+                const m = allMembers.find((mem) => mem.id === id);
+                return m && !isStaffOrTeacher(m);
+              },
+            );
+            const existingMembersPunctual = (
+              existingRecord.punctualMemberIds || []
+            ).filter((id: string) => {
               const m = allMembers.find((mem) => mem.id === id);
-              return m && !["Teacher", "Helper", "Volunteer"].includes(m.type);
-            },
-          );
-          const existingMembersPunctual = (
-            existingRecord.punctualMemberIds || []
-          ).filter((id: string) => {
-            const m = allMembers.find((mem) => mem.id === id);
-            return m && !["Teacher", "Helper", "Volunteer"].includes(m.type);
-          });
-          finalPresent = [...existingMembers, ...currentBranchPresentIds];
-          finalPunctual = [
-            ...existingMembersPunctual,
-            ...currentBranchPunctualIds,
-          ];
+              return m && !isStaffOrTeacher(m);
+            });
+            finalPresent = [...existingMembers, ...currentBranchPresentIds];
+            finalPunctual = [
+              ...existingMembersPunctual,
+              ...currentBranchPunctualIds,
+            ];
+          } else {
+            const existingStaff = existingRecord.presentMemberIds.filter((id) => {
+              const m = allMembers.find((mem) => mem.id === id);
+              return m && isStaffOrTeacher(m);
+            });
+            const existingStaffPunctual = (
+              existingRecord.punctualMemberIds || []
+            ).filter((id: string) => {
+              const m = allMembers.find((mem) => mem.id === id);
+              return m && isStaffOrTeacher(m);
+            });
+            finalPresent = [...existingStaff, ...currentBranchPresentIds];
+            finalPunctual = [
+              ...existingStaffPunctual,
+              ...currentBranchPunctualIds,
+            ];
+          }
         } else {
-          const existingStaff = existingRecord.presentMemberIds.filter((id) => {
-            const m = allMembers.find((mem) => mem.id === id);
-            return m && ["Teacher", "Helper", "Volunteer"].includes(m.type);
-          });
-          const existingStaffPunctual = (
-            existingRecord.punctualMemberIds || []
-          ).filter((id: string) => {
-            const m = allMembers.find((mem) => mem.id === id);
-            return m && ["Teacher", "Helper", "Volunteer"].includes(m.type);
-          });
-          finalPresent = [...existingStaff, ...currentBranchPresentIds];
-          finalPunctual = [
-            ...existingStaffPunctual,
-            ...currentBranchPunctualIds,
-          ];
+          finalPresent = currentBranchPresentIds;
+          finalPunctual = currentBranchPunctualIds;
         }
-      } else {
-        finalPresent = currentBranchPresentIds;
-        finalPunctual = currentBranchPunctualIds;
-      }
 
-      // Update Service Map Logic:
-      // We only update the map for people currently being saved in this context.
-      finalPresent.forEach((id: string) => {
-        if (activeServiceMap[id]) {
-          finalServiceMap[id] = activeServiceMap[id];
+        // Update Service Map Logic:
+        finalPresent.forEach((id: string) => {
+          if (activeServiceMap[id]) {
+            finalServiceMap[id] = activeServiceMap[id];
+          }
+        });
+
+        // Clean up map entries for people who are NOT in the final present list at all
+        const cleanServiceMap: Record<string, ServiceType> = {};
+        const keys = Object.keys(finalServiceMap);
+        keys.forEach((key) => {
+          if (finalPresent.includes(key)) {
+            cleanServiceMap[key] = finalServiceMap[key];
+          }
+        });
+        finalServiceMap = cleanServiceMap;
+
+        // Determine changes
+        const oldPresent = existingRecord
+          ? existingRecord.presentMemberIds.sort().join(",")
+          : "";
+        const newPresent = finalPresent.sort().join(",");
+        const oldPunctual = existingRecord
+          ? (existingRecord.punctualMemberIds || []).sort().join(",")
+          : "";
+        const newPunctual = finalPunctual.sort().join(",");
+        const oldMapStr = JSON.stringify(existingRecord?.serviceMap || {});
+        const newMapStr = JSON.stringify(finalServiceMap);
+        const oldEventName = existingRecord?.eventName || "";
+        const hasSpecialInFinal =
+          Object.values(finalServiceMap).includes("SPECIAL");
+        const newEventName =
+          hasSpecialInFinal && specialEventName ? specialEventName : oldEventName;
+
+        if (
+          oldPresent !== newPresent ||
+          oldPunctual !== newPunctual ||
+          oldMapStr !== newMapStr ||
+          oldEventName !== newEventName
+        ) {
+          hasActualChanges = true;
+          const effectiveBranchId = existingRecord?.branchId || activeBranchId || currentUser.branchId || undefined;
+          const id = `${selectedDate}_${churchId}`;
+          const recordEventName = isWednesdayCell
+            ? (specialEventName || existingRecord?.eventName || (isWednesday(selectedDate) ? "Wednesday Cell" : "Cell Meeting"))
+            : newEventName;
+          recordsToSave.push({
+            id,
+            date: selectedDate,
+            churchId,
+            branchId: effectiveBranchId,
+            presentMemberIds: finalPresent,
+            punctualMemberIds: finalPunctual,
+            serviceMap: finalServiceMap,
+            eventName: recordEventName,
+            attendanceType: isWednesdayCell ? "CELL" : "SUNDAY",
+            lastUpdated: Date.now()
+          });
         }
       });
 
-      // Clean up map entries for people who are NOT in the final present list at all
-      const cleanServiceMap: Record<string, ServiceType> = {};
-      const keys = Object.keys(finalServiceMap);
-      keys.forEach((key) => {
-        if (finalPresent.includes(key)) {
-          cleanServiceMap[key] = finalServiceMap[key];
-        }
-      });
-      finalServiceMap = cleanServiceMap;
-
-      // Determine changes
-      const oldPresent = existingRecord
-        ? existingRecord.presentMemberIds.sort().join(",")
-        : "";
-      const newPresent = finalPresent.sort().join(",");
-      const oldPunctual = existingRecord
-        ? (existingRecord.punctualMemberIds || []).sort().join(",")
-        : "";
-      const newPunctual = finalPunctual.sort().join(",");
-      const oldMapStr = JSON.stringify(existingRecord?.serviceMap || {});
-      const newMapStr = JSON.stringify(finalServiceMap);
-      const oldEventName = existingRecord?.eventName || "";
-      const hasSpecialInFinal =
-        Object.values(finalServiceMap).includes("SPECIAL");
-      const newEventName =
-        hasSpecialInFinal && specialEventName ? specialEventName : oldEventName;
-
-      if (
-        oldPresent !== newPresent ||
-        oldPunctual !== newPunctual ||
-        oldMapStr !== newMapStr ||
-        oldEventName !== newEventName
-      ) {
-        hasActualChanges = true;
-        const effectiveBranchId = existingRecord?.branchId || activeBranchId || currentUser.branchId || undefined;
-        const id = `${selectedDate}_${churchId}`;
-        const recordEventName = isWednesdayCell
-          ? (specialEventName || existingRecord?.eventName || "Wednesday Cell")
-          : newEventName;
-        saveAttendance(id, [{
-          id,
-          date: selectedDate,
-          churchId,
-          branchId: effectiveBranchId,
-          presentMemberIds: finalPresent,
-          punctualMemberIds: finalPunctual,
-          serviceMap: finalServiceMap,
-          eventName: recordEventName,
-          attendanceType: isWednesdayCell ? "CELL" : "SUNDAY",
-          lastUpdated: Date.now()
-        }]);
+      if (recordsToSave.length > 0) {
+        await saveAttendance(recordsToSave[0].id, recordsToSave);
       }
-    });
 
-    setSuccessMsg(hasActualChanges ? `Changes saved` : `No changes saved`);
-    setShowEventModal(false);
-    clearDraft();
-    onUpdate();
-    setTimeout(() => setSuccessMsg(""), 2000);
-
-    // Explicitly push to cloud in background without blocking UI
-    if (hasActualChanges) {
-      Promise.resolve(true);
+      setSuccessMsg(hasActualChanges ? `Changes saved` : `No changes saved`);
+      setShowEventModal(false);
+      clearDraft();
+      onUpdate();
+      setTimeout(() => setSuccessMsg(""), 2000);
+    } catch (err) {
+      console.error("Failed to save attendance:", err);
+      setSuccessMsg("Error saving attendance");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -711,8 +743,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       (m) =>
         matchesScope(m, activeBranchId, data.settings?.organization) &&
         [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) &&
-        targetChurches.includes(m.assignedChurch as Church) &&
-        ["Teacher", "Helper", "Volunteer"].includes(m.type),
+        (targetChurches.includes(m.assignedChurch as Church) || m.assignedChurch === "All" || m.assignedChurch === "CM" || !m.assignedChurch) &&
+        isStaffOrTeacher(m),
     );
   } else {
     membersToList = (data.members || []).filter(
@@ -720,7 +752,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         matchesScope(m, activeBranchId, data.settings?.organization) &&
         [MemberStatus.ACTIVE, MemberStatus.NOT_ACTIVE, MemberStatus.INCONSISTENT].includes(m.status) &&
         targetChurches.includes(m.assignedChurch as Church) &&
-        !["Teacher", "Helper", "Volunteer"].includes(m.type),
+        !isStaffOrTeacher(m),
     );
   }
 
@@ -809,7 +841,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       r.punctualMemberIds?.forEach((id) => {
         const m = data.members.find((mem) => mem.id === id);
         if (m) {
-          const isStaff = ["Teacher", "Helper", "Volunteer"].includes(m.type);
+          const isStaff = isStaffOrTeacher(m);
           if (
             (attendanceMode === "STAFF" && isStaff) ||
             (attendanceMode === "MEMBERS" && !isStaff)
@@ -989,10 +1021,11 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
             <button
               onClick={handleSave}
-              className="flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95 shrink-0"
+              disabled={isSaving}
+              className="flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-60 shadow-lg shadow-indigo-200 transition-all active:scale-95 shrink-0"
             >
-              <Save size={18} />
-              <span className="hidden sm:inline">Save</span>
+              <Save size={18} className={isSaving ? "animate-spin" : ""} />
+              <span className="hidden sm:inline">{isSaving ? "Saving..." : "Save"}</span>
               <span className="bg-white/20 px-1.5 py-0.5 rounded text-xs font-mono">
                 {totalSavedInState}
               </span>
