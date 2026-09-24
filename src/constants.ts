@@ -23,7 +23,7 @@ export const APP_FEATURES_REGISTRY: FeatureDef[] = [
     subfeatures: [
       { id: "overview_stats", name: "Overview Statistics", description: "View total registered children, attendance rate, first timers count, and growth." },
       { id: "weekly_trend_chart", name: "Weekly Attendance Trends", description: "Interactive trend chart comparing actual vs previous year attendance." },
-      { id: "church_distribution", name: "Church Distribution", description: "Breakdown of attendance across UJ, LJ, K, I, and N churches." },
+      { id: "church_distribution", name: "Church Distribution", description: "Breakdown of attendance across UJ, LJ, K, I churches." },
       { id: "gender_age_breakdown", name: "Gender and Age Analytics", description: "Distribution statistics for gender and age groups." },
       { id: "recent_activities", name: "Recent Activity Log", description: "Real-time feed of recent member updates, promotions, and logs." },
     ],
@@ -35,7 +35,7 @@ export const APP_FEATURES_REGISTRY: FeatureDef[] = [
     iconName: "Users",
     subfeatures: [
       { id: "MEMBERS", name: "Children and Members", description: "Directory and profiles of children and regular church members." },
-      { id: "TEACHERS", name: "Teachers and Staff", description: "Roster and assignments for teachers, helpers, and staff." },
+      { id: "TEACHERS", name: "Teachers", description: "Roster and assignments for teachers, helpers, and staff." },
       { id: "add_member", name: "Add Member", description: "Register individual members, children, and teachers." },
       { id: "bulk_add", name: "Bulk Add", description: "Paste or import lists of names to create multiple members at once." },
       { id: "edit_member", name: "Edit Member Profile", description: "Update personal details, birthdates, contact info, and addresses." },
@@ -52,7 +52,7 @@ export const APP_FEATURES_REGISTRY: FeatureDef[] = [
     iconName: "CalendarCheck",
     subfeatures: [
       { id: "MEMBERS", name: "Children Attendance", description: "Record and review attendance for children and visitors." },
-      { id: "STAFF", name: "Staff and Teachers Attendance", description: "Track attendance for teachers, helpers, and volunteers." },
+      { id: "STAFF", name: "Teachers Attendance", description: "Track attendance for teachers, helpers, and volunteers." },
       { id: "mark_attendance", name: "Mark Attendance", description: "Mark attendees present for Sunday services." },
       { id: "track_punctuality", name: "Punctuality Tracking", description: "Record early arrivals and crown on-time attendees." },
       { id: "service_selection", name: "Service Selection", description: "Toggle between Joy Service, Enlargement Service, or Special Events." },
@@ -132,7 +132,7 @@ export const APP_FEATURES_REGISTRY: FeatureDef[] = [
 ];
 
 export const DEFAULT_SETTINGS = {
-  churches: ["UJ", "LJ", "K", "I", "N"],
+  churches: ["UJ", "LJ", "K", "I"],
   organization: {
     directorate: "Central Children's Ministry Directorate",
     zones: [
@@ -171,12 +171,12 @@ export const getSundaysInYear = (year: number) => {
   const startDate = new Date(year, 0, 1);
   const endDate = new Date(year, 11, 31);
   const sundays = [];
-  
+
   let d = new Date(startDate);
   while (d.getDay() !== 0) {
     d.setDate(d.getDate() + 1);
   }
-  
+
   while (d <= endDate) {
     sundays.push(new Date(d));
     d.setDate(d.getDate() + 7);

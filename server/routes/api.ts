@@ -15,7 +15,7 @@ apiRouter.post("/generate-insight", validatePromptPayload, async (req, res) => {
     const { prompt } = req.body;
     const ai = getGenAI();
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.5-flash",
       contents: prompt,
     });
 
@@ -32,7 +32,7 @@ apiRouter.post("/generate-executive-report", validatePromptPayload, async (req, 
     const { prompt } = req.body;
     const ai = getGenAI();
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.5-flash",
       contents: prompt,
     });
 
