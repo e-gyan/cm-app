@@ -16,16 +16,30 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.6.0";
-export const APP_RELEASE_NAME = "Consolidated Reports, Dual Camera & Subject Background Removal";
-export const APP_BUILD_DATE = "2026-09-23";
+export const APP_VERSION = "1.7.0";
+export const APP_RELEASE_NAME = "AI Neural Background Removal, Studio Depth & Zero-Lag Previews";
+export const APP_BUILD_DATE = "2026-09-24";
 
 export const CHANGELOG: ReleaseLog[] = [
+  {
+    version: "1.7.0",
+    date: "2026-09-24",
+    title: "AI Neural Background Removal, Studio Depth & Zero-Lag Previews",
+    badge: "Current Release",
+    changes: [
+      "Dual-engine subject isolation combining dynamic in-browser AI neural background removal (@imgly/background-removal) with an instant ~15ms algorithmic fallback",
+      "Subject visual depth enhancement: added 3D Studio Drop Shadow and Silhouette Edge Pop rim lighting to make the subject physically stand out from any chosen backdrop",
+      "Zero-lag cached cutout architecture eliminating main-thread pixel re-computation during panning, zooming, rotation, and backdrop switching",
+      "Instant live real-world previews for Card View (80px) and Roster Badge (40px) updated in real-time on the exact same frame",
+      "New vibrant studio presets: Velvet Purple and Sunset Crimson added to the permanent studio collection",
+      "Real-time background processing status indicators (AI Isolating, AI Studio Cutout, Smart Cutout Active) and quick Re-isolate button",
+      "Enhanced Wednesday cell and mid-week attendance saving and report template preservation for Branch Coordinators",
+    ],
+  },
   {
     version: "1.6.0",
     date: "2026-09-23",
     title: "Consolidated Reports, Dual Camera & Subject Background Removal",
-    badge: "Current Release",
     changes: [
       "Permanent resolution of Branch Coordinator & Admin 'All / CM Church' report generation with multi-department consolidation across UJ, LJ, K, I, and N",
       "Corrected Branch Coordinator role evaluation preventing teacher profile classifications from suppressing the Mega Center reporting template",
