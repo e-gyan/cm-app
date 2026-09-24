@@ -564,7 +564,7 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
                   "@imgly/background-removal"
                 );
                 const resultBlob = await imglyRemoveBg(blob, {
-                  model: "small",
+                  model: "isnet_fp16",
                   proxyToWorker: true,
                 });
                 if (jobId !== activeJobIdRef.current) return;
@@ -850,7 +850,10 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
       outputCanvas.width = 256;
       outputCanvas.height = 256;
       const outCtx = outputCanvas.getContext("2d");
-      if (!outCtx) return;
+      if (!outCtx) {
+        setIsProcessing(false);
+        return;
+      }
 
       outCtx.drawImage(canvasRef.current, 0, 0, 256, 256);
 
@@ -860,7 +863,17 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
           ? outputCanvas.toDataURL("image/png")
           : outputCanvas.toDataURL("image/webp", 0.85);
 
-      await onSave(dataUrl);
+      // Invoke onSave optimistically so background cloud sync doesn't block UI
+      try {
+        const savePromise = onSave(dataUrl);
+        if (savePromise && typeof (savePromise as any).catch === "function") {
+          (savePromise as any).catch((err: any) => console.error("Error saving portrait:", err));
+        }
+      } catch (saveErr) {
+        console.error("Failed to invoke onSave:", saveErr);
+      }
+
+      // Close modal immediately so the user never experiences an unending wait
       onClose();
     } catch (err) {
       console.error("Failed to export photo:", err);

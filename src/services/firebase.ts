@@ -60,27 +60,42 @@ import { getStorage, ref as storageRef, uploadString, getDownloadURL } from "fir
 export const storage = getStorage(app);
 
 export const uploadMemberPhoto = async (memberId: string, dataUrl: string): Promise<string> => {
-  // 1. Try Firebase Cloud Storage first
+  // 1. Try Firebase Cloud Storage first with strict timeout (preventing infinite retry loops when bucket is not provisioned)
   if (firebaseConfig.storageBucket) {
     try {
       const fileRef = storageRef(storage, `members/photos/${memberId}.webp`);
-      await uploadString(fileRef, dataUrl, "data_url", { contentType: "image/webp" });
-      const downloadUrl = await getDownloadURL(fileRef);
+      const contentType = dataUrl.startsWith("data:image/png") ? "image/png" : "image/webp";
+
+      const uploadPromise = (async () => {
+        await uploadString(fileRef, dataUrl, "data_url", { contentType });
+        return await getDownloadURL(fileRef);
+      })();
+
+      const timeoutPromise = new Promise<string>((_, reject) =>
+        setTimeout(() => reject(new Error("Storage upload timed out")), 2500)
+      );
+
+      const downloadUrl = await Promise.race([uploadPromise, timeoutPromise]);
       return downloadUrl;
     } catch (storageError) {
-      console.warn("Firebase Storage upload failed, attempting Firestore fallback collection:", storageError);
+      console.warn("Firebase Storage upload failed or timed out, attempting Firestore fallback collection:", storageError);
     }
   }
 
-  // 2. Resilient Fallback: Store in dedicated 'memberPhotos' Firestore collection
+  // 2. Resilient Fallback: Store in dedicated 'memberPhotos' Firestore collection with strict timeout
   // (isolated from appData/main, ensuring zero size bloat on main app state)
   try {
     const photoDocRef = doc(db, "memberPhotos", memberId);
-    await setDoc(photoDocRef, {
+    const firestorePromise = setDoc(photoDocRef, {
       memberId,
       photoDataUrl: dataUrl,
       updatedAt: new Date().toISOString(),
     }, { merge: true });
+
+    await Promise.race([
+      firestorePromise,
+      new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+    ]);
     return dataUrl;
   } catch (firestoreError) {
     console.error("Failed to store member photo in fallback collection:", firestoreError);

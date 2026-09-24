@@ -16,16 +16,27 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.7.1";
-export const APP_RELEASE_NAME = "Dedicated Web Worker AI Processing & Zero-Freeze Studio UI";
+export const APP_VERSION = "1.7.2";
+export const APP_RELEASE_NAME = "Instant Portrait Saving & Non-Blocking Cloud Synchronization";
 export const APP_BUILD_DATE = "2026-09-24";
 
 export const CHANGELOG: ReleaseLog[] = [
   {
+    version: "1.7.2",
+    date: "2026-09-24",
+    title: "Instant Portrait Saving & Non-Blocking Cloud Synchronization",
+    badge: "Current Release",
+    changes: [
+      "Eliminated the unending save wait on portrait customization by decoupling UI modal closure from remote network upload tasks",
+      "Optimistically applies the optimized 256x256 WebP portrait to member form state in 0ms, closing the Photo Studio modal immediately",
+      "Protected cloud storage and fallback persistence with strict 2.5s timeout races, preventing SDK exponential backoff hangs on unprovisioned buckets",
+      "Immediate persistence for existing member record updates and automatic background synchronization to Firestore",
+    ],
+  },
+  {
     version: "1.7.1",
     date: "2026-09-24",
     title: "Dedicated Web Worker AI Processing & Zero-Freeze Studio UI",
-    badge: "Current Release",
     changes: [
       "Offloaded @imgly/background-removal neural processing into a dedicated Web Worker (src/workers/cutoutWorker.ts), guaranteeing 0% AI CPU load on the browser UI thread",
       "Eliminated all interface freezes, stutter, and main-thread blocking during subject isolation, maintaining steady 60 FPS across panning, zooming, and color picking",

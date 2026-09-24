@@ -4,7 +4,7 @@ self.onmessage = async (event: MessageEvent<{ id: number; imageBlob: Blob }>) =>
   const { id, imageBlob } = event.data;
   try {
     const resultBlob = await removeBackground(imageBlob, {
-      model: "small",
+      model: "isnet_fp16",
       proxyToWorker: false,
       debug: false,
     });

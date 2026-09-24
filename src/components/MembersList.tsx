@@ -197,13 +197,36 @@ const MembersList: React.FC<MembersListProps> = ({
   const handleSavePhotoStudio = async (dataUrl: string) => {
     try {
       const targetId = editingId || `temp-${Date.now()}`;
-      const uploadedUrl = await uploadMemberPhoto(targetId, dataUrl);
-      setFormData((prev) => ({ ...prev, photoUrl: uploadedUrl }));
+      
+      // 1. Immediately apply the 256x256 WebP portrait to form state (0ms latency)
+      setFormData((prev) => ({ ...prev, photoUrl: dataUrl }));
+      
+      // 2. If editing an existing member, persist immediately so the change is locked in
+      if (editingId) {
+        updateMember(editingId, { photoUrl: dataUrl })
+          .then(() => onUpdate())
+          .catch(console.error);
+      }
+
       setToastMessage({
         title: "Portrait Saved",
         message: "Studio portrait applied to record.",
       });
       setTimeout(() => setToastMessage(null), 4000);
+
+      // 3. Asynchronously upload to cloud storage in the background (non-blocking)
+      uploadMemberPhoto(targetId, dataUrl)
+        .then((uploadedUrl) => {
+          if (uploadedUrl && uploadedUrl !== dataUrl) {
+            setFormData((prev) => ({ ...prev, photoUrl: uploadedUrl }));
+            if (editingId) {
+              updateMember(editingId, { photoUrl: uploadedUrl }).catch(console.error);
+            }
+          }
+        })
+        .catch((err) => {
+          console.warn("Background photo sync notice:", err);
+        });
     } catch (err) {
       console.error("Failed to save portrait:", err);
     }
