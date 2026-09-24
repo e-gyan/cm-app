@@ -13,6 +13,7 @@
   "dependencies": {
     "@firebase/firestore": "^4.16.0",
     "@google/genai": "^1.42.0",
+    "@imgly/background-removal": "^1.7.0",
     "@types/d3": "^7.4.3",
     "d3": "^7.9.0",
     "esbuild": "^0.28.0",

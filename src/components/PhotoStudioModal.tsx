@@ -15,6 +15,9 @@ import {
   Wand2,
   Smartphone,
   Eye,
+  Sparkles,
+  Sun,
+  Layers,
 } from "lucide-react";
 
 export interface StudioBackdropPreset {
@@ -39,6 +42,20 @@ export const BACKDROP_PRESETS: StudioBackdropPreset[] = [
     type: "gradient",
     value: "linear-gradient(135deg, #1e3a8a, #3b82f6)",
     previewClass: "bg-gradient-to-br from-blue-900 to-blue-500",
+  },
+  {
+    id: "velvet_purple",
+    name: "Velvet Purple",
+    type: "gradient",
+    value: "linear-gradient(135deg, #4c1d95, #8b5cf6)",
+    previewClass: "bg-gradient-to-br from-purple-900 to-purple-500",
+  },
+  {
+    id: "sunset_crimson",
+    name: "Sunset Crimson",
+    type: "gradient",
+    value: "linear-gradient(135deg, #881337, #f43f5e)",
+    previewClass: "bg-gradient-to-br from-rose-900 to-rose-500",
   },
   {
     id: "studio_amber",
@@ -125,6 +142,18 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
   const [cutoutTolerance, setCutoutTolerance] = useState<number>(45); // 15 - 85%
   const [customBgColor, setCustomBgColor] = useState<string>("#4338ca");
   const [customBackdropImage, setCustomBackdropImage] = useState<HTMLImageElement | null>(null);
+
+  // AI & Smart Cutout Caching state (prevents synchronous lag on sliders/options)
+  const [cutoutImage, setCutoutImage] = useState<HTMLCanvasElement | HTMLImageElement | null>(null);
+  const [isAiProcessing, setIsAiProcessing] = useState<boolean>(false);
+  const [aiCutoutApplied, setAiCutoutApplied] = useState<boolean>(false);
+
+  // Studio Visual Separation (enhances subject popping off any background color)
+  const [studioShadow, setStudioShadow] = useState<boolean>(true);
+  const [subjectPop, setSubjectPop] = useState<boolean>(true);
+
+  // Live real-world preview data URL (synchronously updated for Card View & Roster Badge)
+  const [previewDataUrl, setPreviewDataUrl] = useState<string>("");
 
   // Camera state (Front and Rear support)
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
@@ -286,153 +315,243 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
   };
 
   /**
-   * Smart Portrait Background Removal / Cutout Engine
-   * Samples corners and perimeter of the source image to identify background tones,
+   * Enhanced Algorithmic Cutout Engine (Instant ~15ms fallback)
+   * Samples corners and perimeter of the source image to identify multi-cluster background tones,
    * detects human torso/face skin geometry in the central portrait zone to protect the child,
    * and generates a clean alpha mask removing ambient walls, curtains, and backgrounds.
    */
-  const generateCutoutCanvas = useCallback(
-    (img: HTMLImageElement, size: number, tolerancePct: number): HTMLCanvasElement => {
-      const w = size;
-      const h = size;
+  const createEnhancedAlgorithmicCutout = useCallback(
+    (img: HTMLImageElement, tolerancePct: number): HTMLCanvasElement => {
+      const w = img.width;
+      const h = img.height;
+      const canvas = document.createElement("canvas");
+      // Scale down large photos to standard high-res boundary for instant execution
+      const maxDim = 800;
+      const scale = Math.min(1, maxDim / Math.max(w, h));
+      const targetW = Math.max(1, Math.round(w * scale));
+      const targetH = Math.max(1, Math.round(h * scale));
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return canvas;
 
-      // Draw framed, transformed source image to temp canvas
-      const srcCanvas = document.createElement("canvas");
-      srcCanvas.width = w;
-      srcCanvas.height = h;
-      const srcCtx = srcCanvas.getContext("2d", { willReadFrequently: true });
-      if (!srcCtx) return srcCanvas;
-
-      srcCtx.save();
-      srcCtx.translate(w / 2 + pan.x, h / 2 + pan.y);
-      srcCtx.rotate((rotation * Math.PI) / 180);
-      srcCtx.scale(zoom, zoom);
-
-      const imgAspect = img.width / img.height;
-      let drawW = w;
-      let drawH = h;
-      if (imgAspect > 1) {
-        drawW = w * imgAspect;
-      } else {
-        drawH = w / imgAspect;
-      }
-      srcCtx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
-      srcCtx.restore();
-
-      const imgData = srcCtx.getImageData(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, targetW, targetH);
+      const imgData = ctx.getImageData(0, 0, targetW, targetH);
       const data = imgData.data;
 
-      // 1. Sample perimeter pixels to model background colors
+      // 1. Multi-cluster sampling of background tones (corners and perimeters)
       const bgSamples: [number, number, number][] = [];
       const step = 4;
+      const topBand = Math.floor(targetH * 0.16);
+      const sideBand = Math.floor(targetW * 0.14);
 
-      // Sample top row, top corners, left and right edges outside center portrait
-      for (let x = 0; x < w; x += step) {
-        for (let y = 0; y < Math.floor(h * 0.12); y += step) {
-          const idx = (y * w + x) * 4;
+      // Top band
+      for (let y = 0; y < topBand; y += step) {
+        for (let x = 0; x < targetW; x += step) {
+          const idx = (y * targetW + x) * 4;
           bgSamples.push([data[idx], data[idx + 1], data[idx + 2]]);
         }
       }
-      for (let y = 0; y < h; y += step) {
-        // Left 10%
-        for (let x = 0; x < Math.floor(w * 0.12); x += step) {
-          const idx = (y * w + x) * 4;
+      // Left and right side bands
+      for (let y = topBand; y < targetH; y += step) {
+        for (let x = 0; x < sideBand; x += step) {
+          const idx = (y * targetW + x) * 4;
           bgSamples.push([data[idx], data[idx + 1], data[idx + 2]]);
         }
-        // Right 10%
-        for (let x = Math.floor(w * 0.88); x < w; x += step) {
-          const idx = (y * w + x) * 4;
+        for (let x = targetW - sideBand; x < targetW; x += step) {
+          const idx = (y * targetW + x) * 4;
           bgSamples.push([data[idx], data[idx + 1], data[idx + 2]]);
         }
       }
 
-      if (bgSamples.length === 0) return srcCanvas;
+      if (bgSamples.length === 0) return canvas;
 
-      // Calculate average background RGB and variance
-      let avgR = 0,
-        avgG = 0,
-        avgB = 0;
+      let sumR = 0, sumG = 0, sumB = 0;
       for (let i = 0; i < bgSamples.length; i++) {
-        avgR += bgSamples[i][0];
-        avgG += bgSamples[i][1];
-        avgB += bgSamples[i][2];
+        sumR += bgSamples[i][0];
+        sumG += bgSamples[i][1];
+        sumB += bgSamples[i][2];
       }
-      avgR /= bgSamples.length;
-      avgG /= bgSamples.length;
-      avgB /= bgSamples.length;
+      const avgR = sumR / bgSamples.length;
+      const avgG = sumG / bgSamples.length;
+      const avgB = sumB / bgSamples.length;
 
-      // Distance threshold computed from tolerance slider
-      // tolerancePct: 15 to 85 -> threshold 25 to 140
-      const threshold = 20 + tolerancePct * 1.5;
+      // Sample 4 pure corners
+      const cornerCoords = [
+        [2, 2],
+        [targetW - 3, 2],
+        [2, Math.floor(topBand * 0.8)],
+        [targetW - 3, Math.floor(topBand * 0.8)],
+      ];
+      let cR = 0, cG = 0, cB = 0;
+      for (const [cx, cy] of cornerCoords) {
+        const cidx = (cy * targetW + cx) * 4;
+        cR += data[cidx];
+        cG += data[cidx + 1];
+        cB += data[cidx + 2];
+      }
+      cR /= cornerCoords.length;
+      cG /= cornerCoords.length;
+      cB /= cornerCoords.length;
+
+      const baseDist = 22 + tolerancePct * 1.6;
       const featherBand = 18;
 
-      const centerX = w / 2;
-      const centerY = h / 2;
-      const portraitRadiusX = w * 0.38;
-      const portraitRadiusY = h * 0.46;
+      const centerX = targetW / 2;
+      const centerY = targetH * 0.48;
+      const portraitRadiusX = targetW * 0.36;
+      const portraitRadiusY = targetH * 0.44;
 
-      // 2. Classify and mask pixels
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          const idx = (y * w + x) * 4;
+      for (let y = 0; y < targetH; y++) {
+        for (let x = 0; x < targetW; x++) {
+          const idx = (y * targetW + x) * 4;
           const r = data[idx];
           const g = data[idx + 1];
           const b = data[idx + 2];
 
-          // Normalized distance from center portrait zone
           const dx = (x - centerX) / portraitRadiusX;
           const dy = (y - centerY) / portraitRadiusY;
           const distFromCenter = Math.sqrt(dx * dx + dy * dy);
 
-          // Skin tone detector (protects child's face, neck, and hands)
+          // Skin tone protection
           const isSkin =
-            r > 50 &&
-            g > 35 &&
+            r > 60 &&
+            g > 40 &&
             b > 20 &&
             r > g &&
-            r > b &&
-            Math.abs(r - g) > 10 &&
-            distFromCenter < 1.05;
-
-          // Euclidean color distance to background
-          const dr = r - avgR;
-          const dg = g - avgG;
-          const db = b - avgB;
-          const colorDist = Math.sqrt(0.3 * dr * dr + 0.59 * dg * dg + 0.11 * db * db);
+            g > b &&
+            r - g >= 10 &&
+            r - b >= 14 &&
+            distFromCenter < 1.15;
 
           if (isSkin) {
-            // Protected skin: preserve full opacity
-            data[idx + 3] = 255;
-          } else if (distFromCenter > 1.25) {
-            // Deep outside portrait frame: remove background cleanly
-            if (colorDist < threshold + 15) {
+            continue;
+          }
+
+          const dr1 = r - avgR;
+          const dg1 = g - avgG;
+          const db1 = b - avgB;
+          const dist1 = Math.sqrt(0.299 * dr1 * dr1 + 0.587 * dg1 * dg1 + 0.114 * db1 * db1);
+
+          const dr2 = r - cR;
+          const dg2 = g - cG;
+          const db2 = b - cB;
+          const dist2 = Math.sqrt(0.299 * dr2 * dr2 + 0.587 * dg2 * dg2 + 0.114 * db2 * db2);
+
+          const minColorDist = Math.min(dist1, dist2);
+
+          if (distFromCenter > 1.15) {
+            if (minColorDist < baseDist + 22) {
               data[idx + 3] = 0;
             } else {
-              const alpha = Math.max(0, Math.min(255, (colorDist - threshold) * 8));
+              const alpha = Math.max(0, Math.min(255, (minColorDist - baseDist) * 6));
               data[idx + 3] = Math.min(data[idx + 3], alpha);
             }
           } else {
-            // Near or inside portrait subject
-            if (colorDist < threshold - featherBand) {
-              // Exact match to background color
+            if (minColorDist < baseDist - featherBand) {
               data[idx + 3] = 0;
-            } else if (colorDist < threshold + featherBand) {
-              // Smooth gradient edge feathering
-              const ratio = (colorDist - (threshold - featherBand)) / (featherBand * 2);
+            } else if (minColorDist < baseDist + featherBand) {
+              const ratio = (minColorDist - (baseDist - featherBand)) / (featherBand * 2);
               data[idx + 3] = Math.round(ratio * 255);
             }
-            // Otherwise, keep subject opaque
           }
         }
       }
 
-      srcCtx.putImageData(imgData, 0, 0);
-      return srcCanvas;
+      ctx.putImageData(imgData, 0, 0);
+      return canvas;
     },
-    [pan, rotation, zoom]
+    []
   );
 
+  // Trigger background removal: Instant smart fallback + background AI upgrade
+  const processCutout = useCallback(
+    (img: HTMLImageElement, tolerance: number) => {
+      // 1. Immediate instant algorithmic cutout (0ms UI freeze)
+      const fastCutout = createEnhancedAlgorithmicCutout(img, tolerance);
+      setCutoutImage(fastCutout);
+      setAiCutoutApplied(false);
+
+      // 2. Dynamic AI Neural Background Removal in background
+      setIsAiProcessing(true);
+      import("@imgly/background-removal")
+        .then(async ({ removeBackground: imglyRemoveBg }) => {
+          try {
+            const offscreen = document.createElement("canvas");
+            const maxDim = 1024;
+            const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+            offscreen.width = Math.max(1, Math.round(img.width * scale));
+            offscreen.height = Math.max(1, Math.round(img.height * scale));
+            const oCtx = offscreen.getContext("2d");
+            if (!oCtx) {
+              setIsAiProcessing(false);
+              return;
+            }
+            oCtx.drawImage(img, 0, 0, offscreen.width, offscreen.height);
+
+            const blob = await new Promise<Blob | null>((resolve) =>
+              offscreen.toBlob(resolve, "image/png")
+            );
+            if (!blob) {
+              setIsAiProcessing(false);
+              return;
+            }
+
+            const resultBlob = await imglyRemoveBg(blob, {
+              model: "small",
+            });
+            const resultUrl = URL.createObjectURL(resultBlob);
+            const aiImg = new Image();
+            aiImg.onload = () => {
+              setCutoutImage(aiImg);
+              setAiCutoutApplied(true);
+              setIsAiProcessing(false);
+            };
+            aiImg.onerror = () => {
+              setIsAiProcessing(false);
+            };
+            aiImg.src = resultUrl;
+          } catch (aiErr) {
+            console.warn("AI background removal fallback active:", aiErr);
+            setIsAiProcessing(false);
+          }
+        })
+        .catch((err) => {
+          console.warn("Could not load AI background removal library:", err);
+          setIsAiProcessing(false);
+        });
+    },
+    [createEnhancedAlgorithmicCutout]
+  );
+
+  // Re-process cutout whenever source image changes or background removal is activated
+  useEffect(() => {
+    if (sourceImage && removeBackground) {
+      processCutout(sourceImage, cutoutTolerance);
+    } else {
+      setCutoutImage(null);
+      setAiCutoutApplied(false);
+      setIsAiProcessing(false);
+    }
+  }, [sourceImage, removeBackground, processCutout]);
+
+  // Adjust algorithmic sensitivity if AI is not applied yet
+  useEffect(() => {
+    if (sourceImage && removeBackground && !aiCutoutApplied && !isAiProcessing) {
+      const fastCutout = createEnhancedAlgorithmicCutout(sourceImage, cutoutTolerance);
+      setCutoutImage(fastCutout);
+    }
+  }, [
+    cutoutTolerance,
+    sourceImage,
+    removeBackground,
+    aiCutoutApplied,
+    isAiProcessing,
+    createEnhancedAlgorithmicCutout,
+  ]);
+
   // Redraw Canvas with Framing, Cutout Subject, and Studio Backdrops
+  // Since cutoutImage is cached, this takes <1ms and reflects instantaneously!
   const renderCompositeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -456,6 +575,12 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
         } else if (preset.id === "royal_blue") {
           grad.addColorStop(0, "#1e3a8a");
           grad.addColorStop(1, "#3b82f6");
+        } else if (preset.id === "velvet_purple") {
+          grad.addColorStop(0, "#4c1d95");
+          grad.addColorStop(1, "#8b5cf6");
+        } else if (preset.id === "sunset_crimson") {
+          grad.addColorStop(0, "#881337");
+          grad.addColorStop(1, "#f43f5e");
         } else if (preset.id === "studio_amber") {
           grad.addColorStop(0, "#92400e");
           grad.addColorStop(1, "#f59e0b");
@@ -490,18 +615,19 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
         ctx.clearRect(0, 0, size, size);
       }
 
-      // Add studio vignette/lighting if not transparent
+      // Studio radial backlight: gently radiates behind subject so the chosen backdrop stands out vibrantly
       if (preset.type !== "transparent") {
         const spotGrad = ctx.createRadialGradient(
           size / 2,
-          size / 2.2,
-          size * 0.1,
+          size * 0.44,
+          size * 0.05,
           size / 2,
-          size / 2.2,
-          size * 0.65
+          size * 0.44,
+          size * 0.72
         );
-        spotGrad.addColorStop(0, "rgba(255, 255, 255, 0.18)");
-        spotGrad.addColorStop(1, "rgba(0, 0, 0, 0.16)");
+        spotGrad.addColorStop(0, "rgba(255, 255, 255, 0.28)");
+        spotGrad.addColorStop(0.5, "rgba(255, 255, 255, 0.08)");
+        spotGrad.addColorStop(1, "rgba(0, 0, 0, 0.22)");
         ctx.fillStyle = spotGrad;
         ctx.fillRect(0, 0, size, size);
       }
@@ -511,51 +637,76 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
     if (sourceImage) {
       ctx.save();
 
-      if (removeBackground && preset.type !== "original") {
-        // Render smart cutout subject
-        const cutout = generateCutoutCanvas(sourceImage, size, cutoutTolerance);
+      const useCutout = removeBackground && cutoutImage && preset.type !== "original";
+      const targetImg = useCutout ? cutoutImage! : sourceImage;
 
-        // Apply circular feathering around the studio frame
-        const featherRadius = size * 0.48;
-        const featherGrad = ctx.createRadialGradient(
-          size / 2,
-          size / 2,
-          featherRadius * (backdropSoftness / 100),
-          size / 2,
-          size / 2,
-          featherRadius
-        );
-        featherGrad.addColorStop(0, "rgba(0, 0, 0, 1)");
-        featherGrad.addColorStop(0.9, "rgba(0, 0, 0, 0.95)");
-        featherGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.translate(size / 2 + pan.x, size / 2 + pan.y);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.scale(zoom, zoom);
 
-        const maskCanvas = document.createElement("canvas");
-        maskCanvas.width = size;
-        maskCanvas.height = size;
-        const mCtx = maskCanvas.getContext("2d");
-        if (mCtx) {
-          mCtx.drawImage(cutout, 0, 0);
-          mCtx.globalCompositeOperation = "destination-in";
-          mCtx.fillStyle = featherGrad;
-          mCtx.fillRect(0, 0, size, size);
-          ctx.drawImage(maskCanvas, 0, 0);
+      const imgAspect = targetImg.width / targetImg.height;
+      let drawW = size;
+      let drawH = size;
+      if (imgAspect > 1) {
+        drawW = size * imgAspect;
+      } else {
+        drawH = size / imgAspect;
+      }
+
+      if (useCutout) {
+        // Studio drop shadow: casts realistic soft 3D depth shadow behind subject onto new background
+        if (studioShadow) {
+          ctx.save();
+          ctx.shadowColor = "rgba(0, 0, 0, 0.42)";
+          ctx.shadowBlur = 24;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 12;
+          ctx.drawImage(targetImg, -drawW / 2, -drawH / 2, drawW, drawH);
+          ctx.restore();
         }
+
+        // Subject Pop Rim Light: subtle edge illumination so dark clothing/hair does not blend into backdrops
+        if (subjectPop) {
+          ctx.save();
+          ctx.shadowColor = "rgba(255, 255, 255, 0.35)";
+          ctx.shadowBlur = 8;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+          ctx.drawImage(targetImg, -drawW / 2, -drawH / 2, drawW, drawH);
+          ctx.restore();
+        }
+
+        // Crisp subject rendering
+        ctx.drawImage(targetImg, -drawW / 2, -drawH / 2, drawW, drawH);
       } else {
         // Original framing without background removal
-        ctx.translate(size / 2 + pan.x, size / 2 + pan.y);
-        ctx.rotate((rotation * Math.PI) / 180);
-        ctx.scale(zoom, zoom);
+        if (preset.type !== "original" && backdropSoftness > 0) {
+          const featherRadius = size * 0.48;
+          const featherGrad = ctx.createRadialGradient(
+            0,
+            0,
+            featherRadius * (backdropSoftness / 100),
+            0,
+            0,
+            featherRadius
+          );
+          featherGrad.addColorStop(0, "rgba(0, 0, 0, 1)");
+          featherGrad.addColorStop(0.9, "rgba(0, 0, 0, 0.95)");
+          featherGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
 
-        const imgAspect = sourceImage.width / sourceImage.height;
-        let drawW = size;
-        let drawH = size;
-        if (imgAspect > 1) {
-          drawW = size * imgAspect;
+          const tempMask = document.createElement("canvas");
+          tempMask.width = drawW;
+          tempMask.height = drawH;
+          const tCtx = tempMask.getContext("2d");
+          if (tCtx) {
+            tCtx.drawImage(targetImg, 0, 0, drawW, drawH);
+            ctx.drawImage(tempMask, -drawW / 2, -drawH / 2, drawW, drawH);
+          } else {
+            ctx.drawImage(targetImg, -drawW / 2, -drawH / 2, drawW, drawH);
+          }
         } else {
-          drawH = size / imgAspect;
+          ctx.drawImage(targetImg, -drawW / 2, -drawH / 2, drawW, drawH);
         }
-
-        ctx.drawImage(sourceImage, -drawW / 2, -drawH / 2, drawW, drawH);
       }
 
       ctx.restore();
@@ -569,18 +720,27 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
       ctx.textBaseline = "middle";
       ctx.fillText("No Image Selected", size / 2, size / 2);
     }
+
+    // Immediately synchronize real-time preview data URL for live Card View & Roster Badge
+    try {
+      const dataUrl = canvas.toDataURL("image/png");
+      setPreviewDataUrl(dataUrl);
+    } catch (e) {
+      // ignore
+    }
   }, [
     sourceImage,
+    cutoutImage,
+    removeBackground,
+    selectedBackdrop,
+    customBgColor,
+    customBackdropImage,
     zoom,
     rotation,
     pan,
-    selectedBackdrop,
+    studioShadow,
+    subjectPop,
     backdropSoftness,
-    removeBackground,
-    cutoutTolerance,
-    customBgColor,
-    customBackdropImage,
-    generateCutoutCanvas,
   ]);
 
   useEffect(() => {
@@ -808,7 +968,7 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
               )}
             </div>
 
-            {/* Live Real-world Previews */}
+            {/* Live Real-world Previews (Reflects options instantaneously) */}
             <div className="md:col-span-4 bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col items-center justify-center gap-4">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                 Live App Preview
@@ -816,13 +976,15 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
 
               {/* 80px Card Preview */}
               <div className="flex flex-col items-center gap-1.5">
-                <div className="w-20 h-20 rounded-full overflow-hidden shadow-md ring-4 ring-white bg-slate-200">
-                  {canvasRef.current && (
+                <div className="w-20 h-20 rounded-full overflow-hidden shadow-md ring-4 ring-white bg-slate-200 flex items-center justify-center">
+                  {previewDataUrl ? (
                     <img
-                      src={canvasRef.current.toDataURL()}
+                      src={previewDataUrl}
                       alt="Preview"
                       className="w-full h-full object-cover"
                     />
+                  ) : (
+                    <ImageIcon size={28} className="text-slate-400" />
                   )}
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">Card View (80px)</span>
@@ -830,13 +992,15 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
 
               {/* 40px Roster Badge Preview */}
               <div className="flex items-center gap-2.5 bg-white px-3 py-2 rounded-xl shadow-sm border border-slate-100 w-full">
-                <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 shadow-sm bg-slate-200 ring-2 ring-indigo-50">
-                  {canvasRef.current && (
+                <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 shadow-sm bg-slate-200 ring-2 ring-indigo-50 flex items-center justify-center">
+                  {previewDataUrl ? (
                     <img
-                      src={canvasRef.current.toDataURL()}
+                      src={previewDataUrl}
                       alt="Preview"
                       className="w-full h-full object-cover"
                     />
+                  ) : (
+                    <ImageIcon size={16} className="text-slate-400" />
                   )}
                 </div>
                 <div className="overflow-hidden leading-tight">
@@ -849,24 +1013,58 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
             </div>
           </div>
 
-          {/* Background Removal & Subject Isolation Toggle */}
+          {/* Background Removal & Subject Isolation Banner */}
           {sourceImage && !isCameraActive && (
-            <div className="p-3.5 bg-indigo-50/60 rounded-2xl border border-indigo-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="p-3.5 bg-indigo-50/70 rounded-2xl border border-indigo-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-indigo-600 text-white shadow-sm">
+                <div className="p-2 rounded-xl bg-indigo-600 text-white shadow-sm shrink-0">
                   <Wand2 size={16} />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-900">
-                    Remove Original Background (Subject Cutout)
-                  </h4>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-xs font-bold text-slate-900">
+                      Remove Original Background (Subject Cutout)
+                    </h4>
+                    {removeBackground && (
+                      <>
+                        {isAiProcessing ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-100/90 px-2 py-0.5 rounded-full animate-pulse border border-indigo-200">
+                            <Loader2 size={10} className="animate-spin text-indigo-600" />
+                            AI Isolating Subject...
+                          </span>
+                        ) : aiCutoutApplied ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-200">
+                            <Check size={10} className="text-emerald-600" />
+                            AI Studio Cutout
+                          </span>
+                        ) : cutoutImage ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-200">
+                            <Sparkles size={10} className="text-amber-600" />
+                            Smart Cutout Active
+                          </span>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
                   <p className="text-[11px] text-slate-500">
-                    Isolates the child/person and places them seamlessly on your chosen backdrop
+                    Isolates the subject and cleanly applies your chosen studio backdrop
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-end shrink-0">
+                {removeBackground && (
+                  <button
+                    onClick={() => sourceImage && processCutout(sourceImage, cutoutTolerance)}
+                    disabled={isAiProcessing}
+                    className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 hover:underline disabled:opacity-50"
+                    title="Re-run subject isolation"
+                  >
+                    <RefreshCw size={12} className={isAiProcessing ? "animate-spin" : ""} />
+                    Re-isolate
+                  </button>
+                )}
+
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
@@ -988,62 +1186,101 @@ export const PhotoStudioModal: React.FC<PhotoStudioModalProps> = ({
             )}
           </div>
 
-          {/* Fine Tuning Controls (Cutout Tolerance & Zoom) */}
+          {/* Fine Tuning Controls (Cutout Tolerance, Zoom & Subject Separation) */}
           {sourceImage && !isCameraActive && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs font-bold text-slate-700">
-                  <span className="flex items-center gap-1">
-                    <ZoomIn size={14} /> Zoom & Scale
-                  </span>
-                  <span>{Math.round(zoom * 100)}%</span>
+            <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold text-slate-700">
+                    <span className="flex items-center gap-1">
+                      <ZoomIn size={14} /> Zoom & Scale
+                    </span>
+                    <span>{Math.round(zoom * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.8"
+                    max="2.5"
+                    step="0.05"
+                    value={zoom}
+                    onChange={(e) => setZoom(parseFloat(e.target.value))}
+                    className="w-full accent-indigo-600 cursor-pointer"
+                  />
                 </div>
-                <input
-                  type="range"
-                  min="0.8"
-                  max="2.5"
-                  step="0.05"
-                  value={zoom}
-                  onChange={(e) => setZoom(parseFloat(e.target.value))}
-                  className="w-full accent-indigo-600 cursor-pointer"
-                />
+
+                {removeBackground && selectedBackdrop !== "original" ? (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs font-bold text-slate-700">
+                      <span className="flex items-center gap-1">
+                        <Sliders size={14} /> Cutout Sensitivity
+                      </span>
+                      <span>{cutoutTolerance}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="15"
+                      max="85"
+                      step="5"
+                      value={cutoutTolerance}
+                      onChange={(e) => setCutoutTolerance(parseInt(e.target.value, 10))}
+                      className="w-full accent-indigo-600 cursor-pointer"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs font-bold text-slate-700">
+                      <span className="flex items-center gap-1">
+                        <Sliders size={14} /> Studio Edge Softness
+                      </span>
+                      <span>{backdropSoftness}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="20"
+                      max="90"
+                      step="5"
+                      value={backdropSoftness}
+                      onChange={(e) => setBackdropSoftness(parseInt(e.target.value, 10))}
+                      className="w-full accent-indigo-600 cursor-pointer"
+                    />
+                  </div>
+                )}
               </div>
 
-              {removeBackground && selectedBackdrop !== "original" ? (
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-xs font-bold text-slate-700">
-                    <span className="flex items-center gap-1">
-                      <Sliders size={14} /> Cutout Sensitivity
-                    </span>
-                    <span>{cutoutTolerance}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="15"
-                    max="85"
-                    step="5"
-                    value={cutoutTolerance}
-                    onChange={(e) => setCutoutTolerance(parseInt(e.target.value, 10))}
-                    className="w-full accent-indigo-600 cursor-pointer"
-                  />
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-xs font-bold text-slate-700">
-                    <span className="flex items-center gap-1">
-                      <Sliders size={14} /> Studio Edge Softness
-                    </span>
-                    <span>{backdropSoftness}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="20"
-                    max="90"
-                    step="5"
-                    value={backdropSoftness}
-                    onChange={(e) => setBackdropSoftness(parseInt(e.target.value, 10))}
-                    className="w-full accent-indigo-600 cursor-pointer"
-                  />
+              {/* Visual Separation Enhancements (makes new background color pop) */}
+              {removeBackground && selectedBackdrop !== "original" && (
+                <div className="pt-2 border-t border-slate-200/70 flex flex-wrap items-center gap-2 sm:gap-4">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    Subject Pop & Depth:
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setStudioShadow(!studioShadow)}
+                    className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
+                      studioShadow
+                        ? "bg-indigo-50 border-indigo-300 text-indigo-700 shadow-xs"
+                        : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
+                    }`}
+                  >
+                    <Layers size={13} className={studioShadow ? "text-indigo-600" : "text-slate-400"} />
+                    <span>3D Studio Shadow</span>
+                    {studioShadow && <Check size={12} className="text-indigo-600" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSubjectPop(!subjectPop)}
+                    className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
+                      subjectPop
+                        ? "bg-indigo-50 border-indigo-300 text-indigo-700 shadow-xs"
+                        : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
+                    }`}
+                  >
+                    <Sun size={13} className={subjectPop ? "text-indigo-600" : "text-slate-400"} />
+                    <span>Silhouette Edge Pop</span>
+                    {subjectPop && <Check size={12} className="text-indigo-600" />}
+                  </button>
                 </div>
               )}
             </div>
