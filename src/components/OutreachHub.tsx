@@ -1265,20 +1265,47 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
   const filteredLocalSessions = useMemo(() => {
     let sessions = localSessions || [];
-    const isTeacher = !isAdmin && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER);
+    const isTeacher =
+      !isAdmin &&
+      currentUser.role !== "BRANCH_COORDINATOR" &&
+      (currentUser.type === MemberType.TEACHER ||
+        currentUser.role === "TEACHER" ||
+        currentUser.type === MemberType.HELPER);
 
-    if (isTeacher && activeChurch !== "All" && activeChurch !== "CM") {
-      const churchDiv = divisions[activeChurch] || divisions[currentUser.assignedChurch || ""];
-      const assignment = churchDiv?.assignments.find((a) => a.teacher.id === currentUser.id);
-      const assignedIds = assignment ? new Set(assignment.members.map((m) => m.id)) : new Set<string>();
+    if (isTeacher) {
+      const focusChurch =
+        activeChurch !== "All" && activeChurch !== "CM"
+          ? activeChurch
+          : currentUser.assignedChurch || "";
+      const churchDiv =
+        (focusChurch && divisions[focusChurch]) ||
+        Object.values(divisions).find((d) =>
+          d.assignments.some((a) => a.teacher.id === currentUser.id),
+        );
+      const assignment = churchDiv?.assignments.find(
+        (a) => a.teacher.id === currentUser.id,
+      );
+      const assignedIds = assignment
+        ? new Set(assignment.members.map((m) => m.id))
+        : new Set<string>();
 
       sessions = sessions.filter((s) => {
         if (s.teacherId) return s.teacherId === currentUser.id;
-        return s.assignedMemberIds.some((id) => assignedIds.has(id));
+        return (s.assignedMemberIds || []).some((id) => assignedIds.has(id));
+      });
+    } else if (activeChurch !== "All" && activeChurch !== "CM") {
+      const churchKidIds = new Set(
+        data.members
+          .filter((m) => m.assignedChurch === activeChurch)
+          .map((m) => m.id),
+      );
+      sessions = sessions.filter((s) => {
+        if ((s as any).churchId && (s as any).churchId === activeChurch) return true;
+        return (s.assignedMemberIds || []).some((id) => churchKidIds.has(id));
       });
     }
     return sessions;
-  }, [localSessions, isAdmin, activeChurch, currentUser, divisions]);
+  }, [localSessions, isAdmin, activeChurch, currentUser, divisions, data.members]);
 
   const sortedVisits = useMemo(() => {
     const all = filteredLocalSessions || [];
@@ -1322,20 +1349,47 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
   const filteredLocalPrayerSlots = useMemo(() => {
     let slots = localPrayerSlots || [];
-    const isTeacher = !isAdmin && (currentUser.role !== "BRANCH_COORDINATOR") && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.type === MemberType.HELPER);
+    const isTeacher =
+      !isAdmin &&
+      currentUser.role !== "BRANCH_COORDINATOR" &&
+      (currentUser.type === MemberType.TEACHER ||
+        currentUser.role === "TEACHER" ||
+        currentUser.type === MemberType.HELPER);
 
-    if (isTeacher && activeChurch !== "All" && activeChurch !== "CM") {
-      const churchDiv = divisions[activeChurch] || divisions[currentUser.assignedChurch || ""];
-      const assignment = churchDiv?.assignments.find((a) => a.teacher.id === currentUser.id);
-      const assignedIds = assignment ? new Set(assignment.members.map((m) => m.id)) : new Set<string>();
+    if (isTeacher) {
+      const focusChurch =
+        activeChurch !== "All" && activeChurch !== "CM"
+          ? activeChurch
+          : currentUser.assignedChurch || "";
+      const churchDiv =
+        (focusChurch && divisions[focusChurch]) ||
+        Object.values(divisions).find((d) =>
+          d.assignments.some((a) => a.teacher.id === currentUser.id),
+        );
+      const assignment = churchDiv?.assignments.find(
+        (a) => a.teacher.id === currentUser.id,
+      );
+      const assignedIds = assignment
+        ? new Set(assignment.members.map((m) => m.id))
+        : new Set<string>();
 
       slots = slots.filter((s) => {
         if (s.teacherId) return s.teacherId === currentUser.id;
         return (s.assignedMemberIds || []).some((id) => assignedIds.has(id));
       });
+    } else if (activeChurch !== "All" && activeChurch !== "CM") {
+      const churchKidIds = new Set(
+        data.members
+          .filter((m) => m.assignedChurch === activeChurch)
+          .map((m) => m.id),
+      );
+      slots = slots.filter((s) => {
+        if (s.branchId && s.branchId === activeChurch) return true;
+        return (s.assignedMemberIds || []).some((id) => churchKidIds.has(id));
+      });
     }
     return slots;
-  }, [localPrayerSlots, isAdmin, activeChurch, currentUser, divisions]);
+  }, [localPrayerSlots, isAdmin, activeChurch, currentUser, divisions, data.members]);
 
   const prayerData = useMemo(() => {
     if (filteredLocalPrayerSlots.length === 0)
@@ -2256,23 +2310,31 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       {/* TRACKING TAB */}
       {activeTab === "TRACK" &&
         (() => {
+          const isTeacher =
+            !isAdmin &&
+            currentUser.role !== "BRANCH_COORDINATOR" &&
+            (currentUser.type === MemberType.TEACHER ||
+              currentUser.role === "TEACHER" ||
+              currentUser.type === MemberType.HELPER);
+
           const focusChurchId =
+            isTeacher &&
             currentUser.assignedChurch &&
-              currentUser.assignedChurch !== "All" &&
-              currentUser.assignedChurch !== "CM"
+            currentUser.assignedChurch !== "All" &&
+            currentUser.assignedChurch !== "CM"
               ? currentUser.assignedChurch
-              : activeChurch !== "All" && activeChurch !== "CM"
-                ? activeChurch
-                : "UJ";
+              : activeChurch;
 
           const churchConfigMap: Record<
             string,
             { id: string; name: string; ageRange: string }
           > = {
-            UJ: { id: "UJ", name: "UJ", ageRange: "Ages 9-12" },
-            LJ: { id: "LJ", name: "LJ", ageRange: "Ages 6-8" },
-            K: { id: "K", name: "K", ageRange: "Ages 2-5" },
-            I: { id: "I", name: "I", ageRange: "Ages 0-1" },
+            UJ: { id: "UJ", name: "Upper Junior (UJ)", ageRange: "Ages 9-12" },
+            LJ: { id: "LJ", name: "Lower Junior (LJ)", ageRange: "Ages 6-8" },
+            K: { id: "K", name: "Kingdom (K)", ageRange: "Ages 2-5" },
+            I: { id: "I", name: "Infants (I)", ageRange: "Ages 0-1" },
+            All: { id: "All", name: "All Churches", ageRange: "Ages 0-12" },
+            CM: { id: "CM", name: "All CM Churches", ageRange: "Ages 0-12" },
           };
 
           const currentChurch =
@@ -2293,16 +2355,21 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
           // Focus on target children based on shepherd roster vs church-wide
           const churchKids = data.members.filter(
             (m) =>
-              m.assignedChurch === focusChurchId &&
+              (focusChurchId === "All" || focusChurchId === "CM" || m.assignedChurch === focusChurchId) &&
               !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
               m.status !== MemberStatus.ARCHIVED,
           );
 
-          const isTeacher = !isAdmin && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.type === MemberType.HELPER);
-          const churchDiv = divisions[focusChurchId];
-          const teacherAssignment = isTeacher && churchDiv?.assignments
-            ? churchDiv.assignments.find((a) => a.teacher.id === currentUser.id)
-            : null;
+          const churchDiv =
+            (focusChurchId !== "All" && focusChurchId !== "CM" && divisions[focusChurchId]) ||
+            divisions[currentUser.assignedChurch || ""] ||
+            Object.values(divisions).find((d) =>
+              d.assignments.some((a) => a.teacher.id === currentUser.id),
+            );
+          const teacherAssignment =
+            isTeacher && churchDiv?.assignments
+              ? churchDiv.assignments.find((a) => a.teacher.id === currentUser.id)
+              : null;
 
           const targetKids = teacherAssignment ? teacherAssignment.members : churchKids;
           const targetKidIds = new Set(targetKids.map((k) => k.id));
@@ -2351,9 +2418,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 (s.teacherId && s.teacherId === currentUser.id)
               );
             }
+            if (focusChurchId === "All" || focusChurchId === "CM") {
+              return true;
+            }
             return (
               (s.assignedMemberIds || []).some((id) => churchKids.some((k) => k.id === id)) ||
-              (s.branchId && (s.branchId === focusChurchId || focusChurchId === "ALL"))
+              (s.branchId && s.branchId === focusChurchId)
             );
           });
           const totalPrayerMins = churchPrayerSlots.reduce((acc, s) => acc + (s.durationMins || 30), 0);
@@ -2440,6 +2510,66 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 </div>
               </div>
 
+              {/* PRAYER PROGRESS */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <div className="flex flex-col xl:flex-row items-center justify-between gap-6">
+                  <div className="flex-1 text-center xl:text-left">
+                    <h3 className="font-bold text-xl text-slate-800 mb-1">
+                      Prayer & Intercession Progress {currentYear} ({currentChurch.name})
+                    </h3>
+                    <p className="text-sm text-slate-500">
+                      Accounting of children interceded for and sessions logged.
+                    </p>
+                  </div>
+                  <div className="flex gap-4 w-full xl:w-auto text-center md:text-left flex-wrap sm:flex-nowrap">
+                    <div className="flex-1 bg-purple-50 p-4 rounded-2xl border border-purple-100 min-w-[120px] text-center">
+                      <div className="flex justify-center items-center gap-2 mb-1">
+                        <Heart size={18} className="text-purple-500" />
+                        <div className="text-2xl font-black text-purple-700">
+                          {exactlyOncePrayed}
+                        </div>
+                      </div>
+                      <div className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                        Prayed For Once
+                      </div>
+                      <div className="text-[10px] text-purple-500 mt-1">
+                        1 Session Logged
+                      </div>
+                    </div>
+                    <div className="flex-1 bg-indigo-50 p-4 rounded-2xl border border-indigo-100 min-w-[120px] text-center">
+                      <div className="flex justify-center items-center gap-2 mb-1">
+                        <CheckCircle2 size={18} className="text-indigo-500" />
+                        <div className="text-2xl font-black text-indigo-700">
+                          {multipleTimesPrayed}
+                        </div>
+                      </div>
+                      <div className="text-[10px] font-bold text-indigo-900 uppercase tracking-wider">
+                        Prayed 2+ Times
+                      </div>
+                      <div className="text-[10px] text-indigo-500 mt-1">
+                        Multiple Intercessions
+                      </div>
+                    </div>
+                    <div className="flex-1 bg-teal-50 p-4 rounded-2xl border border-teal-100 min-w-[120px] text-center">
+                      <div className="flex justify-center items-center gap-2 mb-1">
+                        <Clock size={18} className="text-teal-500" />
+                        <div className="text-2xl font-black text-teal-700">
+                          {Math.floor(totalPrayerMins / 60) > 0
+                            ? `${Math.floor(totalPrayerMins / 60)}h ${totalPrayerMins % 60}m`
+                            : `${totalPrayerMins}m`}
+                        </div>
+                      </div>
+                      <div className="text-[10px] font-bold text-teal-900 uppercase tracking-wider">
+                        Time Interceded
+                      </div>
+                      <div className="text-[10px] text-teal-500 mt-1">
+                        Total Prayer Logged
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {(() => {
                 const churchConfig = [
                   { id: "UJ", name: "UJ", ageRange: "Ages 9-12" },
@@ -2448,21 +2578,22 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                   { id: "I", name: "I", ageRange: "Ages 0-1" },
                 ];
 
+                const churchForCharts = (focusChurchId === "All" || focusChurchId === "CM") ? "UJ" : focusChurchId;
                 const currentChurch =
-                  churchConfig.find((c) => c.id === focusChurchId) ||
+                  churchConfig.find((c) => c.id === churchForCharts) ||
                   churchConfig[0];
 
                 // Children in this church
                 const churchKids = data.members.filter(
                   (m) =>
-                    m.assignedChurch === focusChurchId &&
+                    m.assignedChurch === currentChurch.id &&
                     !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
                     m.status !== MemberStatus.ARCHIVED,
                 );
                 const churchKidIds = new Set(churchKids.map((m) => m.id));
 
-                // Teachers in this church
-                const churchDivision = divisions[focusChurchId];
+                // Shepherds in this church
+                const churchDivision = divisions[currentChurch.id];
                 const teacherAssignments = churchDivision?.assignments || [];
 
                 const churchTeachersMap = new Map<
@@ -2694,7 +2825,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                             </h3>
                           </div>
                           <p className="text-xs text-slate-500 mt-1">
-                            Trends and insights for calls and visits for teachers within {currentChurch.name} church.
+                            Trends and insights for calls and visits for shepherds within {currentChurch.name} church.
                           </p>
                         </div>
                       </div>
