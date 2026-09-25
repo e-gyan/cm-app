@@ -2440,73 +2440,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 </div>
               </div>
 
-              {/* PRAYER PROGRESS */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                <div className="flex flex-col xl:flex-row items-center justify-between gap-6">
-                  <div className="flex-1 text-center xl:text-left">
-                    <h3 className="font-bold text-xl text-slate-800 mb-1">
-                      Prayer & Intercession Progress {currentYear} ({currentChurch.name})
-                    </h3>
-                    <p className="text-sm text-slate-500">
-                      Accounting of children interceded for and sessions logged.
-                    </p>
-                  </div>
-                  <div className="flex gap-4 w-full xl:w-auto text-center md:text-left flex-wrap sm:flex-nowrap">
-                    <div className="flex-1 bg-purple-50 p-4 rounded-2xl border border-purple-100 min-w-[120px] text-center">
-                      <div className="flex justify-center items-center gap-2 mb-1">
-                        <Heart size={18} className="text-purple-500" />
-                        <div className="text-2xl font-black text-purple-700">
-                          {exactlyOncePrayed}
-                        </div>
-                      </div>
-                      <div className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
-                        Prayed For Once
-                      </div>
-                      <div className="text-[10px] text-purple-500 mt-1">
-                        1 Session Logged
-                      </div>
-                    </div>
-                    <div className="flex-1 bg-indigo-50 p-4 rounded-2xl border border-indigo-100 min-w-[120px] text-center">
-                      <div className="flex justify-center items-center gap-2 mb-1">
-                        <CheckCircle2 size={18} className="text-indigo-500" />
-                        <div className="text-2xl font-black text-indigo-700">
-                          {multipleTimesPrayed}
-                        </div>
-                      </div>
-                      <div className="text-[10px] font-bold text-indigo-900 uppercase tracking-wider">
-                        Prayed 2+ Times
-                      </div>
-                      <div className="text-[10px] text-indigo-500 mt-1">
-                        Multiple Intercessions
-                      </div>
-                    </div>
-                    <div className="flex-1 bg-teal-50 p-4 rounded-2xl border border-teal-100 min-w-[120px] text-center">
-                      <div className="flex justify-center items-center gap-2 mb-1">
-                        <Clock size={18} className="text-teal-500" />
-                        <div className="text-2xl font-black text-teal-700">
-                          {Math.floor(totalPrayerMins / 60) > 0
-                            ? `${Math.floor(totalPrayerMins / 60)}h ${totalPrayerMins % 60}m`
-                            : `${totalPrayerMins}m`}
-                        </div>
-                      </div>
-                      <div className="text-[10px] font-bold text-teal-900 uppercase tracking-wider">
-                        Time Interceded
-                      </div>
-                      <div className="text-[10px] text-teal-500 mt-1">
-                        Total Prayer Logged
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* OUTREACH BY AGE GROUP (CHURCH) WITH TEACHER TRENDS & INSIGHTS */}
               {(() => {
                 const churchConfig = [
-                  { id: "UJ", name: "UPPER JUNIOR (UJ)", ageRange: "Ages 9-12" },
-                  { id: "LJ", name: "Lower Junior (LJ)", ageRange: "Ages 6-8" },
-                  { id: "K", name: "Kingdom (K)", ageRange: "Ages 2-5" },
-                  { id: "I", name: "Infants (I)", ageRange: "Ages 0-1" },
+                  { id: "UJ", name: "UJ", ageRange: "Ages 9-12" },
+                  { id: "LJ", name: "LJ", ageRange: "Ages 6-8" },
+                  { id: "K", name: "K", ageRange: "Ages 2-5" },
+                  { id: "I", name: "I", ageRange: "Ages 0-1" },
                 ];
 
                 const currentChurch =
@@ -2755,7 +2694,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                             </h3>
                           </div>
                           <p className="text-xs text-slate-500 mt-1">
-                            Trends and insights for calls and visits for teachers within {currentChurch.name}.
+                            Trends and insights for calls and visits for teachers within {currentChurch.name} church.
                           </p>
                         </div>
                       </div>
