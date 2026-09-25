@@ -1,7 +1,7 @@
 # Children's Ministry Directorate (CMD) Platform
 
-[![Version](https://img.shields.io/badge/version-1.7.2-indigo.svg)](src/version.ts)
-[![Release](https://img.shields.io/badge/release-Instant%20Portrait%20Saving%20%26%20Non--Blocking%20Sync-emerald.svg)](src/version.ts)
+[![Version](https://img.shields.io/badge/version-1.7.3-indigo.svg)](src/version.ts)
+[![Release](https://img.shields.io/badge/release-Immediate%20Prayer%20Persistence%20%26%20Achievement%20Accounting-emerald.svg)](src/version.ts)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)](tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-cyan.svg)](package.json)
 
@@ -13,7 +13,7 @@ A modern, cloud-synchronized multi-tenant application for Children's Ministry at
 The platform follows **Semantic Versioning (SemVer: `MAJOR.MINOR.PATCH`)**:
 
 ```
-v1.7.2
+v1.7.3
  ┬ ┬ ┬
  │ │ └─ PATCH: Bug fixes, UI adjustments, text-wrapping tweaks, performance improvements.
  │ └─── MINOR: New functional modules.

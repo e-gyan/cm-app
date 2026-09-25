@@ -11,11 +11,11 @@ import { AppData,
   Church,
 } from "../types";
 import {
-  
-  
   saveOutreachSession,
+  saveOutreachSessions,
   deleteOutreachSession,
   savePrayerSlot,
+  savePrayerSlots,
   deletePrayerSlot,
   addNotification,
   updateMember,
@@ -407,9 +407,16 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     );
 
     if (!hasPrayerChanges && data.prayerSchedule) {
-      let filteredPrayer = data.prayerSchedule;
-      filteredPrayer = data.prayerSchedule.filter((s) => {
-        const hasAssigned = s.assignedMemberIds.some((id) => {
+      const filteredPrayer = data.prayerSchedule.filter((s) => {
+        if (isAdmin || activeChurch === "All" || activeChurch === "CM") {
+          return true;
+        }
+        if (s.branchId && (s.branchId === activeChurch || s.branchId === "ALL" || s.branchId === "All")) {
+          return true;
+        }
+        const assigned = s.assignedMemberIds || [];
+        if (assigned.length === 0) return true;
+        const hasAssigned = assigned.some((id) => {
           const m = data.members.find((mem) => mem.id === id);
           return m && isMemberInActiveChurch(m);
         });
@@ -1123,7 +1130,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     setTimeout(() => setGenMsg(null), 4000);
   };
 
-  const togglePrayerComplete = (slotId: string) => {
+  const togglePrayerComplete = async (slotId: string) => {
     const slotIdx = localPrayerSlots.findIndex((s) => s.id === slotId);
     if (slotIdx === -1) return;
 
@@ -1138,68 +1145,107 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
     // Unmarking
     slot.isCompleted = false;
-    setChangeCounts((prev) => ({
-      marked: prev.marked,
-      unmarked: prev.unmarked + 1,
-    }));
+    slot.durationMins = 0;
 
     const newSlots = [...localPrayerSlots];
     newSlots[slotIdx] = slot;
     setLocalPrayerSlots(newSlots);
-    setUnsavedChanges((prev) => new Set(prev).add(slotId));
+
+    try {
+      await savePrayerSlot(slot);
+      setUnsavedChanges((prev) => {
+        const next = new Set(prev);
+        next.delete(slotId);
+        return next;
+      });
+      onUpdate();
+      setGenMsg({ type: "success", text: "Prayer slot reverted to pending & saved." });
+      setTimeout(() => setGenMsg(null), 3000);
+    } catch (err) {
+      console.error("Failed to unmark prayer slot:", err);
+      setUnsavedChanges((prev) => new Set(prev).add(slotId));
+      setGenMsg({ type: "error", text: "Failed to update prayer slot on server." });
+      setTimeout(() => setGenMsg(null), 4000);
+    }
   };
 
-  const confirmPrayerDuration = (mins: number) => {
+  const confirmPrayerDuration = async (mins: number) => {
     if (!prayerDurationModal) return;
 
+    const slotId = prayerDurationModal;
     const slotIdx = localPrayerSlots.findIndex(
-      (s) => s.id === prayerDurationModal,
+      (s) => s.id === slotId,
     );
     if (slotIdx === -1) {
       setPrayerDurationModal(null);
       return;
     }
 
-    const slot = { ...localPrayerSlots[slotIdx] };
-    slot.isCompleted = true;
-    slot.durationMins = mins;
-
-    setChangeCounts((prev) => ({
-      marked: prev.marked + 1,
-      unmarked: prev.unmarked,
-    }));
+    const currentSlot = localPrayerSlots[slotIdx];
+    const slot: PrayerSlot = {
+      ...currentSlot,
+      isCompleted: true,
+      durationMins: mins,
+      completedBy: currentUser.name || currentUser.id || "Teacher",
+      teacherId: currentSlot.teacherId || currentUser.id,
+      branchId: currentSlot.branchId || (currentUser.assignedChurch || "ALL"),
+    };
 
     const newSlots = [...localPrayerSlots];
     newSlots[slotIdx] = slot;
     setLocalPrayerSlots(newSlots);
-    setUnsavedChanges((prev) => new Set(prev).add(prayerDurationModal));
     setPrayerDurationModal(null);
+
+    try {
+      await savePrayerSlot(slot);
+      setUnsavedChanges((prev) => {
+        const next = new Set(prev);
+        next.delete(slotId);
+        return next;
+      });
+      onUpdate();
+      setGenMsg({ type: "success", text: `Prayer session (${mins}m) saved!` });
+      setTimeout(() => setGenMsg(null), 3000);
+    } catch (err) {
+      console.error("Failed to save prayer slot:", err);
+      setUnsavedChanges((prev) => new Set(prev).add(slotId));
+      setGenMsg({ type: "error", text: "Failed to sync prayer to server." });
+      setTimeout(() => setGenMsg(null), 4000);
+    }
   };
 
   const saveBatchChanges = async () => {
     setIsSaving(true);
     try {
-      const promises: Promise<any>[] = [];
+      const sessionsToSave: OutreachSession[] = [];
+      const prayersToSave: PrayerSlot[] = [];
+      const sessionDeletes: Promise<any>[] = [];
+      const prayerDeletes: Promise<any>[] = [];
 
       unsavedChanges.forEach((id) => {
         const session = localSessions.find((s) => s.id === id);
         if (session) {
-          promises.push(saveOutreachSession(session));
+          sessionsToSave.push(session);
           return;
         }
         const slot = localPrayerSlots.find((s) => s.id === id);
         if (slot) {
-          promises.push(savePrayerSlot(slot));
+          prayersToSave.push(slot);
           return;
         }
         if (data.outreachSessions?.find((s) => s.id === id)) {
-          promises.push(deleteOutreachSession(id));
+          sessionDeletes.push(deleteOutreachSession(id));
         } else if (data.prayerSchedule?.find((s) => s.id === id)) {
-          promises.push(deletePrayerSlot(id));
+          prayerDeletes.push(deletePrayerSlot(id));
         }
       });
 
-      await Promise.all(promises);
+      await Promise.all([
+        saveOutreachSessions(sessionsToSave),
+        savePrayerSlots(prayersToSave),
+        ...sessionDeletes,
+        ...prayerDeletes,
+      ]);
 
       setUnsavedChanges(new Set());
       setChangeCounts({ marked: 0, unmarked: 0 });
@@ -1275,7 +1321,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
     const filteredLocalPrayerSlots = useMemo(() => {
     let slots = localPrayerSlots || [];
-    const isTeacher = !isAdmin && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER);
+    const isTeacher = !isAdmin && (currentUser.role !== "BRANCH_COORDINATOR") && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.type === MemberType.HELPER);
 
     if (isTeacher && activeChurch !== "All" && activeChurch !== "CM") {
       const churchDiv = divisions[activeChurch] || divisions[currentUser.assignedChurch || ""];
@@ -1284,7 +1330,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
       slots = slots.filter((s) => {
         if (s.teacherId) return s.teacherId === currentUser.id;
-        return s.assignedMemberIds?.some((id) => assignedIds.has(id));
+        return (s.assignedMemberIds || []).some((id) => assignedIds.has(id));
       });
     }
     return slots;
@@ -1304,6 +1350,27 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
     return { active, expired, completed };
   }, [filteredLocalPrayerSlots]);
+
+  const prayerStats = useMemo(() => {
+    const completed = prayerData.completed;
+    const totalSessions = completed.length;
+    const totalDurationMins = completed.reduce((acc, s) => acc + (s.durationMins || 30), 0);
+    const uniqueKids = new Set<string>();
+    completed.forEach((s) => {
+      (s.assignedMemberIds || []).forEach((id) => uniqueKids.add(id));
+    });
+    const hours = Math.floor(totalDurationMins / 60);
+    const mins = totalDurationMins % 60;
+    const timeFormatted = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+
+    return {
+      totalSessions,
+      timeFormatted,
+      totalDurationMins,
+      uniqueChildrenCount: uniqueKids.size,
+      activeRemaining: prayerData.active.length,
+    };
+  }, [prayerData]);
 
   const handleExportVisits = () => {
     const pendingVisits = [
@@ -1876,6 +1943,49 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             </div>
           </div>
 
+          {/* Live Prayer Achievement & Accounting Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-sm flex flex-col">
+              <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                <CheckCircle2 size={13} className="text-indigo-600" /> Sessions Done
+              </span>
+              <span className="text-2xl font-black text-slate-800">
+                {prayerStats.totalSessions}
+              </span>
+              <span className="text-[10px] text-slate-400 mt-0.5">Completed intercessions</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-purple-100 shadow-sm flex flex-col">
+              <span className="text-[10px] font-bold text-purple-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                <Clock size={13} className="text-purple-600" /> Time Interceded
+              </span>
+              <span className="text-2xl font-black text-slate-800">
+                {prayerStats.timeFormatted}
+              </span>
+              <span className="text-[10px] text-slate-400 mt-0.5">Total duration prayed</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-teal-100 shadow-sm flex flex-col">
+              <span className="text-[10px] font-bold text-teal-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                <Heart size={13} className="text-teal-600" /> Children Covered
+              </span>
+              <span className="text-2xl font-black text-slate-800">
+                {prayerStats.uniqueChildrenCount}
+              </span>
+              <span className="text-[10px] text-slate-400 mt-0.5">Unique souls lifted</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-amber-100 shadow-sm flex flex-col">
+              <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                <CalendarDays size={13} className="text-amber-600" /> Pending This Week
+              </span>
+              <span className="text-2xl font-black text-slate-800">
+                {prayerStats.activeRemaining}
+              </span>
+              <span className="text-[10px] text-slate-400 mt-0.5">Slots remaining</span>
+            </div>
+          </div>
+
           {genMsg && (
             <div
               className={`p-4 rounded-xl flex items-center gap-2 text-sm font-bold ${genMsg.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}
@@ -2181,6 +2291,8 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
           let multipleTimesVisit = 0;
           let exactlyOnceCall = 0;
           let multipleTimesCall = 0;
+          let exactlyOncePrayed = 0;
+          let multipleTimesPrayed = 0;
 
           // Focus only on the church the teacher is part of per their login
           const churchKids = data.members.filter(
@@ -2188,6 +2300,11 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               m.assignedChurch === focusChurchId &&
               !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
               m.status !== MemberStatus.ARCHIVED,
+          );
+
+          // Completed prayer slots in currentYear
+          const completedPrayersThisYear = (localPrayerSlots || []).filter(
+            (s) => s.isCompleted && new Date(s.date).getFullYear() === currentYear
           );
 
           churchKids.forEach((m) => {
@@ -2213,7 +2330,20 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
             if (calls === 1) exactlyOnceCall++;
             else if (calls > 1) multipleTimesCall++;
+
+            const prayers = completedPrayersThisYear.filter((s) =>
+              (s.assignedMemberIds || []).includes(m.id)
+            ).length;
+
+            if (prayers === 1) exactlyOncePrayed++;
+            else if (prayers > 1) multipleTimesPrayed++;
           });
+
+          const churchPrayerSlots = completedPrayersThisYear.filter((s) =>
+            (s.assignedMemberIds || []).some((id) => churchKids.some((k) => k.id === id)) ||
+            (s.branchId && (s.branchId === focusChurchId || focusChurchId === "ALL"))
+          );
+          const totalPrayerMins = churchPrayerSlots.reduce((acc, s) => acc + (s.durationMins || 30), 0);
 
           return (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
@@ -2291,6 +2421,66 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                       </div>
                       <div className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
                         Called 2+ Times
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* PRAYER PROGRESS */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <div className="flex flex-col xl:flex-row items-center justify-between gap-6">
+                  <div className="flex-1 text-center xl:text-left">
+                    <h3 className="font-bold text-xl text-slate-800 mb-1">
+                      Prayer & Intercession Progress {currentYear} ({currentChurch.name})
+                    </h3>
+                    <p className="text-sm text-slate-500">
+                      Accounting of children interceded for and sessions logged.
+                    </p>
+                  </div>
+                  <div className="flex gap-4 w-full xl:w-auto text-center md:text-left flex-wrap sm:flex-nowrap">
+                    <div className="flex-1 bg-purple-50 p-4 rounded-2xl border border-purple-100 min-w-[120px] text-center">
+                      <div className="flex justify-center items-center gap-2 mb-1">
+                        <Heart size={18} className="text-purple-500" />
+                        <div className="text-2xl font-black text-purple-700">
+                          {exactlyOncePrayed}
+                        </div>
+                      </div>
+                      <div className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                        Prayed For Once
+                      </div>
+                      <div className="text-[10px] text-purple-500 mt-1">
+                        1 Session Logged
+                      </div>
+                    </div>
+                    <div className="flex-1 bg-indigo-50 p-4 rounded-2xl border border-indigo-100 min-w-[120px] text-center">
+                      <div className="flex justify-center items-center gap-2 mb-1">
+                        <CheckCircle2 size={18} className="text-indigo-500" />
+                        <div className="text-2xl font-black text-indigo-700">
+                          {multipleTimesPrayed}
+                        </div>
+                      </div>
+                      <div className="text-[10px] font-bold text-indigo-900 uppercase tracking-wider">
+                        Prayed 2+ Times
+                      </div>
+                      <div className="text-[10px] text-indigo-500 mt-1">
+                        Multiple Intercessions
+                      </div>
+                    </div>
+                    <div className="flex-1 bg-teal-50 p-4 rounded-2xl border border-teal-100 min-w-[120px] text-center">
+                      <div className="flex justify-center items-center gap-2 mb-1">
+                        <Clock size={18} className="text-teal-500" />
+                        <div className="text-2xl font-black text-teal-700">
+                          {Math.floor(totalPrayerMins / 60) > 0
+                            ? `${Math.floor(totalPrayerMins / 60)}h ${totalPrayerMins % 60}m`
+                            : `${totalPrayerMins}m`}
+                        </div>
+                      </div>
+                      <div className="text-[10px] font-bold text-teal-900 uppercase tracking-wider">
+                        Time Interceded
+                      </div>
+                      <div className="text-[10px] text-teal-500 mt-1">
+                        Total Prayer Logged
                       </div>
                     </div>
                   </div>
@@ -3519,7 +3709,8 @@ const PrayerSlotCard = ({
   onToggle,
   isExpired,
 }: any) => {
-  const memberNames = slot.assignedMemberIds
+  const assigned = slot.assignedMemberIds || [];
+  const memberNames = assigned
     .map((id: string) => data.members.find((m: any) => m.id === id)?.name)
     .filter(Boolean)
     .join(", ");
@@ -3534,7 +3725,7 @@ const PrayerSlotCard = ({
             <div
               className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-xs font-bold border ${slot.isCompleted ? "bg-green-50 text-green-700 border-green-100" : isExpired ? "bg-amber-100 text-amber-700 border-amber-200" : "bg-slate-50 text-slate-600 border-slate-200"}`}
             >
-              <span>{slot.dayOfWeek.substring(0, 3).toUpperCase()}</span>
+              <span>{(slot.dayOfWeek || "MON").substring(0, 3).toUpperCase()}</span>
             </div>
             <div>
               <h4
@@ -3543,7 +3734,7 @@ const PrayerSlotCard = ({
                 {formatDateDDMMYYYY(slot.date)}
               </h4>
               <p className="text-[10px] text-slate-400 font-medium">
-                {slot.assignedMemberIds.length} Children •{" "}
+                {assigned.length} Children •{" "}
                 {slot.durationMins !== undefined ? slot.durationMins : 30} mins
               </p>
             </div>
@@ -3574,7 +3765,7 @@ const PrayerSlotCard = ({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {slot.assignedMemberIds.map((id: string) => {
+          {assigned.map((id: string) => {
             const m = data.members.find((mem: any) => mem.id === id);
 
             // Handle removed or archived members
@@ -4013,9 +4204,9 @@ const getMemberStats = (memberId: string, data: AppData) => {
       s.visitedMemberIds?.includes(memberId),
   ).length;
 
-  // Prayers: Calculate minutes (Count * 30 mins)
+  // Prayers: Calculate minutes (Count * duration or 30 mins)
   const prayers = (data.prayerSchedule || []).filter(
-    (s) => s.isCompleted && s.assignedMemberIds.includes(memberId),
+    (s) => s.isCompleted && (s.assignedMemberIds || []).includes(memberId),
   );
   const now = new Date();
   const oneWeek = 7 * 24 * 60 * 60 * 1000;

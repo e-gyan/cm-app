@@ -182,6 +182,7 @@ export interface PrayerSlot {
   dayOfWeek?: string;
   teacherId?: string;
   branchId?: string;
+  completedBy?: string;
 }
 
 export interface AppData {

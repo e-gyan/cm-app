@@ -16,16 +16,30 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.7.2";
-export const APP_RELEASE_NAME = "Instant Portrait Saving & Non-Blocking Cloud Synchronization";
-export const APP_BUILD_DATE = "2026-09-24";
+export const APP_VERSION = "1.7.3";
+export const APP_RELEASE_NAME = "OutreachHub Immediate Prayer Persistence & Achievement Metrics Accounting";
+export const APP_BUILD_DATE = "2026-09-25";
 
 export const CHANGELOG: ReleaseLog[] = [
+  {
+    version: "1.7.3",
+    date: "2026-09-25",
+    title: "OutreachHub Immediate Prayer Persistence & Achievement Metrics Accounting",
+    badge: "Current Release",
+    changes: [
+      "Fixed prayer completion persistence so marking and unmarking slots immediately write to Firestore (appData/main) and localStorage without relying on floating batch save buttons",
+      "Resolved un-awaited debounced update race conditions in storageService: savePrayerSlot, savePrayerSlots, and saveOutreachSessions now strictly await remote Firestore completion",
+      "Added atomic savePrayerSlots and saveOutreachSessions batch methods to prevent race conditions during bulk updates",
+      "Fixed Branch Coordinator role classification in filteredLocalPrayerSlots preventing branch coordinators from having prayer slots hidden",
+      "Added live Prayer Achievement & Accounting cards on Prayer Wall banner (Sessions Done, Time Interceded, Children Covered, Pending This Week)",
+      "Added Prayer & Intercession Progress tracking card to the TRACK tab alongside Visits and Calls progress for comprehensive yearly outreach accounting",
+      "Hardened defensive guards on (s.assignedMemberIds || []) across getMemberStats, PrayerSlotCard, and prayer schedule filters preventing undefined runtime exceptions",
+    ],
+  },
   {
     version: "1.7.2",
     date: "2026-09-24",
     title: "Instant Portrait Saving & Non-Blocking Cloud Synchronization",
-    badge: "Current Release",
     changes: [
       "Eliminated the unending save wait on portrait customization by decoupling UI modal closure from remote network upload tasks",
       "Optimistically applies the optimized 256x256 WebP portrait to member form state in 0ms, closing the Photo Studio modal immediately",

@@ -840,7 +840,7 @@ export const saveOutreachSession = async (session: OutreachSession) => {
   memoryCache = { ...current, outreachSessions };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  updateMainDoc({ outreachSessions }).catch(console.error);
+  await updateMainDoc({ outreachSessions });
 
   recordActivityNotification({
     message: isNew
@@ -851,13 +851,30 @@ export const saveOutreachSession = async (session: OutreachSession) => {
   }).catch(console.error);
 };
 
+export const saveOutreachSessions = async (sessions: OutreachSession[]) => {
+  if (!sessions || sessions.length === 0) return;
+  const current = memoryCache || (await loadData());
+  const outreachSessions = [...(current.outreachSessions || [])];
+
+  sessions.forEach((session) => {
+    const idx = outreachSessions.findIndex((x) => x.id === session.id);
+    if (idx >= 0) outreachSessions[idx] = session;
+    else outreachSessions.push(session);
+  });
+
+  memoryCache = { ...current, outreachSessions };
+  saveLocalCache(memoryCache);
+  notifySubscribers(memoryCache);
+  await updateMainDoc({ outreachSessions });
+};
+
 export const deleteOutreachSession = async (id: string) => {
   const current = memoryCache || (await loadData());
   const outreachSessions = (current.outreachSessions || []).filter((s) => s.id !== id);
   memoryCache = { ...current, outreachSessions };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  updateMainDoc({ outreachSessions }).catch(console.error);
+  await updateMainDoc({ outreachSessions });
 };
 
 export const savePrayerSlot = async (slot: PrayerSlot) => {
@@ -871,7 +888,7 @@ export const savePrayerSlot = async (slot: PrayerSlot) => {
   memoryCache = { ...current, prayerSchedule };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  updateMainDoc({ prayerSchedule }).catch(console.error);
+  await updateMainDoc({ prayerSchedule });
 
   if (isNew || slot.isCompleted) {
     recordActivityNotification({
@@ -884,13 +901,39 @@ export const savePrayerSlot = async (slot: PrayerSlot) => {
   }
 };
 
+export const savePrayerSlots = async (slots: PrayerSlot[]) => {
+  if (!slots || slots.length === 0) return;
+  const current = memoryCache || (await loadData());
+  const prayerSchedule = [...(current.prayerSchedule || [])];
+
+  slots.forEach((slot) => {
+    const idx = prayerSchedule.findIndex((x) => x.id === slot.id);
+    if (idx >= 0) prayerSchedule[idx] = slot;
+    else prayerSchedule.push(slot);
+  });
+
+  memoryCache = { ...current, prayerSchedule };
+  saveLocalCache(memoryCache);
+  notifySubscribers(memoryCache);
+  await updateMainDoc({ prayerSchedule });
+
+  const completedCount = slots.filter((s) => s.isCompleted).length;
+  if (completedCount > 0) {
+    recordActivityNotification({
+      message: `${completedCount} prayer ${completedCount === 1 ? "slot" : "slots"} marked completed`,
+      type: "PRAYER",
+      branchId: slots[0]?.branchId || "ALL",
+    }).catch(console.error);
+  }
+};
+
 export const deletePrayerSlot = async (id: string) => {
   const current = memoryCache || (await loadData());
   const prayerSchedule = (current.prayerSchedule || []).filter((s) => s.id !== id);
   memoryCache = { ...current, prayerSchedule };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  updateMainDoc({ prayerSchedule }).catch(console.error);
+  await updateMainDoc({ prayerSchedule });
 };
 
 export const clearAllData = async () => {
