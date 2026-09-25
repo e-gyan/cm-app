@@ -509,7 +509,7 @@ const AdminDashboard: React.FC<{
     // Dynamic targets scale directly with assigned roster: 2 visits and 4 calls per child per year
     const visitTarget = totalAssignedKids * 2;
     const callTarget = totalAssignedKids * 4;
-    const prayerTargetMins = totalAssignedKids * 5 * 52 * 30;
+    const prayerTargetMins = Math.max(1, activeTeachersCount) * 5 * 52 * 30;
 
     const currentYear = new Date().getFullYear();
     const visitedMemberIdsThisYear = new Set<string>();
@@ -559,13 +559,13 @@ const AdminDashboard: React.FC<{
           new Date(s.date).getFullYear() === currentYear,
       )
       .reduce((acc, s) => {
-        const validPrayers = (s.assignedMemberIds || []).filter((id) =>
+        const hasAssigned = (s.assignedMemberIds || []).some((id) =>
           eligibleKidIds.has(id),
-        ).length;
-        return (
-          acc +
-          validPrayers * (s.durationMins !== undefined ? s.durationMins : 30)
         );
+        if (hasAssigned) {
+          return acc + (s.durationMins !== undefined ? s.durationMins : 30);
+        }
+        return acc;
       }, 0);
 
     const uniqueVisitedKidsCount = visitedMemberIdsThisYear.size;
@@ -614,7 +614,7 @@ const AdminDashboard: React.FC<{
           </p>
           <div className="flex items-center gap-3 text-xs font-medium text-indigo-200">
             <span className="bg-white/10 px-2 py-1 rounded-md">{totalMemberPop} Members</span>
-            <span className="bg-white/10 px-2 py-1 rounded-md">{totalTeacherPop} Teachers</span>
+            <span className="bg-white/10 px-2 py-1 rounded-md">{totalTeacherPop} Shepherds</span>
           </div>
         </div>
 
@@ -738,16 +738,16 @@ const AdminDashboard: React.FC<{
                 <Heart size={20} className="text-pink-500" /> Outreach Impact (YTD)
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Dynamic outreach performance across active teacher assignments
+                Dynamic outreach performance across active shepherd assignments
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full border border-indigo-100">
                 <Users size={13} className="text-indigo-500" />
-                {globalOutreachStats.totalAssignedKids} Children &bull; {globalOutreachStats.activeTeachersCount} Teachers
+                {globalOutreachStats.totalAssignedKids} Children &bull; {globalOutreachStats.activeTeachersCount} Shepherds
               </span>
               <span className="inline-flex items-center gap-1 px-3 py-1 bg-violet-50 text-violet-700 text-xs font-bold rounded-full border border-violet-100">
-                ~{globalOutreachStats.avgKidsPerTeacher} kids / teacher
+                ~{globalOutreachStats.avgKidsPerTeacher} kids / shepherd
               </span>
             </div>
           </div>
@@ -873,7 +873,7 @@ const AdminDashboard: React.FC<{
               </div>
             </div>
             <div>
-              <p className="text-xs font-bold text-slate-500 uppercase mb-3">Teachers/Staff</p>
+              <p className="text-xs font-bold text-slate-500 uppercase mb-3">Shepherds/Staff</p>
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-slate-600">Male</span>
@@ -910,7 +910,7 @@ const AdminDashboard: React.FC<{
                 </div>
                 <div className="bg-emerald-50/50 rounded-xl p-3 border border-emerald-100 flex flex-col items-center justify-center">
                   <span className="text-2xl font-black text-emerald-600">{globalAttendanceBreakdown.teachers}</span>
-                  <span className="text-[10px] font-bold text-emerald-400 uppercase mt-0.5">Teachers</span>
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase mt-0.5">Shepherds</span>
                 </div>
               </div>
             </div>
@@ -928,7 +928,7 @@ const AdminDashboard: React.FC<{
                   <span className="text-lg font-black text-slate-600">{globalAttendanceBreakdown.prevMembers}</span>
                 </div>
                 <div className="bg-slate-50 rounded-xl p-2 border border-slate-100 flex justify-between items-center px-4">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Teachers</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Shepherds</span>
                   <span className="text-lg font-black text-slate-600">{globalAttendanceBreakdown.prevTeachers}</span>
                 </div>
               </div>
@@ -987,7 +987,7 @@ const AdminDashboard: React.FC<{
                     {stat.population} Active Members
                   </p>
                   <p className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">
-                    {stat.memberPop} M • {stat.teacherPop} T
+                    {stat.memberPop} M • {stat.teacherPop} S
                   </p>
                 </div>
               </div>
@@ -1002,7 +1002,7 @@ const AdminDashboard: React.FC<{
                     {stat.lastAttendance}
                   </span>
                   <div className="text-[10px] font-medium text-slate-400 uppercase mt-1">
-                    {stat.lastMemberAttendance} M • {stat.lastTeacherAttendance} T
+                    {stat.lastMemberAttendance} M • {stat.lastTeacherAttendance} S
                   </div>
                 </div>
               </div>
@@ -1355,10 +1355,13 @@ const ChurchDashboard: React.FC<{
       const assignedCount = assignedKids.length;
       const assignedKidIds = new Set(assignedKids.map((m) => m.id));
 
+      const totalEligibleTeachers = churchDiv?.eligibleTeachers.length || 0;
+      const avgKidsPerTeacher = churchDiv?.membersPerTeacherAvg || (totalEligibleTeachers > 0 ? (assignedCount / totalEligibleTeachers).toFixed(1) : "0");
+
       // Dynamic targets scale directly with the current assigned count per teacher
       const visitTarget = assignedCount * 2; // 2 visits per kid per year
       const callTarget = assignedCount * 4; // 4 calls per kid per year
-      const prayerTargetMins = assignedCount * 5 * 52 * 30; // 5 days * 52 weeks * 30 mins
+      const prayerTargetMins = (isTeacherView ? 1 : totalEligibleTeachers || 1) * 5 * 52 * 30; // 5 days * 52 weeks * 30 mins
 
       const currentYear = new Date().getFullYear();
       const visitedKidsSet = new Set<string>();
@@ -1408,13 +1411,13 @@ const ChurchDashboard: React.FC<{
             new Date(s.date).getFullYear() === currentYear,
         )
         .reduce((acc, s) => {
-          const validPrayers = (s.assignedMemberIds || []).filter((id) =>
-            assignedKidIds.has(id),
-          ).length;
-          return (
-            acc +
-            validPrayers * (s.durationMins !== undefined ? s.durationMins : 30)
-          );
+          const matches =
+            (s.assignedMemberIds || []).some((id) => assignedKidIds.has(id)) ||
+            (s.teacherId && isTeacherView && s.teacherId === currentUser.id);
+          if (matches) {
+            return acc + (s.durationMins !== undefined ? s.durationMins : 30);
+          }
+          return acc;
         }, 0);
 
       const uniqueVisitedKidsCount = visitedKidsSet.size;
@@ -1422,9 +1425,6 @@ const ChurchDashboard: React.FC<{
       const visitProgressPct = visitTarget > 0 ? Math.min(100, Math.round((totalVisitsDone / visitTarget) * 100)) : 0;
       const callProgressPct = callTarget > 0 ? Math.min(100, Math.round((totalCallsDone / callTarget) * 100)) : 0;
       const prayerProgressPct = prayerTargetMins > 0 ? Math.min(100, Math.round((totalPrayerMins / prayerTargetMins) * 100)) : 0;
-
-      const totalEligibleTeachers = churchDiv?.eligibleTeachers.length || 0;
-      const avgKidsPerTeacher = churchDiv?.membersPerTeacherAvg || (totalEligibleTeachers > 0 ? (assignedCount / totalEligibleTeachers).toFixed(1) : "0");
 
       return {
         isTeacherView,
@@ -1676,11 +1676,11 @@ const ChurchDashboard: React.FC<{
                     <span className="font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded">{churchGenderBreakdown.members.female}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm border-t border-slate-50 pt-2 mt-1">
-                    <span className="text-slate-600">Male Teachers</span>
+                    <span className="text-slate-600">Male Shepherds</span>
                     <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{churchGenderBreakdown.teachers.male}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-600">Female Teachers</span>
+                    <span className="text-slate-600">Female Shepherds</span>
                     <span className="font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded">{churchGenderBreakdown.teachers.female}</span>
                   </div>
                 </div>
@@ -1736,7 +1736,7 @@ const ChurchDashboard: React.FC<{
                   </div>
                   <div className="bg-emerald-50/50 rounded-xl p-3 border border-emerald-100 flex flex-col items-center justify-center">
                     <span className="text-2xl font-black text-emerald-600">{churchAttendanceBreakdown.teachers}</span>
-                    <span className="text-[10px] font-bold text-emerald-400 uppercase mt-0.5">Teachers</span>
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase mt-0.5">Shepherds</span>
                   </div>
                 </div>
               </div>
@@ -1754,7 +1754,7 @@ const ChurchDashboard: React.FC<{
                     <span className="text-lg font-black text-slate-600">{churchAttendanceBreakdown.prevMembers}</span>
                   </div>
                   <div className="bg-slate-50 rounded-xl p-2 border border-slate-100 flex justify-between items-center px-4">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Teachers</span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Shepherds</span>
                     <span className="text-lg font-black text-slate-600">{churchAttendanceBreakdown.prevTeachers}</span>
                   </div>
                 </div>
@@ -1774,7 +1774,7 @@ const ChurchDashboard: React.FC<{
               <div className="flex items-center gap-2 mt-1">
                 <span>{stats.memberPop} Members</span>
                 <span>•</span>
-                <span>{stats.teacherPop} Teachers</span>
+                <span>{stats.teacherPop} Shepherds</span>
               </div>
             }
           />
@@ -1793,7 +1793,7 @@ const ChurchDashboard: React.FC<{
             trend={stats.trend}
             subtitle={
               <div className="flex flex-col gap-1 mt-1">
-                <span>{stats.lastMemberAttendance} Members • {stats.lastTeacherAttendance} Teachers</span>
+                <span>{stats.lastMemberAttendance} Members • {stats.lastTeacherAttendance} Shepherds</span>
                 <span>vs Avg ({stats.avgAttendance})</span>
               </div>
             }
@@ -1840,7 +1840,7 @@ const ChurchDashboard: React.FC<{
                 <p className="text-xs text-slate-500 mt-0.5">
                   {outreachStats.isTeacherView
                     ? `Personal outreach impact dynamically scaled to your ${outreachStats.assignedCount} assigned children`
-                    : `Dynamic outreach impact for ${activeChurch} across assigned teachers and children`}
+                    : `Dynamic outreach impact for ${activeChurch} across assigned shepherds and children`}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1858,10 +1858,10 @@ const ChurchDashboard: React.FC<{
                   <>
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full border border-indigo-100">
                       <Users size={13} className="text-indigo-500" />
-                      {outreachStats.totalChurchKids} Children &bull; {outreachStats.totalEligibleTeachers} Teachers
+                      {outreachStats.totalChurchKids} Children &bull; {outreachStats.totalEligibleTeachers} Shepherds
                     </span>
                     <span className="inline-flex items-center gap-1 px-3 py-1 bg-violet-50 text-violet-700 text-xs font-bold rounded-full border border-violet-100">
-                      ~{outreachStats.avgKidsPerTeacher} kids / teacher
+                      ~{outreachStats.avgKidsPerTeacher} kids / shepherd
                     </span>
                   </>
                 )}

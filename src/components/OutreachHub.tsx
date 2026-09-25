@@ -2,7 +2,8 @@ import { calculateChurchDivisions, matchesScope, getScopeDisplayLabel } from "..
 import { generatePrayerSchedule, generateOutreachSchedule } from "../services/storageService";
 import { hasRoleSubfeature, isSuperAdminUser } from "../lib/permissions";
 import React, { useState, useMemo, useEffect } from "react";
-import { AppData,
+import {
+  AppData,
   Member,
   OutreachSession,
   PrayerSlot,
@@ -286,7 +287,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     "DIRECTORATE_HEAD",
     "BRANCH_COORDINATOR",
   ].includes(currentUser.role || "");
-  
+
   const [filterChurch, setFilterChurch] = useState<string>("ALL");
 
   const isMemberInActiveChurch = (m: Member) => {
@@ -298,7 +299,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     if (activeChurch !== "CM" && activeChurch !== "All") {
       appAllowed = m.assignedChurch === activeChurch;
     }
-    
+
     // Admin filtering
     let adminAllowed = true;
     if (isAdmin) {
@@ -408,7 +409,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
     if (!hasPrayerChanges && data.prayerSchedule) {
       const filteredPrayer = data.prayerSchedule.filter((s) => {
-        if (isAdmin || activeChurch === "All" || activeChurch === "CM") {
+        if (activeChurch === "All" || activeChurch === "CM") {
           return true;
         }
         if (s.branchId && (s.branchId === activeChurch || s.branchId === "ALL" || s.branchId === "All")) {
@@ -613,7 +614,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             ...existingCompleted,
             assignedMemberIds: Array.from(new Set([...(existingCompleted.assignedMemberIds || []), memberId])),
             visitedMemberIds: Array.from(new Set([...(existingCompleted.visitedMemberIds || []), memberId])),
-            completedBy: currentUser.name || existingCompleted.completedBy || "Teacher",
+            completedBy: currentUser.name || existingCompleted.completedBy || "Shepherd",
           };
           await saveOutreachSession(completedSession);
         } else {
@@ -624,7 +625,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               status: "COMPLETED",
               assignedMemberIds: [memberId],
               visitedMemberIds: [memberId],
-              completedBy: currentUser.name || "Teacher",
+              completedBy: currentUser.name || "Shepherd",
             };
             await saveOutreachSession(completedSession);
           } else {
@@ -634,7 +635,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               status: "COMPLETED",
               assignedMemberIds: [memberId],
               visitedMemberIds: [memberId],
-              completedBy: currentUser.name || "Teacher",
+              completedBy: currentUser.name || "Shepherd",
               teacherId: session.teacherId,
               branchId: session.branchId || activeBranchId,
               sessionType: session.sessionType || "REGULAR",
@@ -809,7 +810,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   const handleMoveMember = async (targetSessionId: string | "REMOVE") => {
     if (!moveModal) return;
     const { memberId, currentSessionId } = moveModal;
-    
+
     if (targetSessionId === "REMOVE") {
       setMoveModal(null);
       await handleRemoveMemberFromSession(memberId, currentSessionId);
@@ -1072,10 +1073,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     const endOfWeek = new Date(prayerWeek);
     endOfWeek.setDate(endOfWeek.getDate() + 7);
     const endStr = endOfWeek.toISOString().split("T")[0];
-    
+
     // Check if there are already slots for this week for this user
     const teacherHasSlots = filteredLocalPrayerSlots.some(s => s.date >= startStr && s.date < endStr);
-    
+
     if (teacherHasSlots) {
       setGenMsg({ type: "error", text: "You already have a prayer schedule for this week!" });
       setTimeout(() => setGenMsg(null), 4000);
@@ -1186,7 +1187,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       ...currentSlot,
       isCompleted: true,
       durationMins: mins,
-      completedBy: currentUser.name || currentUser.id || "Teacher",
+      completedBy: currentUser.name || currentUser.id || "Shepherd",
       teacherId: currentSlot.teacherId || currentUser.id,
       branchId: currentSlot.branchId || (currentUser.assignedChurch || "ALL"),
     };
@@ -1262,7 +1263,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
   // --- DERIVED DATA & EXPORT LOGIC ---
 
-    const filteredLocalSessions = useMemo(() => {
+  const filteredLocalSessions = useMemo(() => {
     let sessions = localSessions || [];
     const isTeacher = !isAdmin && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER);
 
@@ -1319,7 +1320,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     );
   }, [filteredLocalSessions]);
 
-    const filteredLocalPrayerSlots = useMemo(() => {
+  const filteredLocalPrayerSlots = useMemo(() => {
     let slots = localPrayerSlots || [];
     const isTeacher = !isAdmin && (currentUser.role !== "BRANCH_COORDINATOR") && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.type === MemberType.HELPER);
 
@@ -1352,7 +1353,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   }, [filteredLocalPrayerSlots]);
 
   const prayerStats = useMemo(() => {
-    const completed = prayerData.completed;
+    const currentYear = new Date().getFullYear();
+    const completed = prayerData.completed.filter(
+      (s) => !s.date || new Date(s.date).getFullYear() === currentYear
+    );
     const totalSessions = completed.length;
     const totalDurationMins = completed.reduce((acc, s) => acc + (s.durationMins || 30), 0);
     const uniqueKids = new Set<string>();
@@ -1578,20 +1582,18 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 min-w-[85px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${
-                activeTab === tab.id
-                  ? "bg-indigo-600 text-white shadow-md"
-                  : "text-slate-500 hover:bg-slate-50"
-              }`}
+              className={`flex-1 min-w-[85px] flex justify-center items-center gap-2 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === tab.id
+                ? "bg-indigo-600 text-white shadow-md"
+                : "text-slate-500 hover:bg-slate-50"
+                }`}
             >
               <Icon size={16} /> {tab.label}
               {tab.badge !== undefined && tab.badge > 0 && (
                 <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${
-                    activeTab === tab.id
-                      ? "bg-indigo-700 text-white"
-                      : "bg-slate-100 text-slate-600"
-                  }`}
+                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${activeTab === tab.id
+                    ? "bg-indigo-700 text-white"
+                    : "bg-slate-100 text-slate-600"
+                    }`}
                 >
                   {tab.badge}
                 </span>
@@ -2095,11 +2097,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar pt-1">
                 <button
                   onClick={() => setMemberCategoryFilter("ALL")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                    memberCategoryFilter === "ALL"
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${memberCategoryFilter === "ALL"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
                 >
                   <span>All Contacts</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${memberCategoryFilter === "ALL" ? "bg-slate-700 text-slate-100" : "bg-slate-200 text-slate-700"}`}>
@@ -2109,11 +2110,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
                 <button
                   onClick={() => setMemberCategoryFilter("ACTIVE")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                    memberCategoryFilter === "ACTIVE"
-                      ? "bg-indigo-600 text-white shadow-sm"
-                      : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${memberCategoryFilter === "ACTIVE"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                    }`}
                 >
                   <User size={12} />
                   <span>Active</span>
@@ -2124,11 +2124,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
                 <button
                   onClick={() => setMemberCategoryFilter("INCONSISTENT")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                    memberCategoryFilter === "INCONSISTENT"
-                      ? "bg-rose-600 text-white shadow-sm"
-                      : "bg-rose-50 text-rose-700 hover:bg-rose-100"
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${memberCategoryFilter === "INCONSISTENT"
+                    ? "bg-rose-600 text-white shadow-sm"
+                    : "bg-rose-50 text-rose-700 hover:bg-rose-100"
+                    }`}
                 >
                   <AlertCircle size={12} />
                   <span>Inconsistent</span>
@@ -2139,11 +2138,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
                 <button
                   onClick={() => setMemberCategoryFilter("NOT_ACTIVE")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                    memberCategoryFilter === "NOT_ACTIVE"
-                      ? "bg-amber-600 text-white shadow-sm"
-                      : "bg-amber-50 text-amber-700 hover:bg-amber-100"
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${memberCategoryFilter === "NOT_ACTIVE"
+                    ? "bg-amber-600 text-white shadow-sm"
+                    : "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                    }`}
                 >
                   <Clock size={12} />
                   <span>Not Active</span>
@@ -2154,11 +2152,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
                 <button
                   onClick={() => setMemberCategoryFilter("VISITOR")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                    memberCategoryFilter === "VISITOR"
-                      ? "bg-teal-600 text-white shadow-sm"
-                      : "bg-teal-50 text-teal-700 hover:bg-teal-100"
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${memberCategoryFilter === "VISITOR"
+                    ? "bg-teal-600 text-white shadow-sm"
+                    : "bg-teal-50 text-teal-700 hover:bg-teal-100"
+                    }`}
                 >
                   <UserPlus size={12} />
                   <span>First Timers</span>
@@ -2169,11 +2166,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
                 <button
                   onClick={() => setMemberCategoryFilter("FNF")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                    memberCategoryFilter === "FNF"
-                      ? "bg-emerald-600 text-white shadow-sm"
-                      : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${memberCategoryFilter === "FNF"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    }`}
                 >
                   <Heart size={12} />
                   <span>Friends & Family</span>
@@ -2262,12 +2258,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         (() => {
           const focusChurchId =
             currentUser.assignedChurch &&
-            currentUser.assignedChurch !== "All" &&
-            currentUser.assignedChurch !== "CM"
+              currentUser.assignedChurch !== "All" &&
+              currentUser.assignedChurch !== "CM"
               ? currentUser.assignedChurch
               : activeChurch !== "All" && activeChurch !== "CM"
-              ? activeChurch
-              : "UJ";
+                ? activeChurch
+                : "UJ";
 
           const churchConfigMap: Record<
             string,
@@ -2294,7 +2290,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
           let exactlyOncePrayed = 0;
           let multipleTimesPrayed = 0;
 
-          // Focus only on the church the teacher is part of per their login
+          // Focus on target children based on shepherd roster vs church-wide
           const churchKids = data.members.filter(
             (m) =>
               m.assignedChurch === focusChurchId &&
@@ -2302,12 +2298,21 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               m.status !== MemberStatus.ARCHIVED,
           );
 
+          const isTeacher = !isAdmin && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.type === MemberType.HELPER);
+          const churchDiv = divisions[focusChurchId];
+          const teacherAssignment = isTeacher && churchDiv?.assignments
+            ? churchDiv.assignments.find((a) => a.teacher.id === currentUser.id)
+            : null;
+
+          const targetKids = teacherAssignment ? teacherAssignment.members : churchKids;
+          const targetKidIds = new Set(targetKids.map((k) => k.id));
+
           // Completed prayer slots in currentYear
           const completedPrayersThisYear = (localPrayerSlots || []).filter(
-            (s) => s.isCompleted && new Date(s.date).getFullYear() === currentYear
+            (s) => s.isCompleted && (!s.date || new Date(s.date).getFullYear() === currentYear)
           );
 
-          churchKids.forEach((m) => {
+          targetKids.forEach((m) => {
             const visits = localSessions.filter(
               (s) =>
                 s.status === "COMPLETED" &&
@@ -2339,10 +2344,18 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             else if (prayers > 1) multipleTimesPrayed++;
           });
 
-          const churchPrayerSlots = completedPrayersThisYear.filter((s) =>
-            (s.assignedMemberIds || []).some((id) => churchKids.some((k) => k.id === id)) ||
-            (s.branchId && (s.branchId === focusChurchId || focusChurchId === "ALL"))
-          );
+          const churchPrayerSlots = completedPrayersThisYear.filter((s) => {
+            if (teacherAssignment) {
+              return (
+                (s.assignedMemberIds || []).some((id) => targetKidIds.has(id)) ||
+                (s.teacherId && s.teacherId === currentUser.id)
+              );
+            }
+            return (
+              (s.assignedMemberIds || []).some((id) => churchKids.some((k) => k.id === id)) ||
+              (s.branchId && (s.branchId === focusChurchId || focusChurchId === "ALL"))
+            );
+          });
           const totalPrayerMins = churchPrayerSlots.reduce((acc, s) => acc + (s.durationMins || 30), 0);
 
           return (
@@ -2490,7 +2503,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               {/* OUTREACH BY AGE GROUP (CHURCH) WITH TEACHER TRENDS & INSIGHTS */}
               {(() => {
                 const churchConfig = [
-                  { id: "UJ", name: "Upper Junior (UJ)", ageRange: "Ages 9-12" },
+                  { id: "UJ", name: "UPPER JUNIOR (UJ)", ageRange: "Ages 9-12" },
                   { id: "LJ", name: "Lower Junior (LJ)", ageRange: "Ages 6-8" },
                   { id: "K", name: "Kingdom (K)", ageRange: "Ages 2-5" },
                   { id: "I", name: "Infants (I)", ageRange: "Ages 0-1" },
@@ -2600,11 +2613,11 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                     const coveragePercent =
                       assignedKids.length > 0
                         ? Math.round(
-                            (assignedContactedCount / assignedKids.length) * 100,
-                          )
+                          (assignedContactedCount / assignedKids.length) * 100,
+                        )
                         : contactedKidIds.size > 0
-                        ? 100
-                        : 0;
+                          ? 100
+                          : 0;
 
                     const allTeacherDates = [
                       ...teacherVisits,
@@ -2721,8 +2734,8 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 const churchOverallCoverage =
                   churchKids.length > 0
                     ? Math.round(
-                        (allContactedKidsInChurch.size / churchKids.length) * 100,
-                      )
+                      (allContactedKidsInChurch.size / churchKids.length) * 100,
+                    )
                     : 0;
 
 
@@ -2817,26 +2830,26 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                           </div>
                         </div>
 
-                        {/* CHART 2: TEACHER OUTREACH */}
+                        {/* CHART 2: SHEPHERD OUTREACH */}
                         <div className="bg-slate-50/60 p-4 rounded-2xl border border-slate-100">
                           <div className="flex items-center justify-between mb-4">
                             <div>
                               <h4 className="font-bold text-slate-800 text-sm">
-                                Teacher Outreach
+                                Shepherd Outreach
                               </h4>
                               <p className="text-[11px] text-slate-500">
-                                Visits vs calls completed by teachers within {currentChurch.name}
+                                Visits vs calls completed by shepherds within {currentChurch.name}
                               </p>
                             </div>
                             <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-white text-slate-600 border border-slate-200">
-                              {churchTeacherMetrics.length} Teachers
+                              {churchTeacherMetrics.length} Shepherds
                             </span>
                           </div>
 
                           <div className="h-56">
                             {churchTeacherMetrics.length === 0 ? (
                               <div className="h-full flex items-center justify-center text-slate-400 text-xs">
-                                No teachers assigned to this church yet.
+                                No shepherds assigned to this church yet.
                               </div>
                             ) : (
                               <ResponsiveContainer width="100%" height="100%">
@@ -3144,10 +3157,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             handleAddMember(addMemberModal.sessionId, mid)
           }
           members={
-              !isAdmin && activeChurch !== "All" && activeChurch !== "CM" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)
-                ? data.members.filter(m => connectList.some(cl => cl.id === m.id) || visitorFnfIds.has(m.id))
-                : data.members
-            }
+            !isAdmin && activeChurch !== "All" && activeChurch !== "CM" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)
+              ? data.members.filter(m => connectList.some(cl => cl.id === m.id) || visitorFnfIds.has(m.id))
+              : data.members
+          }
           currentSessionMembers={
             filteredLocalSessions.find((s) => s.id === addMemberModal.sessionId)
               ?.assignedMemberIds || []
@@ -3231,10 +3244,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 <X size={20} />
               </button>
             </div>
-            
+
             <p className="text-slate-500 text-sm mb-6 text-center">
               How would you like to reach out?
-              <br/>
+              <br />
               <span className="font-bold text-slate-700">{messageTarget.phone || messageTarget.parentPhone}</span>
             </p>
 
@@ -3561,7 +3574,7 @@ const CollapsibleCompletedVisits = ({
                       {formatDateDDMMYYYY(s.date)}
                     </div>
                     <div className="text-[10px] text-slate-400">
-                      By {s.completedBy || "Teacher"}
+                      By {s.completedBy || "Shepherd"}
                     </div>
                   </div>
                 </div>
@@ -3875,10 +3888,10 @@ const CollapsibleProgressSection = ({
               const cardStyle = m.status === MemberStatus.INCONSISTENT
                 ? "border-l-4 border-l-rose-500 bg-rose-50/5 hover:bg-rose-50/10"
                 : m.status === MemberStatus.NOT_ACTIVE
-                ? "border-l-4 border-l-yellow-500 bg-yellow-50/5 hover:bg-yellow-50/10"
-                : isVisitor
-                ? "border-l-4 border-l-teal-500 bg-teal-50/5 hover:bg-teal-50/10"
-                : "hover:bg-slate-50";
+                  ? "border-l-4 border-l-yellow-500 bg-yellow-50/5 hover:bg-yellow-50/10"
+                  : isVisitor
+                    ? "border-l-4 border-l-teal-500 bg-teal-50/5 hover:bg-teal-50/10"
+                    : "hover:bg-slate-50";
               return (
                 <div
                   key={m.id}
@@ -3903,57 +3916,57 @@ const CollapsibleProgressSection = ({
                         </span>
                       )}
                     </h4>
-                  <div className="flex gap-1">
-                    <Badge
-                      label="W"
-                      value={formatDuration(stats.prayer.week)}
-                    />
-                    <Badge
-                      label="M"
-                      value={formatDuration(stats.prayer.month)}
-                    />
-                    <Badge
-                      label="Q"
-                      value={formatDuration(stats.prayer.quarter)}
-                    />
-                    <Badge
-                      label="Y"
-                      value={formatDuration(stats.prayer.year)}
-                      highlight
-                    />
+                    <div className="flex gap-1">
+                      <Badge
+                        label="W"
+                        value={formatDuration(stats.prayer.week)}
+                      />
+                      <Badge
+                        label="M"
+                        value={formatDuration(stats.prayer.month)}
+                      />
+                      <Badge
+                        label="Q"
+                        value={formatDuration(stats.prayer.quarter)}
+                      />
+                      <Badge
+                        label="Y"
+                        value={formatDuration(stats.prayer.year)}
+                        highlight
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase mb-1">
+                      <span>Visits</span>
+                      <span>{stats.visits}/2</span>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 rounded-full"
+                        style={{
+                          width: `${Math.min(100, (stats.visits / 2) * 100)}%`,
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase mb-1">
+                      <span>Calls</span>
+                      <span>{stats.calls}/4</span>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-purple-500 rounded-full"
+                        style={{
+                          width: `${Math.min(100, (stats.calls / 4) * 100)}%`,
+                        }}
+                      ></div>
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase mb-1">
-                    <span>Visits</span>
-                    <span>{stats.visits}/2</span>
-                  </div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-500 rounded-full"
-                      style={{
-                        width: `${Math.min(100, (stats.visits / 2) * 100)}%`,
-                      }}
-                    ></div>
-                  </div>
-                </div>
-                <div className="mt-2">
-                  <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase mb-1">
-                    <span>Calls</span>
-                    <span>{stats.calls}/4</span>
-                  </div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-purple-500 rounded-full"
-                      style={{
-                        width: `${Math.min(100, (stats.calls / 4) * 100)}%`,
-                      }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-            );
-          }))}
+              );
+            }))}
         </div>
       )}
 
@@ -4044,12 +4057,12 @@ const CollapsibleContactSection = ({
               const cardStyle = member.status === MemberStatus.INCONSISTENT
                 ? "border-l-4 border-l-rose-500 bg-rose-50/10 hover:bg-rose-50/20"
                 : member.status === MemberStatus.NOT_ACTIVE
-                ? "border-l-4 border-l-yellow-500 bg-yellow-50/10 hover:bg-yellow-50/20"
-                : isVisitor
-                ? "border-l-4 border-l-teal-500 bg-teal-50/10 hover:bg-teal-50/20"
-                : isFnf
-                ? "border-l-4 border-l-emerald-500 bg-emerald-50/10 hover:bg-emerald-50/20"
-                : "border-slate-100 bg-white hover:border-indigo-200";
+                  ? "border-l-4 border-l-yellow-500 bg-yellow-50/10 hover:bg-yellow-50/20"
+                  : isVisitor
+                    ? "border-l-4 border-l-teal-500 bg-teal-50/10 hover:bg-teal-50/20"
+                    : isFnf
+                      ? "border-l-4 border-l-emerald-500 bg-emerald-50/10 hover:bg-emerald-50/20"
+                      : "border-slate-100 bg-white hover:border-indigo-200";
 
               return (
                 <div
@@ -4235,7 +4248,7 @@ const getMemberStats = (memberId: string, data: AppData) => {
         prayers.filter(
           (s) =>
             Math.floor(new Date(s.date).getMonth() / 3) ===
-              Math.floor(now.getMonth() / 3) &&
+            Math.floor(now.getMonth() / 3) &&
             new Date(s.date).getFullYear() === year,
         ),
       ),
@@ -4392,7 +4405,7 @@ const AddMemberModal = ({
           activeChurch === "All" ||
           m.assignedChurch === activeChurch) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-            m.status !== MemberStatus.ARCHIVED,
+        m.status !== MemberStatus.ARCHIVED,
     )
     .filter((m: Member) => m.name.toLowerCase().includes(search.toLowerCase()));
 

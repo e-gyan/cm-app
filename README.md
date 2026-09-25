@@ -1,7 +1,7 @@
 # Children's Ministry Directorate (CMD) Platform
 
-[![Version](https://img.shields.io/badge/version-1.7.3-indigo.svg)](src/version.ts)
-[![Release](https://img.shields.io/badge/release-Immediate%20Prayer%20Persistence%20%26%20Achievement%20Accounting-emerald.svg)](src/version.ts)
+[![Version](https://img.shields.io/badge/version-1.7.4-indigo.svg)](src/version.ts)
+[![Release](https://img.shields.io/badge/release-Shepherd%20Nomenclature%20%26%20Prayer%20Accounting%20Sync-emerald.svg)](src/version.ts)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)](tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-cyan.svg)](package.json)
 
@@ -13,7 +13,7 @@ A modern, cloud-synchronized multi-tenant application for Children's Ministry at
 The platform follows **Semantic Versioning (SemVer: `MAJOR.MINOR.PATCH`)**:
 
 ```
-v1.7.3
+v1.7.4
  ┬ ┬ ┬
  │ │ └─ PATCH: Bug fixes, UI adjustments, text-wrapping tweaks, performance improvements.
  │ └─── MINOR: New functional modules.
@@ -61,7 +61,7 @@ When introducing changes:
 │   │   ├── PhotoStudioModal.tsx   # AI cutout, studio depth shadow, live previews & WebP export
 │   │   ├── MemberAvatar.tsx       # Reusable avatar with initials fallback
 │   │   ├── ChangelogModal.tsx     # Interactive version notes and release timeline
-│   │   ├── OutreachHub.tsx        # Follow-up radar, teacher outreach and calendar
+│   │   ├── OutreachHub.tsx        # Follow-up radar, shepherd outreach, prayer wall and calendar
 │   │   ├── AnalyticsHub.tsx       # Interactive charts and AI insights
 │   │   ├── Finances.tsx           # Weekly Sunday collections, tithes and category ledgers
 │   │   ├── ReportExport.tsx       # Copy-ready reports for sharing on WhatsApp
@@ -132,7 +132,7 @@ When introducing changes:
   - `DIRECTORATE_HEAD` (Cross-zonal oversight).
   - `ZONAL_HEAD` (Scoped to assigned zone).
   - `BRANCH_COORDINATOR` (Scoped to assigned branch).
-  - `TEACHER` and `VOLUNTEER` (Scoped to assigned church and class).
+  - `TEACHER` / Shepherd and `VOLUNTEER` (Scoped to assigned church and class).
 
 ### 4. Context-Aware Activity Notification Engine
 - Real-time logging of all critical ministry events:
@@ -158,6 +158,16 @@ When introducing changes:
   - Provisioned reporting template for Sunday services including Preacher/Message per church, financial collections (Offering, Tithes, Partnerships, First Fruits), soul winning, and cell meeting statistics.
   - Ensures Branch Coordinators always see their provisioned template.
 - **Department Detail and Summary Reports**: Individual class rosters and high-level summaries copy-ready for instant dispatch.
+
+### 7. Outreach Hub, Shepherd Allocation & Unified Prayer Accounting
+- **Shepherd Nomenclature Migration**:
+  - User-facing references across the application, attendance rosters, member management, report exports, and outreach coordination updated from "Teachers" to "Shepherds".
+  - Full backwards compatibility maintained with existing Firestore schemas and security rules (`Role.TEACHER` and `MemberType.TEACHER`).
+- **Unified Prayer Accounting Synchronization**:
+  - Synchronized prayer intercession duration (accounting for slot duration minutes with YTD current-year filtering) across the Master Dashboard, Outreach Hub Prayer Wall banner, and the TRACK progress tab.
+  - Personalized Shepherd view in the TRACK tab scopes assigned children and intercessory prayer sessions to their roster.
+- **Fair Shepherd Allocation**:
+  - Balanced division of children (including First Timers and FNF) across active shepherds with persistent assignments and exportable WhatsApp/CSV templates.
 
 ---
 

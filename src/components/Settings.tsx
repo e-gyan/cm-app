@@ -266,7 +266,7 @@ const Settings: React.FC<SettingsProps> = ({
     { id: "DIRECTORATE_HEAD", label: "Directorate Head", color: "blue", desc: "Directorate-wide oversight and reporting" },
     { id: "ZONAL_HEAD", label: "Zonal Head", color: "emerald", desc: "Zonal oversight and campus coordination" },
     { id: "BRANCH_COORDINATOR", label: "Branch Coordinator", color: "teal", desc: "Branch operations, attendance and roster" },
-    { id: "TEACHER", label: "Teacher", color: "amber", desc: "Attendance taking, outreach and visits" },
+    { id: "TEACHER", label: "Shepherd", color: "amber", desc: "Attendance taking, outreach and visits" },
     { id: "VOLUNTEER", label: "Volunteer / Helper", color: "slate", desc: "Basic attendance check-in assistance" },
   ];
 

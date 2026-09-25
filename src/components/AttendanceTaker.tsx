@@ -1050,7 +1050,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                 }}
                 className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${attendanceMode === "STAFF" ? "bg-white shadow-sm text-purple-700" : "text-slate-500"}`}
               >
-                Teachers
+                Shepherds
               </button>
             </div>
             {enablePunctuality && (
@@ -1181,7 +1181,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   }}
                   className={`px-2 py-1 text-[10px] font-bold rounded border ${attendanceMode === "STAFF" ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-white text-slate-500"}`}
                 >
-                  {attendanceMode === "MEMBERS" ? "Teachers?" : "Mems?"}
+                  {attendanceMode === "MEMBERS" ? "Shepherds?" : "Mems?"}
                 </button>
               </div>
             </div>
@@ -1290,7 +1290,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             {/* Auto-assigned Profile Details */}
             <div className="bg-indigo-50/70 border border-indigo-100/80 rounded-2xl p-3 mb-4 space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-medium">Logged-in Teacher:</span>
+                <span className="text-slate-500 font-medium">Logged-in Shepherd:</span>
                 <span className="font-bold text-slate-800">{currentUser?.name || "Self"}</span>
               </div>
               <div className="flex items-center justify-between">

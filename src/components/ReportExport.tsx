@@ -517,7 +517,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
     const all: { id: "WHATSAPP" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL"; icon: any; label: string }[] = [
       { id: "WHATSAPP", icon: MessageCircle, label: "Report" },
       { id: "KPI", icon: Target, label: "KPIs" },
-      { id: "DIVISION", icon: Users, label: "Teacher Division" },
+      { id: "DIVISION", icon: Users, label: "Shepherd Division" },
       { id: "EXECUTIVE", icon: Briefcase, label: "Executive" },
       { id: "DATA", icon: Database, label: "Data" },
       { id: "ANNUAL", icon: Calendar, label: "Annual Record" },
@@ -966,7 +966,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
           report += `• Total Attendance: ${zoneAttendance}\n`;
           report += `• Services: Joy (${zoneJoy}) | Enlargement (${zoneEnlargement})` + (zoneSpecial > 0 ? ` | Special (${zoneSpecial})` : "") + `\n`;
           report += `• Branches: ${branchSummaries.join(" | ") || "No branches"}\n`;
-          report += `• First Timers: ${zoneFirstTimers} | Teachers: ${zoneTeachers}\n`;
+          report += `• First Timers: ${zoneFirstTimers} | Shepherds: ${zoneTeachers}\n`;
           report += `• Outreach and Prayer: ${zoneOutreach.visits} Visits | ${zoneOutreach.calls} Calls | ${zonePrayer} Prayers\n\n`;
         }
 
@@ -982,7 +982,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       report += `*DIRECTORATE GRAND TOTALS*\n`;
       report += `• Total Platform Attendance: ${grandAttendance}\n`;
       report += `• Total First Timers: ${grandFirstTimers}\n`;
-      report += `• Total Active Teachers: ${grandTeachers}\n`;
+      report += `• Total Active Shepherds: ${grandTeachers}\n`;
       report += `• Total Outreach Activity: ${grandVisits} Visits | ${grandCalls} Calls\n`;
       report += `• Total Prayers Completed: ${grandPrayers}\n`;
 
@@ -1305,7 +1305,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
         if (notMembers.length > 0) report += renderListWithServices(notMembers, "NOT A MEMBER", cRec);
 
         if (cTeachers.length > 0) {
-          report += `*TEACHERS (${cTeachers.length})*\n`;
+          report += `*SHEPHERDS (${cTeachers.length})*\n`;
           cTeachers.forEach((m, i) => (report += `${i + 1}. ${m.name}\n`));
           report += `\n`;
         }
@@ -1368,7 +1368,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
         if (totalSpecial > 0) splits.push(`${eventNameToUse || "Special"}: ${totalSpecial}`);
       }
 
-      if (teachersCount > 0) splits.push(`Teachers: ${teachersCount}`);
+      if (teachersCount > 0) splits.push(`Shepherds: ${teachersCount}`);
 
       if (splits.length > 0) {
         report += `(${splits.join(" | ")})\n\n`;
@@ -1389,7 +1389,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       if (notMembers.length > 0) report += renderListWithServices(notMembers, "NOT A MEMBER", record);
 
       if (teachers.length > 0) {
-        report += `*TEACHERS (${teachers.length})*\n`;
+        report += `*SHEPHERDS (${teachers.length})*\n`;
         teachers.forEach((m, i) => (report += `${i + 1}. ${m.name}\n`));
         report += `\n`;
       }
@@ -1452,7 +1452,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
   };
 
   const handleCopyTeacherAssignment = (teacherName: string, members: Member[]) => {
-    let text = `👤 *Teacher:* ${teacherName} (${members.length} Members)\n\n`;
+    let text = `👤 *Shepherd:* ${teacherName} (${members.length} Members)\n\n`;
     members.forEach((m, idx) => {
       const phoneStr = m.parentPhone || m.phone ? ` (📞 ${m.parentPhone || m.phone})` : "";
       text += `${idx + 1}. ${m.name}${phoneStr}\n`;
@@ -1470,7 +1470,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
     link.setAttribute("href", url);
     link.setAttribute(
       "download",
-      `teacher_member_divisions_${new Date().toISOString().split("T")[0]}.csv`,
+      `shepherd_member_divisions_${new Date().toISOString().split("T")[0]}.csv`,
     );
     document.body.appendChild(link);
     link.click();
@@ -1547,11 +1547,11 @@ const ReportExport: React.FC<ReportExportProps> = ({
                   <Users size={20} className="text-indigo-200" />
                 </span>
                 <h3 className="text-xl font-bold">
-                  Equal Teacher & Member Division
+                  Equal Shepherd & Member Division
                 </h3>
               </div>
               <p className="text-indigo-200 text-xs md:text-sm">
-                Equal member allocation across active teachers for UJ, LJ, K, and I churches (UJ Branch Head omitted).
+                Equal member allocation across active shepherds for UJ, LJ, K, and I churches (UJ Branch Head omitted).
               </p>
             </div>
             <div className="flex flex-wrap gap-2 w-full md:w-auto">
@@ -1576,7 +1576,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
           <div className="flex bg-black/20 p-1 rounded-xl gap-1 overflow-x-auto">
             {["ALL", "UJ", "LJ", "K", "I"].map((c) => {
               const div = divisions[c];
-              const countStr = div ? ` (${div.totalMembers}m / ${div.totalEligibleTeachers}t)` : "";
+              const countStr = div ? ` (${div.totalMembers}m / ${div.totalEligibleTeachers}s)` : "";
               return (
                 <button
                   key={c}
@@ -1636,7 +1636,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                     </div>
                     <div className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-xl flex items-center gap-2">
                       <span className="text-[10px] font-bold text-slate-400 uppercase">
-                        Teachers
+                        Shepherds
                       </span>
                       <span className="text-sm font-extrabold text-purple-600">
                         {div.totalEligibleTeachers}
@@ -1647,13 +1647,13 @@ const ReportExport: React.FC<ReportExportProps> = ({
                         Allocation
                       </span>
                       <span className="text-sm font-extrabold text-indigo-700">
-                        ~{div.membersPerTeacherAvg} / teacher
+                        ~{div.membersPerTeacherAvg} / shepherd
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Teachers Assignment Grid */}
+                {/* Shepherds Assignment Grid */}
                 {div.assignments.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {div.assignments.map((asg, idx) => {
@@ -1665,7 +1665,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                           className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200/70 hover:border-indigo-300 transition-all flex flex-col justify-between"
                         >
                           <div>
-                            {/* Teacher Header */}
+                            {/* Shepherd Header */}
                             <div className="flex justify-between items-start mb-3 pb-2.5 border-b border-slate-200/50">
                               <div className="flex items-center gap-2.5">
                                 <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white font-bold flex items-center justify-center text-sm shadow-sm">
@@ -1692,7 +1692,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                                       asg.members,
                                     )
                                   }
-                                  title="Copy this teacher's list"
+                                  title="Copy this shepherd's list"
                                   className={`p-1.5 rounded-lg border transition-all ${isCopied ? "bg-green-500 text-white border-green-500" : "bg-white text-slate-500 hover:text-indigo-600 border-slate-200"}`}
                                 >
                                   {isCopied ? <CheckCircle size={14} /> : <Copy size={14} />}
@@ -1752,7 +1752,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                   <div className="p-6 bg-amber-50 rounded-2xl border border-amber-200 text-amber-800 text-sm flex items-center gap-3">
                     <AlertCircle size={20} className="shrink-0 text-amber-600" />
                     <p>
-                      No active teachers registered for {div.churchName}. All {div.totalMembers} members are currently unassigned.
+                      No active shepherds registered for {div.churchName}. All {div.totalMembers} members are currently unassigned.
                     </p>
                   </div>
                 )}
@@ -1952,7 +1952,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                 className={`px-3 py-2 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${includeDivisionsInReport ? "bg-indigo-600 text-white shadow-sm" : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"}`}
               >
                 <Users size={14} />
-                {includeDivisionsInReport ? "Teacher Divisions (ON)" : "Teacher Divisions (OFF)"}
+                {includeDivisionsInReport ? "Shepherd Divisions (ON)" : "Shepherd Divisions (OFF)"}
               </button>
             </div>
 
@@ -2080,7 +2080,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                                   }}
                                   className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
                                 >
-                                  <option value="">-- Select Preacher / Teacher --</option>
+                                  <option value="">-- Select Preacher / Shepherd --</option>
                                   {teachers.map((t) => (
                                     <option key={t.id} value={t.name}>{t.name}</option>
                                   ))}
@@ -2129,7 +2129,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                                   }}
                                   className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
                                 >
-                                  <option value="">-- Select Preacher / Teacher --</option>
+                                  <option value="">-- Select Preacher / Shepherd --</option>
                                   {teachers.map((t) => (
                                     <option key={t.id} value={t.name}>{t.name}</option>
                                   ))}
@@ -2178,7 +2178,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                                   }}
                                   className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
                                 >
-                                  <option value="">-- Select Preacher / Teacher --</option>
+                                  <option value="">-- Select Preacher / Shepherd --</option>
                                   {teachers.map((t) => (
                                     <option key={t.id} value={t.name}>{t.name}</option>
                                   ))}
@@ -2227,7 +2227,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                                   }}
                                   className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800"
                                 >
-                                  <option value="">-- Select Preacher / Teacher --</option>
+                                  <option value="">-- Select Preacher / Shepherd --</option>
                                   {teachers.map((t) => (
                                     <option key={t.id} value={t.name}>{t.name}</option>
                                   ))}
@@ -2585,7 +2585,7 @@ function AnnualViewTab({ selectedDate, data, activeChurch, CHURCH_NAMES }: any) 
                 if (totalSpecial > 0) splits.push(`${eventNameToUse || "Special"}: ${totalSpecial}`);
               }
 
-              if (teachersCount > 0) splits.push(`Teachers: ${teachersCount}`);
+              if (teachersCount > 0) splits.push(`Shepherds: ${teachersCount}`);
 
               if (splits.length > 0) {
                 report += `(${splits.join(" | ")})\n\n`;
@@ -2614,7 +2614,7 @@ function AnnualViewTab({ selectedDate, data, activeChurch, CHURCH_NAMES }: any) 
               if (notMembers.length > 0) report += renderList(notMembers, "NOT A MEMBER");
 
               if (teachers.length > 0) {
-                report += `*TEACHERS (${teachers.length})*\n`;
+                report += `*SHEPHERDS (${teachers.length})*\n`;
                 teachers.forEach((m: any, i: number) => (report += `${i + 1}. ${m.name}\n`));
                 report += `\n`;
               }

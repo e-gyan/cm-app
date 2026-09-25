@@ -267,19 +267,19 @@ export const calculateChurchDivisions = (
 export const formatDivisionReportText = (
   divisions: Record<string, ChurchDivisionResult>,
 ): string => {
-  let text = `📊 *EQUAL MEMBER ALLOCATION & TEACHER DIVISION*\n`;
-  text += `_Divided equally per active teachers for UJ, LJ, K, I_\n`;
+  let text = `📊 *EQUAL MEMBER ALLOCATION & SHEPHERD DIVISION*\n`;
+  text += `_Divided equally per active shepherds for UJ, LJ, K, I_\n`;
   text += `────────────────────────────\n\n`;
 
   Object.values(divisions).forEach((div) => {
     text += `🏛️ *${div.churchName.toUpperCase()}*\n`;
     text += `• Total Members: *${div.totalMembers}*\n`;
-    text += `• Active Teachers for Allocation: *${div.totalEligibleTeachers}*\n`;
+    text += `• Active Shepherds for Allocation: *${div.totalEligibleTeachers}*\n`;
     if (div.church === "UJ" && div.omittedTeachers.length > 0) {
       const omittedNames = div.omittedTeachers.map((t) => t.name).join(", ");
       text += `• _(Branch Head omitted from division: ${omittedNames})_\n`;
     }
-    text += `• Allocation Ratio: *~${div.membersPerTeacherAvg} members / teacher* (Range: ${div.minMembersPerTeacher} - ${div.maxMembersPerTeacher})\n\n`;
+    text += `• Allocation Ratio: *~${div.membersPerTeacherAvg} members / shepherd* (Range: ${div.minMembersPerTeacher} - ${div.maxMembersPerTeacher})\n\n`;
 
     if (div.assignments.length > 0) {
       div.assignments.forEach((asg, idx) => {
@@ -291,7 +291,7 @@ export const formatDivisionReportText = (
         text += `\n`;
       });
     } else {
-      text += `  ⚠️ _No eligible teachers assigned to this church yet._\n\n`;
+      text += `  ⚠️ _No eligible shepherds assigned to this church yet._\n\n`;
     }
 
     if (div.unassignedMembers.length > 0) {
@@ -312,7 +312,7 @@ export const formatDivisionCSV = (
   divisions: Record<string, ChurchDivisionResult>,
 ): string => {
   const rows: string[] = [
-    "Church,Teacher Name,Teacher Role,Member Name,Gender,Status,Parent Phone,Phone,Address,GPS Coordinates",
+    "Church,Shepherd Name,Shepherd Role,Member Name,Gender,Status,Parent Phone,Phone,Address,GPS Coordinates",
   ];
 
   Object.values(divisions).forEach((div) => {

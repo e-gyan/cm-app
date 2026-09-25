@@ -1091,7 +1091,7 @@ const MembersList: React.FC<MembersListProps> = ({
                                    member.role === "CMD_COORDINATOR" ? "CMD Coord" : 
                                    member.role === "EXTERNAL" ? "External" : 
                                    member.role === "ADMIN" ? "Admin" : 
-                                   "Teacher"}
+                                   "Shepherd"}
                                 </span>
                               ) : (
                                 <span className="flex items-center gap-1 text-xs bg-gray-50 text-gray-400 px-2 py-1 rounded border border-gray-100">
@@ -1379,10 +1379,10 @@ const MembersList: React.FC<MembersListProps> = ({
             <Users size={28} />
           </div>
           <h3 className="text-base font-bold text-slate-800">
-            No {hubTab === "TEACHERS" ? "Teachers" : "Members"} Found for {getScopeDisplayLabel(activeBranchId, data.settings?.organization)}
+            No {hubTab === "TEACHERS" ? "Shepherds" : "Members"} Found for {getScopeDisplayLabel(activeBranchId, data.settings?.organization)}
           </h3>
           <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto font-medium">
-            No records match the current branch scope. Switch branch or zone from the top switcher, or click "Add {hubTab === "TEACHERS" ? "Teacher" : "Member"}" to register someone.
+            No records match the current branch scope. Switch branch or zone from the top switcher, or click "Add {hubTab === "TEACHERS" ? "Shepherd" : "Member"}" to register someone.
           </p>
         </div>
       );
@@ -1517,7 +1517,7 @@ const MembersList: React.FC<MembersListProps> = ({
       return (
         <div className="space-y-4">
           {renderMemberTableSection({
-            title: "Teachers",
+            title: "Shepherds",
             members: membersToShow.filter((m) => m.type === MemberType.TEACHER),
             icon: GraduationCap,
             colorClass: "text-purple-600",
@@ -2026,7 +2026,7 @@ const MembersList: React.FC<MembersListProps> = ({
                     setFormData({ ...formData, role: e.target.value as Role })
                   }
                 >
-                  <option value="TEACHER">Teacher</option>
+                  <option value="TEACHER">Shepherd</option>
                   <option value="ADMIN">Admin</option>
                   <option value="NONE">None</option>
                   {isAdmin && (
@@ -2106,7 +2106,7 @@ const MembersList: React.FC<MembersListProps> = ({
               className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${hubTab === "TEACHERS" ? "bg-white shadow-sm text-purple-600" : "text-gray-500"}`}
             >
               <span className="flex items-center gap-2">
-                <Briefcase size={16} /> Teachers
+                <Briefcase size={16} /> Shepherds
               </span>
             </button>
           </div>
@@ -2305,7 +2305,7 @@ const MembersList: React.FC<MembersListProps> = ({
         <button
           onClick={openCreateModal}
           className="fixed bottom-24 right-4 md:bottom-8 md:right-8 bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-full shadow-lg shadow-indigo-300 transition-all hover:scale-110 z-40 active:scale-95 flex items-center justify-center"
-          title="Create New Member/Teacher"
+          title="Create New Member/Shepherd"
         >
           <Plus size={28} />
         </button>
@@ -2330,7 +2330,7 @@ const MembersList: React.FC<MembersListProps> = ({
                 <div>
                   <h3 className="text-xl font-extrabold text-gray-900 tracking-tight">
                     {isEditModalOpen ? "Edit" : "New"}{" "}
-                    {hubTab === "TEACHERS" ? "Teacher" : "Member"}
+                    {hubTab === "TEACHERS" ? "Shepherd" : "Member"}
                   </h3>
                   {isEditModalOpen && (
                     <p className="text-xs text-gray-400 font-mono font-bold uppercase mt-0.5 tracking-wider">

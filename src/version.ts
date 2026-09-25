@@ -16,16 +16,28 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.7.3";
-export const APP_RELEASE_NAME = "OutreachHub Immediate Prayer Persistence & Achievement Metrics Accounting";
+export const APP_VERSION = "1.7.4";
+export const APP_RELEASE_NAME = "Shepherd Nomenclature Migration & Unified Prayer Accounting Synchronization";
 export const APP_BUILD_DATE = "2026-09-25";
 
 export const CHANGELOG: ReleaseLog[] = [
   {
+    version: "1.7.4",
+    date: "2026-09-25",
+    title: "Shepherd Nomenclature Migration & Unified Prayer Accounting Synchronization",
+    badge: "Current Release",
+    changes: [
+      "Migrated user-facing nomenclature from 'Teachers' to 'Shepherds' across Dashboard, Attendance rosters, Member lists, Report Exports, Settings, and Outreach Hub",
+      "Unified prayer time accounting across Dashboard, Prayer Wall banner, and TRACK tab, ensuring annual targets and intercession hours tally seamlessly",
+      "Fixed YTD current-year filtering on OutreachHub prayer stats and aligned session duration accounting with actual scheduled slot minutes",
+      "Refined Shepherd personal views in the TRACK tab to properly scope assigned children and intercessory prayer sessions to their roster",
+      "Preserved full backwards compatibility with Firestore schemas and security rules by maintaining internal Role/MemberType constants while presenting Shepherd across all UI layers",
+    ],
+  },
+  {
     version: "1.7.3",
     date: "2026-09-25",
     title: "OutreachHub Immediate Prayer Persistence & Achievement Metrics Accounting",
-    badge: "Current Release",
     changes: [
       "Fixed prayer completion persistence so marking and unmarking slots immediately write to Firestore (appData/main) and localStorage without relying on floating batch save buttons",
       "Resolved un-awaited debounced update race conditions in storageService: savePrayerSlot, savePrayerSlots, and saveOutreachSessions now strictly await remote Firestore completion",
