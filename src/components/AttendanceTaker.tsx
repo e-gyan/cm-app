@@ -159,12 +159,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   );
 
   const isWednesdayCell = useMemo(
-    () => isWednesday(selectedDate) || (!isSunday(selectedDate) && selectedDate !== ""),
+    () => isWednesday(selectedDate),
     [selectedDate],
   );
 
   const targetSundayForCell = useMemo(
-    () => (selectedDate ? getNextSunday(selectedDate) : ""),
+    () => (selectedDate && isWednesday(selectedDate) ? getNextSunday(selectedDate) : ""),
     [selectedDate],
   );
 
@@ -212,14 +212,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     }
   }, [sundaysCurrentYear]);
 
-  // Synchronize service selection when date changes between Sunday and Wednesday
+  // Synchronize service selection when date changes between Wednesday and other days
   useEffect(() => {
     if (!selectedDate) return;
-    if (isWednesday(selectedDate) || (!isSunday(selectedDate) && selectedDate !== "")) {
+    if (isWednesday(selectedDate)) {
       if (currentService !== "CELL") {
         setCurrentService("CELL");
       }
-    } else if (isSunday(selectedDate)) {
+    } else {
       if (currentService === "CELL") {
         setCurrentService("JOY");
       }
@@ -512,6 +512,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const confirmSave = async (
     overridePresentIds?: Set<string>,
     overrideServiceMap?: Record<string, ServiceType>,
+    additionalMembers?: Member[],
   ) => {
     if (isSaving) return;
     setIsSaving(true);
@@ -522,7 +523,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
       const branchesToSave = getRelevantBranches(effectiveChurch, attendanceMode);
       let hasActualChanges = false;
-      const allMembers = data.members;
+      const allMembers = additionalMembers && additionalMembers.length > 0
+        ? [...data.members, ...additionalMembers]
+        : data.members;
       const recordsToSave: any[] = [];
 
       branchesToSave.forEach((churchId) => {
@@ -644,8 +647,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           hasActualChanges = true;
           const effectiveBranchId = existingRecord?.branchId || activeBranchId || currentUser.branchId || undefined;
           const id = `${selectedDate}_${churchId}`;
-          const recordEventName = isWednesdayCell
-            ? (specialEventName || existingRecord?.eventName || (isWednesday(selectedDate) ? "Wednesday Cell" : "Cell Meeting"))
+          const isLCLive = isWednesday(selectedDate) && (currentService === "CELL" || Object.values(finalServiceMap).includes("CELL"));
+          const recordEventName = isLCLive
+            ? (specialEventName || existingRecord?.eventName || "Wednesday LC Live")
             : newEventName;
           recordsToSave.push({
             id,
@@ -656,7 +660,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             punctualMemberIds: finalPunctual,
             serviceMap: finalServiceMap,
             eventName: recordEventName,
-            attendanceType: isWednesdayCell ? "CELL" : "SUNDAY",
+            attendanceType: isLCLive ? "CELL" : "SUNDAY",
             lastUpdated: Date.now()
           });
         }
@@ -669,7 +673,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       setSuccessMsg(hasActualChanges ? `Changes saved` : `No changes saved`);
       setShowEventModal(false);
       clearDraft();
-      onUpdate();
+      await onUpdate();
       setTimeout(() => setSuccessMsg(""), 2000);
     } catch (err) {
       console.error("Failed to save attendance:", err);
@@ -689,11 +693,15 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     if (parsedFirstTimerNames.length === 0 || isSubmittingVisitor) return;
     setIsSubmittingVisitor(true);
     try {
-      // Auto-assign from teacher's/currentUser's profile
-      const targetChurch: Church = (currentUser?.assignedChurch && currentUser?.assignedChurch !== "All" && currentUser?.assignedChurch !== "CM")
-        ? (currentUser.assignedChurch as Church)
-        : (effectiveChurch as Church || "UJ");
-      const targetBranchId = currentUser?.branchId || "";
+      // Auto-assign from current church view if valid, or shepherd's profile
+      const targetChurch: Church = (effectiveChurch && effectiveChurch !== "All" && effectiveChurch !== "CM")
+        ? (effectiveChurch as Church)
+        : (currentUser?.assignedChurch && currentUser?.assignedChurch !== "All" && currentUser?.assignedChurch !== "CM"
+          ? (currentUser.assignedChurch as Church)
+          : "UJ");
+      const targetBranchId = (activeBranchId && activeBranchId !== "ALL")
+        ? activeBranchId
+        : (currentUser?.branchId || "");
       const targetZoneId = currentUser?.zoneId || "";
 
       const newMembers: Member[] = parsedFirstTimerNames.map((cleanName) => ({
@@ -701,13 +709,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         name: cleanName,
         type: MemberType.VISITOR, // Role category: First Timer
         assignedChurch: targetChurch,
-        churchId: targetChurch,
         passcode: "",
         status: MemberStatus.ACTIVE,
         gender: determineGenderByName(cleanName),
         branchId: targetBranchId,
         zoneId: targetZoneId,
-        assignedTeacherId: currentUser?.id, // Hooked directly to logged-in teacher
+        assignedTeacherId: currentUser?.id, // Hooked directly to logged-in shepherd
         addedAt: Date.now()
       }));
 
@@ -727,8 +734,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
       setNewMemberNames([""]);
       setIsAddingFNF(false);
-      confirmSave(newSet, newSMap);
-      onUpdate();
+      await confirmSave(newSet, newSMap, newMembers);
+      await onUpdate();
+    } catch (err) {
+      console.error("Failed to add first timers:", err);
     } finally {
       setIsSubmittingVisitor(false);
     }
@@ -883,52 +892,49 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         {/* SERVICE TOGGLE (Visible only in Member Mode for UJ, I, K, LJ) */}
         {attendanceMode === "MEMBERS" &&
           (effectiveChurch !== "CM" || isCombinedView) && (
-            isWednesdayCell ? (
-              <div className="flex items-center justify-between bg-emerald-50/90 rounded-2xl px-4 py-2.5 shadow-xs border border-emerald-200/80 mb-1">
-                <div className="flex items-center gap-2 text-emerald-900 text-xs font-bold">
-                  <span className="text-sm">🌿</span>
-                  <span>Midweek Cell Attendance Active</span>
-                </div>
-                <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-lg bg-emerald-600 text-white shadow-2xs tracking-wide">
-                  Cell Meeting
-                </span>
-              </div>
-            ) : (
-              <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100 mb-1 overflow-x-auto hide-scrollbar">
+            <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100 mb-1 overflow-x-auto hide-scrollbar gap-1">
+              <button
+                onClick={() => setCurrentService("JOY")}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "JOY" ? "bg-amber-100 text-amber-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
+              >
+                <Sun
+                  size={18}
+                  fill={currentService === "JOY" ? "currentColor" : "none"}
+                />{" "}
+                Joy Service
+              </button>
+              <button
+                onClick={() => setCurrentService("ENLARGEMENT")}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "ENLARGEMENT" ? "bg-sky-100 text-sky-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
+              >
+                <Zap
+                  size={18}
+                  fill={
+                    currentService === "ENLARGEMENT" ? "currentColor" : "none"
+                  }
+                />{" "}
+                Enlargement
+              </button>
+              <button
+                onClick={() => setCurrentService("SPECIAL")}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "SPECIAL" ? "bg-purple-100 text-purple-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
+              >
+                <Crown
+                  size={18}
+                  fill={currentService === "SPECIAL" ? "currentColor" : "none"}
+                />{" "}
+                Special
+              </button>
+              {isWednesday(selectedDate) && (
                 <button
-                  onClick={() => setCurrentService("JOY")}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "JOY" ? "bg-amber-100 text-amber-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
+                  onClick={() => setCurrentService("CELL")}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "CELL" ? "bg-emerald-600 text-white shadow-sm" : "text-emerald-700 bg-emerald-50 hover:bg-emerald-100"}`}
                 >
-                  <Sun
-                    size={18}
-                    fill={currentService === "JOY" ? "currentColor" : "none"}
-                  />{" "}
-                  Joy Service
+                  <span className="text-base">🌿</span>
+                  LC Live
                 </button>
-                <button
-                  onClick={() => setCurrentService("ENLARGEMENT")}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "ENLARGEMENT" ? "bg-sky-100 text-sky-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
-                >
-                  <Zap
-                    size={18}
-                    fill={
-                      currentService === "ENLARGEMENT" ? "currentColor" : "none"
-                    }
-                  />{" "}
-                  Enlargement
-                </button>
-                <button
-                  onClick={() => setCurrentService("SPECIAL")}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "SPECIAL" ? "bg-purple-100 text-purple-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
-                >
-                  <Crown
-                    size={18}
-                    fill={currentService === "SPECIAL" ? "currentColor" : "none"}
-                  />{" "}
-                  Special
-                </button>
-              </div>
-            )
+              )}
+            </div>
           )}
 
         {/* Row 1: Main Controls */}
@@ -943,13 +949,13 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   if (currentService === "CELL") setCurrentService("JOY");
                 }}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                  !isWednesdayCell
+                  !isWednesday(selectedDate)
                     ? "bg-white text-indigo-700 shadow-xs"
                     : "text-slate-500 hover:text-slate-700"
                 }`}
                 title="Switch to Sunday Service"
               >
-                <Sun size={14} className={!isWednesdayCell ? "text-amber-500" : "text-slate-400"} />
+                <Sun size={14} className={!isWednesday(selectedDate) ? "text-amber-500" : "text-slate-400"} />
                 <span className="hidden xs:inline">Sunday</span>
               </button>
               <button
@@ -959,14 +965,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   setCurrentService("CELL");
                 }}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                  isWednesdayCell
+                  isWednesday(selectedDate)
                     ? "bg-emerald-600 text-white shadow-xs"
                     : "text-slate-500 hover:text-slate-700"
                 }`}
-                title="Switch to Wednesday Cell Meeting"
+                title="Switch to Wednesday LC Live"
               >
                 <span>🌿</span>
-                <span className="hidden xs:inline">Wednesday Cell</span>
+                <span className="hidden xs:inline">LC Live</span>
               </button>
             </div>
 
@@ -1022,10 +1028,20 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 disabled:opacity-60 shadow-lg shadow-indigo-200 transition-all active:scale-95 shrink-0"
+              className={`flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white rounded-xl transition-all active:scale-95 shrink-0 ${
+                successMsg && !successMsg.includes("Error")
+                  ? "bg-emerald-600 shadow-lg shadow-emerald-200"
+                  : "bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 disabled:opacity-70"
+              }`}
             >
-              <Save size={18} className={isSaving ? "animate-spin" : ""} />
-              <span className="hidden sm:inline">{isSaving ? "Saving..." : "Save"}</span>
+              {successMsg && !successMsg.includes("Error") ? (
+                <Check size={18} />
+              ) : (
+                <Save size={18} />
+              )}
+              <span className="hidden sm:inline">
+                {isSaving ? "Saving..." : successMsg && !successMsg.includes("Error") ? "Saved!" : "Save"}
+              </span>
               <span className="bg-white/20 px-1.5 py-0.5 rounded text-xs font-mono">
                 {totalSavedInState}
               </span>
@@ -1074,8 +1090,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           </div>
         </div>
 
-        {/* Wednesday Cell Meeting Banner */}
-        {isWednesdayCell && (
+        {/* Wednesday LC Live Banner */}
+        {isWednesday(selectedDate) && currentService === "CELL" && (
           <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200/80 rounded-2xl p-3 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
             <div className="flex items-center gap-3">
               <span className="w-9 h-9 rounded-xl bg-emerald-100/90 text-emerald-800 flex items-center justify-center text-lg shrink-0 shadow-2xs">
@@ -1084,14 +1100,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-extrabold text-emerald-950 uppercase tracking-wide">
-                    Wednesday Cell Meeting Attendance
+                    Wednesday LC Live Attendance
                   </span>
                   <span className="text-[10px] bg-emerald-200/80 text-emerald-900 font-bold px-2 py-0.5 rounded-full">
                     Midweek
                   </span>
                 </div>
                 <p className="text-emerald-850 text-[11px] font-medium mt-0.5">
-                  Attendees here will be automatically inserted into the <strong>Total Cell Attendance</strong> on the next Sunday's Branch Coordinator report ({formatDateDDMMYYYY(targetSundayForCell)}). Excluded from Sunday dashboard metrics.
+                  Attendees here will be automatically inserted into the <strong>Total LC Live Attendance</strong> on the next Sunday's Branch Coordinator report ({formatDateDDMMYYYY(targetSundayForCell)}). Excluded from Sunday dashboard metrics.
                 </p>
               </div>
             </div>
@@ -1376,7 +1392,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             let iconStyle = "bg-slate-100 text-slate-300";
 
             if (isPresent) {
-              if (assignedService === "CELL" || isWednesdayCell) {
+              if (assignedService === "CELL") {
                 cardStyle =
                   "bg-emerald-50 border-emerald-300 shadow-md shadow-emerald-100 transform scale-[1.01]";
                 textStyle = "text-emerald-950";
@@ -1391,6 +1407,11 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   "bg-sky-50 border-sky-300 shadow-md shadow-sky-100 transform scale-[1.01]";
                 textStyle = "text-sky-900";
                 iconStyle = "bg-white text-sky-500 border border-sky-200";
+              } else if (assignedService === "SPECIAL") {
+                cardStyle =
+                  "bg-purple-50 border-purple-300 shadow-md shadow-purple-100 transform scale-[1.01]";
+                textStyle = "text-purple-900";
+                iconStyle = "bg-white text-purple-600 border border-purple-200";
               } else {
                 // Fallback for generic present or staff
                 cardStyle =
@@ -1438,27 +1459,34 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                     {isPresent && assignedService && (
                       <div
                         className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase border ${
-                          assignedService === "CELL" || isWednesdayCell
+                          assignedService === "CELL"
                             ? "bg-emerald-100 text-emerald-800 border-emerald-200"
                             : assignedService === "JOY"
                               ? "bg-amber-100 text-amber-700 border-amber-200"
-                              : "bg-sky-100 text-sky-700 border-sky-200"
+                              : assignedService === "ENLARGEMENT"
+                                ? "bg-sky-100 text-sky-700 border-sky-200"
+                                : "bg-purple-100 text-purple-700 border-purple-200"
                         }`}
                       >
-                        {assignedService === "CELL" || isWednesdayCell ? (
+                        {assignedService === "CELL" ? (
                           <>
                             <span className="text-[11px]">🌿</span>
-                            <span>Cell</span>
+                            <span>LC Live</span>
                           </>
                         ) : assignedService === "JOY" ? (
                           <>
                             <Sun size={10} />
                             <span>JOY</span>
                           </>
-                        ) : (
+                        ) : assignedService === "ENLARGEMENT" ? (
                           <>
                             <Zap size={10} />
-                            <span>{assignedService}</span>
+                            <span>Enlargement</span>
+                          </>
+                        ) : (
+                          <>
+                            <Crown size={10} />
+                            <span>Special</span>
                           </>
                         )}
                       </div>

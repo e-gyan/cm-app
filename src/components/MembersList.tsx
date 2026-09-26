@@ -392,6 +392,7 @@ const MembersList: React.FC<MembersListProps> = ({
             ...(original.promotionHistory || []),
             promotion,
           ];
+          updatedMember.assignedChurch = formData.assignedChurch;
         }
 
         // Check for Inconsistent -> Active/FNF/Member status change
@@ -404,8 +405,12 @@ const MembersList: React.FC<MembersListProps> = ({
 
         setIsEditModalOpen(false);
         setEditingId(null);
-        onUpdate();
-        updateMember(editingId, updatedMember).catch(console.error);
+        try {
+          await updateMember(editingId, updatedMember);
+          await onUpdate();
+        } catch (err) {
+          console.error("Failed to update member:", err);
+        }
         return;
       }
       setIsEditModalOpen(false);
@@ -427,8 +432,12 @@ const MembersList: React.FC<MembersListProps> = ({
 
       setIsCreateModalOpen(false);
       setEditingId(null);
-      onUpdate();
-      addMember(newMember).catch(console.error);
+      try {
+        await addMember(newMember);
+        await onUpdate();
+      } catch (err) {
+        console.error("Failed to add member:", err);
+      }
       return;
     }
     setEditingId(null);
@@ -443,19 +452,20 @@ const MembersList: React.FC<MembersListProps> = ({
     if (memberToArchive) {
       const target = memberToArchive;
       setMemberToArchive(null);
-      onUpdate();
-      updateMember(target.id, { ...target, status: MemberStatus.ARCHIVED }).catch(console.error);
+      try {
+        await updateMember(target.id, { ...target, status: MemberStatus.ARCHIVED });
+        await onUpdate();
+      } catch (err) {
+        console.error("Failed to archive member:", err);
+      }
     }
   };
 
   const getTransferOptions = (currentChurch: string): string[] => {
-    switch (currentChurch) {
-      case "I": return ["K", "LJ", "UJ"];
-      case "K": return ["LJ", "UJ"];
-      case "LJ": return ["UJ"];
-      case "UJ": return ["ARCHIVED"];
-      default: return availableChurches.filter(c => c !== currentChurch);
-    }
+    const defaultChurches: string[] = ["UJ", "LJ", "K", "I"];
+    const allChurches = Array.from(new Set([...defaultChurches, ...availableChurches]));
+    const otherChurches = allChurches.filter((c) => c !== currentChurch && c !== "CM" && c !== "All");
+    return [...otherChurches, "ARCHIVED"];
   };
 
   const openTransferModal = (member: Member) => {
@@ -469,25 +479,49 @@ const MembersList: React.FC<MembersListProps> = ({
       transferTarget &&
       transferTarget !== transferMember.assignedChurch
     ) {
+      const isArchiving = (transferTarget as string) === "ARCHIVED";
+      const targetChurch = isArchiving ? transferMember.assignedChurch : (transferTarget as Church);
       const promotion: PromotionRecord = {
         date: new Date().toISOString(),
         fromChurch: transferMember.assignedChurch,
-        toChurch: transferTarget as Church,
+        toChurch: targetChurch,
       };
-      const updatedMember = {
+      const updatedMember: Member = {
         ...transferMember,
-        assignedChurch: transferTarget === ("ARCHIVED" as any) ? transferMember.assignedChurch : transferTarget,
-        status: transferTarget === ("ARCHIVED" as any) ? MemberStatus.ARCHIVED : transferMember.status,
+        assignedChurch: targetChurch,
+        status: isArchiving ? MemberStatus.ARCHIVED : transferMember.status,
         promotionHistory: [
           ...(transferMember.promotionHistory || []),
           promotion,
         ],
       };
       const mId = transferMember.id;
+      const memberName = transferMember.name;
       setTransferMember(null);
       setTransferTarget("");
-      onUpdate();
-      updateMember(mId, updatedMember as Member).catch(console.error);
+      try {
+        await updateMember(mId, updatedMember);
+        setToastMessage({
+          title: "Transfer Successful",
+          message: `${memberName} was moved to ${
+            isArchiving
+              ? "Archived"
+              : targetChurch === "UJ"
+                ? "Upper Junior (UJ)"
+                : targetChurch === "LJ"
+                  ? "Lower Junior (LJ)"
+                  : targetChurch === "K"
+                    ? "Kindergarten (K)"
+                    : targetChurch === "I"
+                      ? "Infants (I)"
+                      : targetChurch
+          }`,
+        });
+        setTimeout(() => setToastMessage(null), 3000);
+        await onUpdate();
+      } catch (err) {
+        console.error("Failed to transfer member:", err);
+      }
     } else {
       setTransferMember(null);
       setTransferTarget("");
@@ -2815,7 +2849,18 @@ const MembersList: React.FC<MembersListProps> = ({
                     value={c}
                     disabled={c === transferMember.assignedChurch}
                   >
-                    {c as string === "ARCHIVED" ? "Archive (Teen)" : c} {c === transferMember.assignedChurch ? "(Current)" : ""}
+                    {c === "UJ"
+                      ? "Upper Junior (UJ)"
+                      : c === "LJ"
+                        ? "Lower Junior (LJ)"
+                        : c === "K"
+                          ? "Kindergarten (K)"
+                          : c === "I"
+                            ? "Infants (I)"
+                            : (c as string) === "ARCHIVED"
+                              ? "Archive (Graduated / Teen)"
+                              : c}{" "}
+                    {c === transferMember.assignedChurch ? "(Current)" : ""}
                   </option>
                 ))}
               </select>

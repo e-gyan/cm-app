@@ -16,16 +16,29 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.7.4";
-export const APP_RELEASE_NAME = "Shepherd Nomenclature Migration & Unified Prayer Accounting Synchronization";
-export const APP_BUILD_DATE = "2026-09-25";
+export const APP_VERSION = "1.7.5";
+export const APP_RELEASE_NAME = "Attendance First Timers Persistence, Seamless Save, LC Live & Inter-Church Member Transfers";
+export const APP_BUILD_DATE = "2026-09-26";
 
 export const CHANGELOG: ReleaseLog[] = [
+  {
+    version: "1.7.5",
+    date: "2026-09-26",
+    title: "Attendance First Timers Persistence, Seamless Save, LC Live & Inter-Church Member Transfers",
+    badge: "Current Release",
+    changes: [
+      "Fixed adding and saving First Timers during attendance: resolved state timing race by passing newly created first timers directly into confirmSave and awaiting storage write before onUpdate refresh",
+      "Fixed target church assignment for First Timers so they automatically attach to the active church branch currently taking attendance instead of falling back incorrectly",
+      "Enhanced attendance Save button: eliminated turning/spinning disk icon, creating a smooth, responsive, and seamless saving experience with instant visual confirmation",
+      "Replaced Cell with LC Live across Attendance Taker: restricted LC Live exclusively to Wednesday, while allowing Joy, Enlargement, and Special services on all days of the week",
+      "Fixed member and children transfers between church branches: removed unidirectional transfer restrictions to allow moving any member or child between any church branch (UJ, LJ, K, I, and Archive)",
+      "Guaranteed atomic member updates on transfer and edit by strictly synchronizing churchId and assignedChurch and awaiting remote completion before refreshing list state",
+    ],
+  },
   {
     version: "1.7.4",
     date: "2026-09-25",
     title: "Shepherd Nomenclature Migration & Unified Prayer Accounting Synchronization",
-    badge: "Current Release",
     changes: [
       "Migrated user-facing nomenclature from 'Teachers' to 'Shepherds' across Dashboard, Attendance rosters, Member lists, Report Exports, Settings, and Outreach Hub",
       "Unified prayer time accounting across Dashboard, Prayer Wall banner, and TRACK tab, ensuring annual targets and intercession hours tally seamlessly",
