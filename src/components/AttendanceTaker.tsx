@@ -142,8 +142,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     (activeChurch === "CM" || activeChurch === "All") ? internalChurchFilter : activeChurch;
   const isCombinedView = effectiveChurch === "COMBINED";
 
-  const isPunctualityEnabledForChurch = 
-    effectiveChurch === "UJ" 
+  const isPunctualityEnabledForChurch =
+    effectiveChurch === "UJ"
       ? data.settings.features?.[effectiveChurch]?.punctuality ?? false
       : false;
 
@@ -331,7 +331,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         setSpecialEventName(loadedEventName);
         serviceMapToScan = combinedServices;
       }
-      
+
       let joyCount = 0;
       let engCount = 0;
       let specialCount = 0;
@@ -340,12 +340,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         else if (s === "ENLARGEMENT") engCount++;
         else if (s === "SPECIAL") specialCount++;
       });
-      
+
       let autoService = null;
       if (engCount > 0 && joyCount === 0) autoService = "ENLARGEMENT";
       else if (specialCount > 0 && joyCount === 0 && engCount === 0) autoService = "SPECIAL";
       else if (joyCount > 0) autoService = "JOY";
-      
+
       if (autoService) {
         setCurrentService(autoService);
       }
@@ -480,16 +480,16 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     if (bulkSelectedIds.size === 0) return;
     const newPresent = new Set(presentIds);
     const newServiceMap = { ...serviceMap };
-    
+
     bulkSelectedIds.forEach(id => {
       newPresent.add(id);
       newServiceMap[id] = currentService;
     });
-    
+
     setPresentIds(newPresent);
     setServiceMap(newServiceMap);
     saveDraft(newPresent, punctualIds, newServiceMap);
-    
+
     setBulkSelectedIds(new Set());
     setIsBulkMode(false);
   };
@@ -948,11 +948,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   setSelectedDate(getActiveSunday());
                   if (currentService === "CELL") setCurrentService("JOY");
                 }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                  !isWednesday(selectedDate)
-                    ? "bg-white text-indigo-700 shadow-xs"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${!isWednesday(selectedDate)
+                  ? "bg-white text-indigo-700 shadow-xs"
+                  : "text-slate-500 hover:text-slate-700"
+                  }`}
                 title="Switch to Sunday Service"
               >
                 <Sun size={14} className={!isWednesday(selectedDate) ? "text-amber-500" : "text-slate-400"} />
@@ -964,11 +963,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   setSelectedDate(getActiveWednesday());
                   setCurrentService("CELL");
                 }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                  isWednesday(selectedDate)
-                    ? "bg-emerald-600 text-white shadow-xs"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${isWednesday(selectedDate)
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "text-slate-500 hover:text-slate-700"
+                  }`}
                 title="Switch to Wednesday LC Live"
               >
                 <span>🌿</span>
@@ -1028,11 +1026,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className={`flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white rounded-xl transition-all active:scale-95 shrink-0 ${
-                successMsg && !successMsg.includes("Error")
-                  ? "bg-emerald-600 shadow-lg shadow-emerald-200"
-                  : "bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 disabled:opacity-70"
-              }`}
+              className={`flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white rounded-xl transition-all active:scale-95 shrink-0 ${successMsg && !successMsg.includes("Error")
+                ? "bg-emerald-600 shadow-lg shadow-emerald-200"
+                : "bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 disabled:opacity-70"
+                }`}
             >
               {successMsg && !successMsg.includes("Error") ? (
                 <Check size={18} />
@@ -1090,34 +1087,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           </div>
         </div>
 
-        {/* Wednesday LC Live Banner */}
-        {isWednesday(selectedDate) && currentService === "CELL" && (
-          <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200/80 rounded-2xl p-3 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
-            <div className="flex items-center gap-3">
-              <span className="w-9 h-9 rounded-xl bg-emerald-100/90 text-emerald-800 flex items-center justify-center text-lg shrink-0 shadow-2xs">
-                🌿
-              </span>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-extrabold text-emerald-950 uppercase tracking-wide">
-                    Wednesday LC Live Attendance
-                  </span>
-                  <span className="text-[10px] bg-emerald-200/80 text-emerald-900 font-bold px-2 py-0.5 rounded-full">
-                    Midweek
-                  </span>
-                </div>
-                <p className="text-emerald-850 text-[11px] font-medium mt-0.5">
-                  Attendees here will be automatically inserted into the <strong>Total LC Live Attendance</strong> on the next Sunday's Branch Coordinator report ({formatDateDDMMYYYY(targetSundayForCell)}). Excluded from Sunday dashboard metrics.
-                </p>
-              </div>
-            </div>
-            <div className="shrink-0 self-end sm:self-center">
-              <span className="text-[11px] font-bold bg-white text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg shadow-2xs inline-block">
-                For Sunday: {formatDateDDMMYYYY(targetSundayForCell)}
-              </span>
-            </div>
-          </div>
-        )}
+
 
         {/* Row 2: Search & Filters */}
         <div className="bg-white/80 backdrop-blur-md rounded-2xl md:rounded-3xl p-2 shadow-sm border border-slate-100">
@@ -1174,10 +1144,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               {(attendanceMode === "STAFF"
                 ? [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER]
                 : [
-                    MemberType.MEMBER,
-                    MemberType.FNF,
-                    MemberType.VISITOR,
-                  ]
+                  MemberType.MEMBER,
+                  MemberType.FNF,
+                  MemberType.VISITOR,
+                ]
               ).map((type) => (
                 <button
                   key={type}
@@ -1230,7 +1200,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             >
               <X size={18} />
             </button>
-            
+
             <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
               <UserPlus className="text-indigo-600" size={22} />
               Add First Timer(s)
@@ -1238,7 +1208,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             <p className="text-xs text-slate-500 mb-3">
               Add one or multiple First Timers to directory and mark them present for this {isWednesdayCell ? "Wednesday" : "Sunday"} ({formatDateDDMMYYYY(selectedDate)}). Type or paste names separated by new lines or commas.
             </p>
-            
+
             {newMemberNames.map((name, index) => (
               <div key={index} className="flex gap-2 mb-2">
                 <input
@@ -1272,7 +1242,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                 )}
               </div>
             ))}
-            
+
             <button
               onClick={() => setNewMemberNames([...newMemberNames, ""])}
               className="w-full py-2.5 mb-4 text-sm font-semibold text-indigo-600 border border-indigo-100 border-dashed hover:bg-indigo-50 hover:border-indigo-200 rounded-xl transition-colors flex items-center justify-center gap-2"
@@ -1330,7 +1300,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                 </span>
               </div>
             </div>
-            
+
             <div className="flex gap-2">
               <button
                 onClick={() => setIsAddingFNF(false)}
@@ -1440,57 +1410,56 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                       >
                         {member.name}
                       </h4>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      <p
-                        className={`text-xs font-medium uppercase tracking-wider ${isPresent ? "opacity-80" : "text-slate-400"}`}
-                      >
-                        {member.type === "Visitor" ? "First Timer" : member.type}
-                      </p>
-                      {(isCombinedView || effectiveChurch === "CM") && (
-                        <span
-                          className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isPresent ? "bg-white/30" : "bg-slate-100 text-slate-500"}`}
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        <p
+                          className={`text-xs font-medium uppercase tracking-wider ${isPresent ? "opacity-80" : "text-slate-400"}`}
                         >
-                          {member.assignedChurch}
-                        </span>
-                      )}
-                    </div>
+                          {member.type === "Visitor" ? "First Timer" : member.type}
+                        </p>
+                        {(isCombinedView || effectiveChurch === "CM") && (
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isPresent ? "bg-white/30" : "bg-slate-100 text-slate-500"}`}
+                          >
+                            {member.assignedChurch}
+                          </span>
+                        )}
+                      </div>
 
-                    {/* Service Badge if Present */}
-                    {isPresent && assignedService && (
-                      <div
-                        className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase border ${
-                          assignedService === "CELL"
+                      {/* Service Badge if Present */}
+                      {isPresent && assignedService && (
+                        <div
+                          className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase border ${assignedService === "CELL"
                             ? "bg-emerald-100 text-emerald-800 border-emerald-200"
                             : assignedService === "JOY"
                               ? "bg-amber-100 text-amber-700 border-amber-200"
                               : assignedService === "ENLARGEMENT"
                                 ? "bg-sky-100 text-sky-700 border-sky-200"
                                 : "bg-purple-100 text-purple-700 border-purple-200"
-                        }`}
-                      >
-                        {assignedService === "CELL" ? (
-                          <>
-                            <span className="text-[11px]">🌿</span>
-                            <span>LC Live</span>
-                          </>
-                        ) : assignedService === "JOY" ? (
-                          <>
-                            <Sun size={10} />
-                            <span>JOY</span>
-                          </>
-                        ) : assignedService === "ENLARGEMENT" ? (
-                          <>
-                            <Zap size={10} />
-                            <span>Enlargement</span>
-                          </>
-                        ) : (
-                          <>
-                            <Crown size={10} />
-                            <span>Special</span>
-                          </>
-                        )}
-                      </div>
-                    )}
+                            }`}
+                        >
+                          {assignedService === "CELL" ? (
+                            <>
+                              <span className="text-[11px]">🌿</span>
+                              <span>LC Live</span>
+                            </>
+                          ) : assignedService === "JOY" ? (
+                            <>
+                              <Sun size={10} />
+                              <span>JOY</span>
+                            </>
+                          ) : assignedService === "ENLARGEMENT" ? (
+                            <>
+                              <Zap size={10} />
+                              <span>Enlargement</span>
+                            </>
+                          ) : (
+                            <>
+                              <Crown size={10} />
+                              <span>Special</span>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div
@@ -1515,13 +1484,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                             (assignedService || currentService),
                         ).length >= 3
                       }
-                      className={`p-1.5 rounded-lg transition-all ${
-                        isPunctual
-                          ? "bg-amber-400 text-white shadow-sm"
-                          : isPresent
-                            ? "bg-black/10 hover:bg-black/20 text-current disabled:opacity-30 disabled:cursor-not-allowed"
-                            : "bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-500 disabled:opacity-30 disabled:cursor-not-allowed"
-                      }`}
+                      className={`p-1.5 rounded-lg transition-all ${isPunctual
+                        ? "bg-amber-400 text-white shadow-sm"
+                        : isPresent
+                          ? "bg-black/10 hover:bg-black/20 text-current disabled:opacity-30 disabled:cursor-not-allowed"
+                          : "bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                        }`}
                     >
                       <motion.div
                         animate={
@@ -1623,15 +1591,15 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               {(() => {
                 const options = isAdmin
                   ? [
-                      { v: "2_WEEKS", l: "2 Weeks" },
-                      { v: "MONTH", l: "This Month" },
-                      { v: "QUARTER", l: "Quarter" },
-                      { v: "ALL_TIME", l: "All Time" },
-                    ]
+                    { v: "2_WEEKS", l: "2 Weeks" },
+                    { v: "MONTH", l: "This Month" },
+                    { v: "QUARTER", l: "Quarter" },
+                    { v: "ALL_TIME", l: "All Time" },
+                  ]
                   : [
-                      { v: "MONTH", l: "This Month" },
-                      { v: "ALL_TIME", l: "All Time" },
-                    ];
+                    { v: "MONTH", l: "This Month" },
+                    { v: "ALL_TIME", l: "All Time" },
+                  ];
 
                 return options.map(({ v, l }) => {
                   const isActive =

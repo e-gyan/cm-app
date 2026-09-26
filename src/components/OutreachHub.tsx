@@ -2319,9 +2319,9 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
           const focusChurchId =
             isTeacher &&
-            currentUser.assignedChurch &&
-            currentUser.assignedChurch !== "All" &&
-            currentUser.assignedChurch !== "CM"
+              currentUser.assignedChurch &&
+              currentUser.assignedChurch !== "All" &&
+              currentUser.assignedChurch !== "CM"
               ? currentUser.assignedChurch
               : activeChurch;
 
@@ -2329,10 +2329,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
             string,
             { id: string; name: string; ageRange: string }
           > = {
-            UJ: { id: "UJ", name: "Upper Junior (UJ)", ageRange: "Ages 9-12" },
-            LJ: { id: "LJ", name: "Lower Junior (LJ)", ageRange: "Ages 6-8" },
-            K: { id: "K", name: "Kingdom (K)", ageRange: "Ages 2-5" },
-            I: { id: "I", name: "Infants (I)", ageRange: "Ages 0-1" },
+            UJ: { id: "UJ", name: "UJ", ageRange: "Ages 9-12" },
+            LJ: { id: "LJ", name: "LJ", ageRange: "Ages 6-8" },
+            K: { id: "K", name: "K", ageRange: "Ages 2-5" },
+            I: { id: "I", name: "I", ageRange: "Ages 0-1" },
             All: { id: "All", name: "All Churches", ageRange: "Ages 0-12" },
             CM: { id: "CM", name: "All CM Churches", ageRange: "Ages 0-12" },
           };

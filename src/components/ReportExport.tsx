@@ -857,7 +857,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
     const availableChurches = Array.isArray(data.settings?.churches)
       ? data.settings?.churches
-      : ["UJ", "LJ", "K", "I", "N"];
+      : ["UJ", "LJ", "K", "I"];
 
     // Helper for outreach stats on selectedDate
     const getOutreachCounts = (filterFn: (item: any) => boolean) => {
@@ -967,7 +967,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
           report += `• Services: Joy (${zoneJoy}) | Enlargement (${zoneEnlargement})` + (zoneSpecial > 0 ? ` | Special (${zoneSpecial})` : "") + `\n`;
           report += `• Branches: ${branchSummaries.join(" | ") || "No branches"}\n`;
           report += `• First Timers: ${zoneFirstTimers} | Shepherds: ${zoneTeachers}\n`;
-          report += `• Outreach and Prayer: ${zoneOutreach.visits} Visits | ${zoneOutreach.calls} Calls | ${zonePrayer} Prayers\n\n`;
+
         }
 
         grandAttendance += zoneAttendance;
@@ -983,8 +983,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       report += `• Total Platform Attendance: ${grandAttendance}\n`;
       report += `• Total First Timers: ${grandFirstTimers}\n`;
       report += `• Total Active Shepherds: ${grandTeachers}\n`;
-      report += `• Total Outreach Activity: ${grandVisits} Visits | ${grandCalls} Calls\n`;
-      report += `• Total Prayers Completed: ${grandPrayers}\n`;
+
 
       if (!hasData) {
         report += `\n_No attendance or outreach data recorded yet for this date._`;
@@ -1129,8 +1128,8 @@ const ReportExport: React.FC<ReportExportProps> = ({
         bcReportState.totalSoulsWonOverride !== undefined && bcReportState.totalSoulsWonOverride !== ""
           ? bcReportState.totalSoulsWonOverride
           : (Number(bcReportState.altarCall || 0) +
-             Number(bcReportState.cellEvangelism || 0) +
-             Number(bcReportState.outreachSouls || 0));
+            Number(bcReportState.cellEvangelism || 0) +
+            Number(bcReportState.outreachSouls || 0));
 
       const sharedMessage = (bcReportState.messageTitle || bcReportState.messageK || "").trim();
 
@@ -1153,8 +1152,8 @@ const ReportExport: React.FC<ReportExportProps> = ({
       r += `MEMBERS:\n`;
       r += `I CHURCH - ${serviceAttendance.countI}\n`;
       r += `K CHURCH - ${serviceAttendance.countK}\n`;
-      r += `L CHURCH - ${serviceAttendance.countL}\n`;
-      r += `U CHURCH - ${serviceAttendance.countU}\n`;
+      r += `LJ CHURCH - ${serviceAttendance.countL}\n`;
+      r += `UJ CHURCH - ${serviceAttendance.countU}\n`;
       if (serviceAttendance.countN > 0) {
         r += `N CHURCH - ${serviceAttendance.countN}\n`;
       }
@@ -2653,7 +2652,7 @@ function AnnualViewTab({ selectedDate, data, activeChurch, CHURCH_NAMES }: any) 
       d.setDate(d.getDate() + 7);
     }
 
-    const availableChurches = ["UJ", "LJ", "K", "I", "N"];
+    const availableChurches = ["UJ", "LJ", "K", "I"];
     const churchesToCheck = activeChurch === "CM" ? availableChurches : [activeChurch];
 
     sundays.forEach((sunday: any) => {
