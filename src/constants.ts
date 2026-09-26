@@ -82,7 +82,7 @@ export const APP_FEATURES_REGISTRY: FeatureDef[] = [
     subfeatures: [
       { id: "attendance_breakdown", name: "Attendance Breakdown", description: "Monthly attendance trends, frequency distributions, and peak attendance days." },
       { id: "age_demographics", name: "Age Demographics", description: "Detailed color-coded age bracket charts per church." },
-      { id: "outreach_intelligence", name: "Shepherd Outreach Intelligence", description: "Data and metrics focused on the logged-in shepherd and their assigned kids." },
+      { id: "outreach_intelligence", name: "Shepherd Outreach Intelligence", description: "Data and metrics focused on the logged-in shepherd and their assigned children." },
       { id: "financial_trend", name: "Financial Trend", description: "Summary graphs of incoming giving and collections across ministries." },
       { id: "export_data", name: "Export Data", description: "One-tap export of church demographic rosters and lists." },
     ],

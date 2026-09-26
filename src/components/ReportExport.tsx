@@ -1880,15 +1880,15 @@ const ReportExport: React.FC<ReportExportProps> = ({
               Generate updates and manage system data.
             </p>
           </div>
-          <div className="flex bg-slate-100 p-1 rounded-xl w-full md:w-auto overflow-x-auto">
+          <div className="flex bg-slate-100 p-1 rounded-xl w-full md:w-auto overflow-x-auto hide-scrollbar gap-1">
             {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex-1 flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
               >
-                <tab.icon size={16} />{" "}
-                <span className="hidden sm:inline">{tab.label}</span>
+                <tab.icon size={15} />{" "}
+                <span>{tab.label}</span>
               </button>
             ))}
           </div>
@@ -1915,8 +1915,8 @@ const ReportExport: React.FC<ReportExportProps> = ({
           <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-2">
             {/* Top Controls: Date, Format, Allocation Toggle */}
             <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-              <div className="flex items-center gap-2 flex-1">
-                <div className="relative flex-1 max-w-xs">
+              <div className="flex flex-wrap items-center gap-2 flex-1">
+                <div className="relative flex-1 min-w-[140px] max-w-xs">
                   <Calendar
                     className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                     size={16}
@@ -1929,16 +1929,17 @@ const ReportExport: React.FC<ReportExportProps> = ({
                   />
                 </div>
                 {isAdmin && currentUser.role !== "TEACHER" && (
-                  <div className="flex bg-slate-200/80 p-1 rounded-xl text-xs font-bold">
+                  <div className="flex bg-slate-200/80 p-1 rounded-xl text-xs font-bold shrink-0">
                     <button
                       onClick={() => setReportFormat("BRANCH_COORDINATOR")}
-                      className={`px-3 py-1 rounded-lg transition-all ${reportFormat === "BRANCH_COORDINATOR" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
+                      className={`px-2.5 sm:px-3 py-1 rounded-lg transition-all ${reportFormat === "BRANCH_COORDINATOR" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
                     >
-                      Branch Coordinator (Mega Center)
+                      <span className="hidden sm:inline">Branch Coordinator (Mega Center)</span>
+                      <span className="sm:hidden">Coordinator</span>
                     </button>
                     <button
                       onClick={() => setReportFormat("DEFAULT")}
-                      className={`px-3 py-1 rounded-lg transition-all ${reportFormat === "DEFAULT" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
+                      className={`px-2.5 sm:px-3 py-1 rounded-lg transition-all ${reportFormat === "DEFAULT" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
                     >
                       Summary / Detail
                     </button>

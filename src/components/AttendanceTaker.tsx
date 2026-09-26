@@ -22,6 +22,8 @@ import {
   Zap,
   Filter,
   Info,
+  Users,
+  UserCheck,
 } from "lucide-react";
 import { motion } from "motion/react";
 import {
@@ -53,6 +55,16 @@ interface AttendanceTakerProps {
 const formatDateDDMMYYYY = (dateStr: string) => {
   const d = new Date(dateStr);
   return d.toLocaleDateString("en-GB"); // DD/MM/YYYY
+};
+
+const CHURCH_DISPLAY_NAMES: Record<string, string> = {
+  UJ: "Upper Junior (UJ)",
+  LJ: "Lower Junior (LJ)",
+  K: "Kindergarten (K)",
+  I: "Infants (I)",
+  N: "Nursery (N)",
+  CM: "Children Ministry",
+  All: "All Churches",
 };
 
 const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
@@ -138,8 +150,13 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   }, [currentService]);
 
   // Determine the effective church context
-  const effectiveChurch =
-    (activeChurch === "CM" || activeChurch === "All") ? internalChurchFilter : activeChurch;
+  const canFilterChurch =
+    activeChurch === "CM" ||
+    activeChurch === "All" ||
+    isLeadership ||
+    currentUser.role === "BRANCH_COORDINATOR";
+
+  const effectiveChurch = canFilterChurch ? internalChurchFilter : activeChurch;
   const isCombinedView = effectiveChurch === "COMBINED";
 
   const isPunctualityEnabledForChurch =
@@ -886,7 +903,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   }, [attendanceMode, availableChurches]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-130px)] md:h-[calc(100vh-140px)] relative overflow-hidden">
+    <div className="flex flex-col min-h-[calc(100dvh-170px)] md:h-[calc(100vh-140px)] relative md:overflow-hidden pb-10 md:pb-0">
       {/* 1. TOP BAR */}
       <div className="shrink-0 space-y-3 z-20 pb-2">
         {/* SERVICE TOGGLE (Visible only in Member Mode for UJ, I, K, LJ) */}
@@ -938,8 +955,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           )}
 
         {/* Row 1: Main Controls */}
-        <div className="bg-white rounded-3xl p-3 md:p-4 shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-3">
-          <div className="flex flex-wrap sm:flex-nowrap gap-2 w-full items-center">
+        <div className="bg-white rounded-3xl p-3 md:p-4 shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
+          <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
             {/* Sunday vs Wednesday Meeting Switcher */}
             <div className="flex bg-slate-100 p-1 rounded-2xl shrink-0 border border-slate-200/60 shadow-2xs">
               <button
@@ -948,14 +965,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   setSelectedDate(getActiveSunday());
                   if (currentService === "CELL") setCurrentService("JOY");
                 }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${!isWednesday(selectedDate)
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${!isWednesday(selectedDate)
                   ? "bg-white text-indigo-700 shadow-xs"
                   : "text-slate-500 hover:text-slate-700"
                   }`}
                 title="Switch to Sunday Service"
               >
                 <Sun size={14} className={!isWednesday(selectedDate) ? "text-amber-500" : "text-slate-400"} />
-                <span className="hidden xs:inline">Sunday</span>
+                <span>Sunday</span>
               </button>
               <button
                 type="button"
@@ -963,21 +980,49 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   setSelectedDate(getActiveWednesday());
                   setCurrentService("CELL");
                 }}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${isWednesday(selectedDate)
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${isWednesday(selectedDate)
                   ? "bg-emerald-600 text-white shadow-xs"
                   : "text-slate-500 hover:text-slate-700"
                   }`}
                 title="Switch to Wednesday LC Live"
               >
                 <span>🌿</span>
-                <span className="hidden xs:inline">LC Live</span>
+                <span>LC Live</span>
               </button>
             </div>
 
-            {activeChurch === "CM" && (
-              <div className="relative w-28 md:w-48 shrink-0">
-                <div className="absolute inset-y-0 left-0 flex items-center pl-2 pointer-events-none text-indigo-600">
-                  <Crown size={16} />
+            {/* Members vs Shepherds Mode Toggle (Accessible on all screen sizes) */}
+            <div className="flex bg-slate-100 p-1 rounded-2xl shrink-0 border border-slate-200/60 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setAttendanceMode("MEMBERS");
+                  setFilterType("All");
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${attendanceMode === "MEMBERS" ? "bg-white shadow-xs text-indigo-700" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                <Users size={13} className={attendanceMode === "MEMBERS" ? "text-indigo-600" : "text-slate-400"} />
+                <span>Members</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAttendanceMode("STAFF");
+                  setFilterType("All");
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${attendanceMode === "STAFF" ? "bg-purple-600 text-white shadow-xs" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                <UserCheck size={13} className={attendanceMode === "STAFF" ? "text-white" : "text-slate-400"} />
+                <span>Shepherds</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+            {canFilterChurch && (
+              <div className="relative min-w-[130px] sm:w-44 shrink-0">
+                <div className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-indigo-600">
+                  <Crown size={15} />
                 </div>
                 <select
                   value={internalChurchFilter}
@@ -986,104 +1031,86 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                       e.target.value as Church | "COMBINED",
                     )
                   }
-                  className="w-full bg-indigo-50 border border-indigo-100 text-indigo-900 text-xs md:text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block pl-8 p-3 appearance-none cursor-pointer"
+                  aria-label="Filter Church"
+                  className="w-full bg-indigo-50 border border-indigo-200 text-indigo-950 text-xs sm:text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block pl-8 pr-3 py-2.5 appearance-none cursor-pointer"
                 >
-                  <option value="COMBINED">View Combined</option>
-                  {churchOptions.map((church) => (
+                  <option value="COMBINED">All Churches</option>
+                  {availableChurches.map((church) => (
                     <option key={church} value={church}>
-                      {church}
+                      {CHURCH_DISPLAY_NAMES[church] || church}
                     </option>
                   ))}
                 </select>
               </div>
             )}
 
-            <div className="relative flex-1 min-w-0">
+            <div className="relative flex-1 min-w-[130px]">
               <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
-                <Calendar size={16} />
+                <Calendar size={15} />
               </div>
               <input
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs md:text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-9 p-3 appearance-none cursor-pointer"
+                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs sm:text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-8 pr-2 py-2.5 appearance-none cursor-pointer"
               />
             </div>
 
             {enablePunctuality && (
               <div
-                className="flex items-center gap-1.5 px-3 py-3 bg-amber-50 text-amber-700 rounded-xl border border-amber-200 shrink-0 font-bold text-sm"
+                className="flex items-center gap-1 px-2.5 py-2.5 bg-amber-50 text-amber-700 rounded-xl border border-amber-200 shrink-0 font-bold text-xs sm:text-sm"
                 title="Punctual for current service"
               >
-                <Trophy size={16} className="text-amber-500" />
+                <Trophy size={15} className="text-amber-500" />
                 <span>{punctualForCurrentService}</span>
-                <span className="hidden sm:inline text-xs font-medium text-amber-600">
+                <span className="hidden lg:inline text-[11px] font-medium text-amber-600">
                   Punctual
                 </span>
               </div>
             )}
 
+            {enablePunctuality && (
+              <button
+                type="button"
+                onClick={() => setShowLeaderboard(true)}
+                className="p-2.5 text-amber-600 bg-amber-50 rounded-xl hover:bg-amber-100 transition-colors border border-amber-200 shrink-0"
+                title="Leaderboard"
+              >
+                <Trophy size={18} />
+              </button>
+            )}
+
+            {attendanceMode === "MEMBERS" && (
+              <button
+                type="button"
+                onClick={() => setIsAddingFNF(!isAddingFNF)}
+                className="p-2.5 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-200 shrink-0"
+                title="Add First Timer"
+              >
+                <UserPlus size={18} />
+              </button>
+            )}
+
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className={`flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white rounded-xl transition-all active:scale-95 shrink-0 ${successMsg && !successMsg.includes("Error")
-                ? "bg-emerald-600 shadow-lg shadow-emerald-200"
-                : "bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 disabled:opacity-70"
+              className={`flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-white rounded-xl transition-all active:scale-95 shrink-0 ${successMsg && !successMsg.includes("Error")
+                ? "bg-emerald-600 shadow-md shadow-emerald-200"
+                : "bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-70"
                 }`}
             >
               {successMsg && !successMsg.includes("Error") ? (
-                <Check size={18} />
+                <Check size={16} />
               ) : (
-                <Save size={18} />
+                <Save size={16} />
               )}
-              <span className="hidden sm:inline">
+              <span>
                 {isSaving ? "Saving..." : successMsg && !successMsg.includes("Error") ? "Saved!" : "Save"}
               </span>
-              <span className="bg-white/20 px-1.5 py-0.5 rounded text-xs font-mono">
+              <span className="bg-white/20 px-1.5 py-0.5 rounded text-[11px] font-mono">
                 {totalSavedInState}
               </span>
             </button>
-          </div>
-
-          <div className="hidden md:flex items-center gap-2 w-full md:w-auto">
-            <div className="flex bg-slate-100 p-1 rounded-xl mr-2">
-              <button
-                onClick={() => {
-                  setAttendanceMode("MEMBERS");
-                  setFilterType("All");
-                }}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${attendanceMode === "MEMBERS" ? "bg-white shadow-sm text-indigo-700" : "text-slate-500"}`}
-              >
-                Members
-              </button>
-              <button
-                onClick={() => {
-                  setAttendanceMode("STAFF");
-                  setFilterType("All");
-                }}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${attendanceMode === "STAFF" ? "bg-white shadow-sm text-purple-700" : "text-slate-500"}`}
-              >
-                Shepherds
-              </button>
-            </div>
-            {enablePunctuality && (
-              <button
-                onClick={() => setShowLeaderboard(true)}
-                className="p-3 text-amber-600 bg-amber-50 rounded-xl hover:bg-amber-100 transition-colors border border-amber-100"
-                title="Leaderboard"
-              >
-                <Trophy size={20} />
-              </button>
-            )}
-            {attendanceMode === "MEMBERS" && (
-              <button
-                onClick={() => setIsAddingFNF(!isAddingFNF)}
-                className="p-3 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-100"
-                title="Add First Timer"
-              >
-                <UserPlus size={20} />
-              </button>
-            )}
           </div>
         </div>
 
@@ -1116,30 +1143,44 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
             </div>
 
             <div className="flex gap-2 overflow-x-auto pb-1 px-1 hide-scrollbar items-center">
-              <div className="md:hidden flex items-center gap-1 pr-2 border-r border-slate-200 mr-1 shrink-0">
-                {enablePunctuality && (
+              {canFilterChurch && (
+                <div className="flex items-center gap-1 pr-2 border-r border-slate-200 mr-1 shrink-0">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1 hidden sm:inline">
+                    Church:
+                  </span>
                   <button
-                    onClick={() => setShowLeaderboard(true)}
-                    className="p-1.5 text-amber-600 bg-amber-50 rounded-lg border border-amber-100"
+                    type="button"
+                    onClick={() => setInternalChurchFilter("COMBINED")}
+                    className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                      internalChurchFilter === "COMBINED"
+                        ? "bg-indigo-600 text-white shadow-xs"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
                   >
-                    <Trophy size={18} />
+                    All
                   </button>
-                )}
-                {attendanceMode === "MEMBERS" && (
-                  <button
-                    onClick={() => setIsAddingFNF(!isAddingFNF)}
-                    className="p-1.5 text-indigo-600 bg-indigo-50 rounded-lg border border-indigo-100"
-                  >
-                    <UserPlus size={18} />
-                  </button>
-                )}
-              </div>
+                  {availableChurches.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setInternalChurchFilter(c as Church)}
+                      className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${
+                        internalChurchFilter === c
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                          : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                      }`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <button
                 onClick={() => setFilterType("All")}
-                className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${filterType === "All" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${filterType === "All" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
               >
-                All
+                All Status
               </button>
               {(attendanceMode === "STAFF"
                 ? [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER]
@@ -1152,24 +1193,11 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                 <button
                   key={type}
                   onClick={() => setFilterType(type)}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterType === type ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterType === type ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
                 >
                   {type === MemberType.VISITOR ? "First Timer" : type}
                 </button>
               ))}
-
-              <div className="md:hidden flex items-center gap-1 border-l pl-2 ml-1">
-                <button
-                  onClick={() => {
-                    setAttendanceMode(
-                      attendanceMode === "MEMBERS" ? "STAFF" : "MEMBERS",
-                    );
-                  }}
-                  className={`px-2 py-1 text-[10px] font-bold rounded border ${attendanceMode === "STAFF" ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-white text-slate-500"}`}
-                >
-                  {attendanceMode === "MEMBERS" ? "Shepherds?" : "Mems?"}
-                </button>
-              </div>
             </div>
           </div>
         </div>

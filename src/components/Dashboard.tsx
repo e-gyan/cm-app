@@ -747,7 +747,7 @@ const AdminDashboard: React.FC<{
                 {globalOutreachStats.totalAssignedKids} Children &bull; {globalOutreachStats.activeTeachersCount} Shepherds
               </span>
               <span className="inline-flex items-center gap-1 px-3 py-1 bg-violet-50 text-violet-700 text-xs font-bold rounded-full border border-violet-100">
-                ~{globalOutreachStats.avgKidsPerTeacher} kids / shepherd
+                ~{globalOutreachStats.avgKidsPerTeacher} children / shepherd
               </span>
             </div>
           </div>
@@ -779,7 +779,7 @@ const AdminDashboard: React.FC<{
                   />
                 </div>
                 <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500">
-                  <span>{globalOutreachStats.uniqueVisitedKidsCount} of {globalOutreachStats.totalAssignedKids} kids reached</span>
+                  <span>{globalOutreachStats.uniqueVisitedKidsCount} of {globalOutreachStats.totalAssignedKids} children reached</span>
                   <span className="text-blue-700 font-bold">{globalOutreachStats.visitProgressPct}% goal</span>
                 </div>
               </div>
@@ -811,7 +811,7 @@ const AdminDashboard: React.FC<{
                   />
                 </div>
                 <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500">
-                  <span>{globalOutreachStats.uniqueCalledKidsCount} of {globalOutreachStats.totalAssignedKids} kids reached</span>
+                  <span>{globalOutreachStats.uniqueCalledKidsCount} of {globalOutreachStats.totalAssignedKids} children reached</span>
                   <span className="text-emerald-700 font-bold">{globalOutreachStats.callProgressPct}% goal</span>
                 </div>
               </div>
@@ -1558,7 +1558,7 @@ const ChurchDashboard: React.FC<{
         if (curAtt > prevAtt) {
           tips.push({
             id: tips.length + 1,
-            text: `Attendance is UP! You had ${curAtt} kids last Sunday vs ${prevAtt} the week before.`,
+            text: `Attendance is UP! You had ${curAtt} children last Sunday vs ${prevAtt} the week before.`,
             action: "Keep up the momentum and gamify early arrivals!"
           });
         } else if (curAtt < prevAtt) {
@@ -1861,7 +1861,7 @@ const ChurchDashboard: React.FC<{
                       {outreachStats.totalChurchKids} Children &bull; {outreachStats.totalEligibleTeachers} Shepherds
                     </span>
                     <span className="inline-flex items-center gap-1 px-3 py-1 bg-violet-50 text-violet-700 text-xs font-bold rounded-full border border-violet-100">
-                      ~{outreachStats.avgKidsPerTeacher} kids / shepherd
+                      ~{outreachStats.avgKidsPerTeacher} children / shepherd
                     </span>
                   </>
                 )}
@@ -1895,7 +1895,7 @@ const ChurchDashboard: React.FC<{
                     />
                   </div>
                   <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500">
-                    <span>{outreachStats.uniqueVisitedKidsCount} of {outreachStats.assignedCount} kids reached</span>
+                    <span>{outreachStats.uniqueVisitedKidsCount} of {outreachStats.assignedCount} children reached</span>
                     <span className="text-blue-700 font-bold">{outreachStats.visitProgressPct}% goal</span>
                   </div>
                 </div>
@@ -1927,7 +1927,7 @@ const ChurchDashboard: React.FC<{
                     />
                   </div>
                   <div className="flex justify-between items-center text-[11px] font-semibold text-slate-500">
-                    <span>{outreachStats.uniqueCalledKidsCount} of {outreachStats.assignedCount} kids reached</span>
+                    <span>{outreachStats.uniqueCalledKidsCount} of {outreachStats.assignedCount} children reached</span>
                     <span className="text-emerald-700 font-bold">{outreachStats.callProgressPct}% goal</span>
                   </div>
                 </div>

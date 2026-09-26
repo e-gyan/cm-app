@@ -1812,7 +1812,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                   </div>
                   <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
                     <span className="text-xs font-bold text-slate-400">
-                      {sortedVisits.nextUp.assignedMemberIds.length} Kids
+                      {sortedVisits.nextUp.assignedMemberIds.length} Children
                       Assigned
                     </span>
                     <div className="flex gap-2">

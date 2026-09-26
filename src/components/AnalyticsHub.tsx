@@ -1501,7 +1501,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                 Management Overview: Service Breakdown
               </h3>
               <div className="text-xs text-slate-400">
-                Total Kids Aggregated over Period
+                Total Children Aggregated over Period
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -1546,7 +1546,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                           <div className="flex flex-col gap-1 text-xs">
                             <span className="text-slate-600 font-medium">
                               {stats.services["ENLARGEMENT"]?.kidsCount || 0}{" "}
-                              Kids
+                              Children
                             </span>
                             <span className="text-indigo-600 font-bold">
                               {stats.services["ENLARGEMENT"]?.teachersCount ||
@@ -1558,7 +1558,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                         <td className="px-4 py-4">
                           <div className="flex flex-col gap-1 text-xs">
                             <span className="text-slate-600 font-medium">
-                              {stats.services["JOY"]?.kidsCount || 0} Kids
+                              {stats.services["JOY"]?.kidsCount || 0} Children
                             </span>
                             <span className="text-indigo-600 font-bold">
                               {stats.services["JOY"]?.teachersCount || 0}{" "}
@@ -1569,7 +1569,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                         <td className="px-4 py-4">
                           <div className="flex flex-col gap-1 text-xs">
                             <span className="text-slate-600 font-medium">
-                              {stats.services["SPECIAL"]?.kidsCount || 0} Kids
+                              {stats.services["SPECIAL"]?.kidsCount || 0} Children
                             </span>
                             <span className="text-indigo-600 font-bold">
                               {stats.services["SPECIAL"]?.teachersCount || 0}{" "}
@@ -1627,7 +1627,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                 >
                   {outreachIntel.availableTeachers.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.name} ({t.assignedCount} kids)
+                      {t.name} ({t.assignedCount} children)
                     </option>
                   ))}
                 </select>
@@ -1651,7 +1651,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                     Visitation Coverage
                   </h4>
                   <p className="text-xs text-slate-400">
-                    Assigned kids visited in period
+                    Assigned children visited in period
                   </p>
                 </div>
                 <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
@@ -1664,7 +1664,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                   {outreachIntel.visitCoverage}%
                 </span>
                 <span className="text-sm text-slate-400 mb-1.5 font-medium">
-                  ({outreachIntel.visitedCount} of {outreachIntel.totalEligible} assigned kids)
+                  ({outreachIntel.visitedCount} of {outreachIntel.totalEligible} assigned children)
                 </span>
               </div>
 
@@ -1694,7 +1694,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                 <div>
                   <h4 className="font-bold text-slate-700">Prayer Coverage</h4>
                   <p className="text-xs text-slate-400">
-                    Assigned kids prayed for in period
+                    Assigned children prayed for in period
                   </p>
                 </div>
                 <div className="p-2 bg-purple-50 text-purple-600 rounded-xl">
@@ -1707,7 +1707,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                   {outreachIntel.prayerCoverage}%
                 </span>
                 <span className="text-sm text-slate-400 mb-1.5 font-medium">
-                  ({outreachIntel.prayedCount} of {outreachIntel.totalEligible} assigned kids)
+                  ({outreachIntel.prayedCount} of {outreachIntel.totalEligible} assigned children)
                 </span>
               </div>
 

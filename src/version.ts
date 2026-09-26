@@ -16,16 +16,28 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.7.5";
-export const APP_RELEASE_NAME = "Attendance First Timers Persistence, Seamless Save, LC Live & Inter-Church Member Transfers";
+export const APP_VERSION = "1.7.6";
+export const APP_RELEASE_NAME = "Branch Coordinator Church Attendance Filtering, Global Children Terminology & Mobile UX Optimization";
 export const APP_BUILD_DATE = "2026-09-26";
 
 export const CHANGELOG: ReleaseLog[] = [
   {
+    version: "1.7.6",
+    date: "2026-09-26",
+    title: "Branch Coordinator Church Attendance Filtering, Global Children Terminology & Mobile UX Optimization",
+    badge: "Current Release",
+    changes: [
+      "Added church branch filtering for Branch Coordinators and Leadership in Attendance Taker: enabled department dropdown and quick-tap church pills (All, UJ, LJ, K, I) for effortless church scoping and name searching",
+      "Unified nomenclature to 'Child' and 'Children': systematically replaced all user-facing instances of 'kid' and 'kids' across Dashboard, Outreach Intelligence, Analytics tables, and service summaries",
+      "Optimized mobile screens and responsiveness in Attendance Taker: made the Members vs Shepherds mode toggle directly accessible on all screen sizes, removed mobile layout cramping, and prevented viewport clipping",
+      "Enhanced mobile card layout in Members Directory: provided full width for child avatar, details, birthdate, and promotion bars, placing action buttons in a clean, dedicated bottom bar to eliminate squished cards",
+      "Improved mobile navigation in Reports & Export: made tab titles fully legible and responsive with swipeable scroll, ensuring seamless access to WhatsApp and data management tools",
+    ],
+  },
+  {
     version: "1.7.5",
     date: "2026-09-26",
     title: "Attendance First Timers Persistence, Seamless Save, LC Live & Inter-Church Member Transfers",
-    badge: "Current Release",
     changes: [
       "Fixed adding and saving First Timers during attendance: resolved state timing race by passing newly created first timers directly into confirmSave and awaiting storage write before onUpdate refresh",
       "Fixed target church assignment for First Timers so they automatically attach to the active church branch currently taking attendance instead of falling back incorrectly",

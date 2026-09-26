@@ -1252,9 +1252,9 @@ const MembersList: React.FC<MembersListProps> = ({
                     key={member.id}
                     className="p-4 rounded-2xl border shadow-sm bg-white border-gray-100"
                   >
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-start gap-3 flex-1">
-                        <MemberAvatar member={member} size="md" className="mt-0.5" />
+                    <div className="flex flex-col">
+                      <div className="flex items-start gap-3 w-full">
+                        <MemberAvatar member={member} size="md" className="mt-0.5 shrink-0" />
                         <div className="flex-1 min-w-0">
                           <h4 className="font-bold text-gray-900 text-lg flex flex-wrap gap-2 items-center break-words">
                             {member.name}
@@ -1341,50 +1341,54 @@ const MembersList: React.FC<MembersListProps> = ({
                       </div>
 
                       {canManage && (
-                        <div className="flex flex-col gap-2 pl-2">
+                        <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
                           {!isTeacherSection && (
                             <button
                               onClick={() => setHistoryMemberId(member.id)}
-                              className="p-2 text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors shadow-sm"
+                              className="p-2 text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors shadow-2xs"
                               title="History"
                             >
-                              <LineChart size={18} />
+                              <LineChart size={17} />
                             </button>
                           )}
                           <button
                             onClick={() => openTransferModal(member)}
-                            className="p-2 text-fuchsia-600 bg-fuchsia-50 rounded-xl hover:bg-fuchsia-100 transition-colors shadow-sm"
+                            className="p-2 text-fuchsia-600 bg-fuchsia-50 rounded-xl hover:bg-fuchsia-100 transition-colors shadow-2xs"
                             title="Transfer"
                           >
-                            <ArrowRightLeft size={18} />
+                            <ArrowRightLeft size={17} />
                           </button>
                           <button
                             onClick={() => openEditModal(member)}
-                            className="p-2 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors shadow-sm"
+                            className="p-2 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors shadow-2xs"
+                            title="Edit"
                           >
-                            <Edit2 size={18} />
+                            <Edit2 size={17} />
                           </button>
                           {member.status === MemberStatus.ARCHIVED ? (
                             <>
                               <button
                                 onClick={() => restoreMember(member)}
-                                className="p-2 text-green-600 bg-green-50 rounded-xl hover:bg-green-100 transition-colors shadow-sm"
+                                className="p-2 text-green-600 bg-green-50 rounded-xl hover:bg-green-100 transition-colors shadow-2xs"
+                                title="Restore"
                               >
-                                <Undo2 size={18} />
+                                <Undo2 size={17} />
                               </button>
                               <button
                                 onClick={() => handleDeletePermanent(member)}
-                                className="p-2 text-red-600 bg-red-50 rounded-xl hover:bg-red-100 transition-colors shadow-sm"
+                                className="p-2 text-red-600 bg-red-50 rounded-xl hover:bg-red-100 transition-colors shadow-2xs"
+                                title="Delete Permanently"
                               >
-                                <Trash2 size={18} />
+                                <Trash2 size={17} />
                               </button>
                             </>
                           ) : (
                             <button
                               onClick={() => archiveMember(member)}
-                              className="p-2 text-red-400 bg-red-50 rounded-xl hover:bg-red-100 transition-colors shadow-sm"
+                              className="p-2 text-red-400 bg-red-50 rounded-xl hover:bg-red-100 transition-colors shadow-2xs"
+                              title="Archive"
                             >
-                              <Archive size={18} />
+                              <Archive size={17} />
                             </button>
                           )}
                         </div>
