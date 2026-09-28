@@ -24,6 +24,7 @@ import {
   Info,
   Users,
   UserCheck,
+  Loader2,
 } from "lucide-react";
 import { motion } from "motion/react";
 import {
@@ -32,6 +33,7 @@ import {
   saveAttendance,
   loadData,
   updateMember,
+  flushPendingWrites,
 } from "../services/storageService";
 import { sanitizeInput, determineGenderByName } from "../services/securityService";
 import { matchesScope, getScopeDisplayLabel, isStaffOrTeacher } from "../lib/teacherDivision";
@@ -159,6 +161,34 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const effectiveChurch = canFilterChurch ? internalChurchFilter : activeChurch;
   const isCombinedView = effectiveChurch === "COMBINED";
 
+  const [fnfTargetChurch, setFnfTargetChurch] = useState<Church>(() => {
+    if (effectiveChurch && availableChurches.includes(effectiveChurch as Church)) {
+      return effectiveChurch as Church;
+    }
+    if (currentUser?.assignedChurch && availableChurches.includes(currentUser.assignedChurch as Church)) {
+      return currentUser.assignedChurch as Church;
+    }
+    return "UJ";
+  });
+
+  useEffect(() => {
+    if (effectiveChurch && availableChurches.includes(effectiveChurch as Church)) {
+      setFnfTargetChurch(effectiveChurch as Church);
+    }
+  }, [effectiveChurch, availableChurches]);
+
+  const getDayNumber = (dateStr: string): number => {
+    if (!dateStr) return -1;
+    const parts = dateStr.split("-").map(Number);
+    if (parts.length < 3) return -1;
+    return new Date(parts[0], parts[1] - 1, parts[2]).getDay();
+  };
+
+  const dayOfWeek = useMemo(() => getDayNumber(selectedDate), [selectedDate]);
+  const isWednesdayDate = dayOfWeek === 3;
+  const isSundayDate = dayOfWeek === 0;
+  const isDynamicSpecialDate = Boolean(selectedDate && !isWednesdayDate && !isSundayDate);
+
   const isPunctualityEnabledForChurch =
     effectiveChurch === "UJ"
       ? data.settings.features?.[effectiveChurch]?.punctuality ?? false
@@ -175,14 +205,11 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     [currentYear],
   );
 
-  const isWednesdayCell = useMemo(
-    () => isWednesday(selectedDate),
-    [selectedDate],
-  );
+  const isWednesdayCell = isWednesdayDate;
 
   const targetSundayForCell = useMemo(
-    () => (selectedDate && isWednesday(selectedDate) ? getNextSunday(selectedDate) : ""),
-    [selectedDate],
+    () => (selectedDate && isWednesdayDate ? getNextSunday(selectedDate) : ""),
+    [selectedDate, isWednesdayDate],
   );
 
   // Helper to determine which branches are relevant based on mode and filter
@@ -215,6 +242,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           if (isTodayWed) {
             setSelectedDate(getActiveWednesday(today));
             setCurrentService("CELL");
+            setAttendanceMode("STAFF");
           } else {
             const currentSundayStr = getActiveSunday(today);
             const exists = sundaysCurrentYear.some(
@@ -223,23 +251,27 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
             if (exists) setSelectedDate(currentSundayStr);
             else setSelectedDate(sundaysCurrentYear[0].toISOString().split("T")[0]);
+            setCurrentService("JOY");
           }
         }
       }
     }
   }, [sundaysCurrentYear]);
 
-  // Synchronize service selection when date changes between Wednesday and other days
+  // Synchronize service selection and mode when date changes
   useEffect(() => {
     if (!selectedDate) return;
-    if (isWednesday(selectedDate)) {
-      if (currentService !== "CELL") {
-        setCurrentService("CELL");
-      }
+    const day = getDayNumber(selectedDate);
+    if (day === 3) {
+      // Wednesdays are for LC live only and is mainly for shepherds
+      if (currentService !== "CELL") setCurrentService("CELL");
+      setAttendanceMode("STAFF");
+    } else if (day === 0) {
+      // Sundays are for our 3 services: Joy, enlargement or special type
+      if (currentService === "CELL") setCurrentService("JOY");
     } else {
-      if (currentService === "CELL") {
-        setCurrentService("JOY");
-      }
+      // Dynamic and flexible special service for all other days
+      if (currentService !== "SPECIAL") setCurrentService("SPECIAL");
     }
   }, [selectedDate]);
 
@@ -514,11 +546,28 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const handleSave = async () => {
     if (!selectedDate || isSaving) return;
 
+    const day = getDayNumber(selectedDate);
+    const isOtherDay = day !== 0 && day !== 3;
     const hasSpecialMembers = Object.values(serviceMap).includes("SPECIAL");
-    if (
-      (currentService === "SPECIAL" || hasSpecialMembers) &&
-      !specialEventName
-    ) {
+    const isSpecialType = currentService === "SPECIAL" || hasSpecialMembers || isOtherDay;
+
+    if (isSpecialType) {
+      // Check if an existing event name was already provided for this date by any user
+      const existingWithName = data.attendance.find(
+        (r) => r.date === selectedDate && !!r.eventName?.trim()
+      );
+      const existingName =
+        existingWithName?.eventName?.trim() || specialEventName?.trim();
+
+      if (existingName) {
+        if (!specialEventName) {
+          setSpecialEventName(existingName);
+        }
+        await confirmSave();
+        return;
+      }
+
+      // If no name has been provided yet by any user, prompt user:
       setShowEventModal(true);
       return;
     }
@@ -685,6 +734,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
       if (recordsToSave.length > 0) {
         await saveAttendance(recordsToSave[0].id, recordsToSave);
+        await flushPendingWrites();
       }
 
       setSuccessMsg(hasActualChanges ? `Changes saved` : `No changes saved`);
@@ -701,21 +751,29 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   };
 
   const parsedFirstTimerNames = useMemo(() => {
-    return newMemberNames
-      .map((n) => sanitizeInput(n).trim())
-      .filter((n) => n.length > 0);
+    const rawList: string[] = [];
+    newMemberNames.forEach((n) => {
+      const pieces = n.split(/[\n,]+/);
+      pieces.forEach((p) => {
+        const cleaned = sanitizeInput(p).trim();
+        if (cleaned.length > 0) rawList.push(cleaned);
+      });
+    });
+    return Array.from(new Set(rawList));
   }, [newMemberNames]);
 
   const handleAddFNF = async () => {
     if (parsedFirstTimerNames.length === 0 || isSubmittingVisitor) return;
     setIsSubmittingVisitor(true);
     try {
-      // Auto-assign from current church view if valid, or shepherd's profile
-      const targetChurch: Church = (effectiveChurch && effectiveChurch !== "All" && effectiveChurch !== "CM")
-        ? (effectiveChurch as Church)
-        : (currentUser?.assignedChurch && currentUser?.assignedChurch !== "All" && currentUser?.assignedChurch !== "CM"
-          ? (currentUser.assignedChurch as Church)
-          : "UJ");
+      // Auto-assign from fnfTargetChurch or current church view if valid, or shepherd's profile
+      const targetChurch: Church = (fnfTargetChurch && availableChurches.includes(fnfTargetChurch))
+        ? fnfTargetChurch
+        : ((effectiveChurch && availableChurches.includes(effectiveChurch as Church))
+          ? (effectiveChurch as Church)
+          : ((currentUser?.assignedChurch && availableChurches.includes(currentUser.assignedChurch as Church))
+            ? (currentUser.assignedChurch as Church)
+            : "UJ"));
       const targetBranchId = (activeBranchId && activeBranchId !== "ALL")
         ? activeBranchId
         : (currentUser?.branchId || "");
@@ -735,7 +793,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         addedAt: Date.now()
       }));
 
+      // Immediately save to local cache and database
       await addMembers(newMembers);
+      await flushPendingWrites();
 
       const newSet = new Set(presentIds);
       const newSMap = { ...serviceMap };
@@ -903,94 +963,80 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   }, [attendanceMode, availableChurches]);
 
   return (
-    <div className="flex flex-col min-h-[calc(100dvh-170px)] md:h-[calc(100vh-140px)] relative md:overflow-hidden pb-10 md:pb-0">
-      {/* 1. TOP BAR */}
-      <div className="shrink-0 space-y-3 z-20 pb-2">
-        {/* SERVICE TOGGLE (Visible only in Member Mode for UJ, I, K, LJ) */}
-        {attendanceMode === "MEMBERS" &&
-          (effectiveChurch !== "CM" || isCombinedView) && (
-            <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100 mb-1 overflow-x-auto hide-scrollbar gap-1">
-              <button
-                onClick={() => setCurrentService("JOY")}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "JOY" ? "bg-amber-100 text-amber-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
-              >
-                <Sun
-                  size={18}
-                  fill={currentService === "JOY" ? "currentColor" : "none"}
-                />{" "}
-                Joy Service
-              </button>
-              <button
-                onClick={() => setCurrentService("ENLARGEMENT")}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "ENLARGEMENT" ? "bg-sky-100 text-sky-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
-              >
-                <Zap
-                  size={18}
-                  fill={
-                    currentService === "ENLARGEMENT" ? "currentColor" : "none"
-                  }
-                />{" "}
-                Enlargement
-              </button>
-              <button
-                onClick={() => setCurrentService("SPECIAL")}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "SPECIAL" ? "bg-purple-100 text-purple-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
-              >
-                <Crown
-                  size={18}
-                  fill={currentService === "SPECIAL" ? "currentColor" : "none"}
-                />{" "}
-                Special
-              </button>
-              {isWednesday(selectedDate) && (
-                <button
-                  onClick={() => setCurrentService("CELL")}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 px-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${currentService === "CELL" ? "bg-emerald-600 text-white shadow-sm" : "text-emerald-700 bg-emerald-50 hover:bg-emerald-100"}`}
-                >
-                  <span className="text-base">🌿</span>
-                  LC Live
-                </button>
-              )}
+    <div className="flex flex-col h-[calc(100dvh-130px)] md:h-[calc(100vh-140px)] relative overflow-hidden pb-2 md:pb-0">
+      {/* 1. TOP BAR (Static & Sticky) */}
+      <div className="shrink-0 space-y-2 z-20 pb-2 bg-slate-50/95 backdrop-blur-xs sticky top-0">
+        {/* Day-Aware Service Display */}
+        {isSundayDate && attendanceMode === "MEMBERS" && (effectiveChurch !== "CM" || isCombinedView) && (
+          <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-slate-100 mb-1 overflow-x-auto hide-scrollbar gap-1">
+            <button
+              onClick={() => setCurrentService("JOY")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${currentService === "JOY" ? "bg-amber-100 text-amber-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
+            >
+              <Sun
+                size={16}
+                fill={currentService === "JOY" ? "currentColor" : "none"}
+              />{" "}
+              Joy Service
+            </button>
+            <button
+              onClick={() => setCurrentService("ENLARGEMENT")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${currentService === "ENLARGEMENT" ? "bg-sky-100 text-sky-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
+            >
+              <Zap
+                size={16}
+                fill={
+                  currentService === "ENLARGEMENT" ? "currentColor" : "none"
+                }
+              />{" "}
+              Enlargement
+            </button>
+            <button
+              onClick={() => setCurrentService("SPECIAL")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${currentService === "SPECIAL" ? "bg-purple-100 text-purple-700 shadow-sm" : "text-slate-400 hover:bg-slate-50"}`}
+            >
+              <Crown
+                size={16}
+                fill={currentService === "SPECIAL" ? "currentColor" : "none"}
+              />{" "}
+              Special
+            </button>
+          </div>
+        )}
+
+        {isWednesdayDate && (
+          <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 text-emerald-800 px-3.5 py-2 rounded-2xl text-xs font-bold mb-1 shadow-2xs">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🌿</span>
+              <span>LC Live — Wednesday Shepherds Meeting</span>
             </div>
-          )}
+            <span className="text-[10px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-black uppercase tracking-wider">
+              Shepherds Only
+            </span>
+          </div>
+        )}
+
+        {isDynamicSpecialDate && (
+          <div className="flex items-center justify-between bg-purple-50 border border-purple-200 text-purple-900 px-3.5 py-2 rounded-2xl text-xs font-bold mb-1 shadow-2xs">
+            <div className="flex items-center gap-2 truncate">
+              <Crown size={16} className="text-purple-600 shrink-0" />
+              <span className="truncate">
+                Special Program: <strong className="text-purple-950 font-black">{specialEventName || "(Name asked on save)"}</strong>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowEventModal(true)}
+              className="text-[11px] bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1 rounded-xl font-bold transition-all shadow-xs shrink-0"
+            >
+              {specialEventName ? "Edit Event" : "Set Name"}
+            </button>
+          </div>
+        )}
 
         {/* Row 1: Main Controls */}
         <div className="bg-white rounded-3xl p-3 md:p-4 shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
           <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
-            {/* Sunday vs Wednesday Meeting Switcher */}
-            <div className="flex bg-slate-100 p-1 rounded-2xl shrink-0 border border-slate-200/60 shadow-2xs">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedDate(getActiveSunday());
-                  if (currentService === "CELL") setCurrentService("JOY");
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${!isWednesday(selectedDate)
-                  ? "bg-white text-indigo-700 shadow-xs"
-                  : "text-slate-500 hover:text-slate-700"
-                  }`}
-                title="Switch to Sunday Service"
-              >
-                <Sun size={14} className={!isWednesday(selectedDate) ? "text-amber-500" : "text-slate-400"} />
-                <span>Sunday</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedDate(getActiveWednesday());
-                  setCurrentService("CELL");
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${isWednesday(selectedDate)
-                  ? "bg-emerald-600 text-white shadow-xs"
-                  : "text-slate-500 hover:text-slate-700"
-                  }`}
-                title="Switch to Wednesday LC Live"
-              >
-                <span>🌿</span>
-                <span>LC Live</span>
-              </button>
-            </div>
-
             {/* Members vs Shepherds Mode Toggle (Accessible on all screen sizes) */}
             <div className="flex bg-slate-100 p-1 rounded-2xl shrink-0 border border-slate-200/60 shadow-2xs">
               <button
@@ -1309,11 +1355,17 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500 font-medium">Assigned Church:</span>
-                <span className="font-extrabold text-indigo-700 bg-indigo-100/90 px-2 py-0.5 rounded-lg">
-                  {(currentUser?.assignedChurch && currentUser?.assignedChurch !== "All" && currentUser?.assignedChurch !== "CM")
-                    ? currentUser.assignedChurch
-                    : (effectiveChurch || "UJ")}
-                </span>
+                <select
+                  value={fnfTargetChurch}
+                  onChange={(e) => setFnfTargetChurch(e.target.value as Church)}
+                  className="font-extrabold text-indigo-700 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer"
+                >
+                  {availableChurches.map((c) => (
+                    <option key={c} value={c}>
+                      {CHURCH_DISPLAY_NAMES[c] || c}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500 font-medium">Zone and Branch:</span>
@@ -1354,8 +1406,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         </div>
       )}
 
-      {/* 2. MAIN GRID */}
-      <div className="flex-1 overflow-y-auto pr-1 pb-4 md:pb-10">
+      {/* 2. MAIN GRID (Scrolls smoothly underneath static controls) */}
+      <div className="flex-1 overflow-y-auto overscroll-contain pr-1 pb-28 md:pb-20">
         {isCombinedView && filteredMembers.length > 0 && (
           <div className="mb-2 text-center text-xs font-bold text-slate-400 uppercase tracking-widest">
             Viewing All Churches ({filteredMembers.length})
@@ -1701,6 +1753,24 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           </button>
         </div>
       )}
+
+      {/* Floating Quick Save Pill so users never have to scroll up to save */}
+      <div className="fixed bottom-6 right-6 md:right-8 z-40 animate-in fade-in slide-in-from-bottom-3">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isSaving}
+          className={`flex items-center gap-2 px-5 py-3 rounded-full font-extrabold text-xs sm:text-sm shadow-xl transition-all active:scale-95 text-white ${
+            successMsg && !successMsg.includes("Error")
+              ? "bg-emerald-600 shadow-emerald-200"
+              : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-300 disabled:opacity-70"
+          }`}
+          title="Save Attendance without scrolling"
+        >
+          {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+          <span>Save Attendance ({totalSavedInState})</span>
+        </button>
+      </div>
     </div>
   );
 };

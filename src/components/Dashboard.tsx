@@ -1489,6 +1489,8 @@ const ChurchDashboard: React.FC<{
       let prevTeacherAttendance = 0;
 
       const today = new Date();
+      const isTodaySunday = today.getDay() === 0;
+
       const currentSunday = new Date(today);
       currentSunday.setDate(today.getDate() - today.getDay());
       const latestDateStr = currentSunday.toISOString().split("T")[0];
@@ -1499,23 +1501,52 @@ const ChurchDashboard: React.FC<{
 
       const churchAttendance = data.attendance.filter(r => isSundayAttendance(r) && r.churchId === activeChurch && matchesScope(r, activeBranchId, data.settings?.organization, data.members));
       const datesWithRecords = [...new Set(churchAttendance.map(r => r.date))].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-      const effectiveLatestDate = churchAttendance.some(r => r.date === latestDateStr) ? latestDateStr : (datesWithRecords[0] || latestDateStr);
-      const effectivePrevDate = churchAttendance.some(r => r.date === prevDateStr) ? prevDateStr : (datesWithRecords[1] || prevDateStr);
 
-      const hasLatestRecord = churchAttendance.some(r => r.date === effectiveLatestDate);
+      let hasLatestRecord = false;
+      let effectiveLatestDate = latestDateStr;
+      let effectivePrevDate = prevDateStr;
+
+      if (isTodaySunday) {
+        const hasTodayRecord = churchAttendance.some(r => r.date === latestDateStr);
+        if (hasTodayRecord) {
+          hasLatestRecord = true;
+          effectiveLatestDate = latestDateStr;
+          effectivePrevDate = churchAttendance.some(r => r.date === prevDateStr)
+            ? prevDateStr
+            : (datesWithRecords.find(d => d !== latestDateStr) || prevDateStr);
+        } else {
+          // It is Sunday, but no attendance recorded yet today:
+          // Keep hasLatestRecord as false (shows Pending badge) and figures at 0
+          hasLatestRecord = false;
+          effectiveLatestDate = latestDateStr;
+          // Last Sunday points to previous recorded Sunday or calendar previous Sunday
+          effectivePrevDate = churchAttendance.some(r => r.date === prevDateStr)
+            ? prevDateStr
+            : (datesWithRecords[0] || prevDateStr);
+        }
+      } else {
+        effectiveLatestDate = churchAttendance.some(r => r.date === latestDateStr) ? latestDateStr : (datesWithRecords[0] || latestDateStr);
+        effectivePrevDate = churchAttendance.some(r => r.date === prevDateStr)
+          ? prevDateStr
+          : (datesWithRecords.filter(d => d !== effectiveLatestDate)[0] || prevDateStr);
+        hasLatestRecord = churchAttendance.some(r => r.date === effectiveLatestDate);
+      }
+
       const hasPrevRecord = churchAttendance.some(r => r.date === effectivePrevDate);
 
-      const latestRecords = churchAttendance.filter(r => r.date === effectiveLatestDate);
-      latestRecords.forEach(r => {
-        r.presentMemberIds.forEach(id => {
-          const m = data.members.find(mem => mem.id === id);
-          if (m) {
-            const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
-            if (isTeacher) teacherAttendance++;
-            else memberAttendance++;
-          }
+      if (hasLatestRecord) {
+        const latestRecords = churchAttendance.filter(r => r.date === effectiveLatestDate);
+        latestRecords.forEach(r => {
+          r.presentMemberIds.forEach(id => {
+            const m = data.members.find(mem => mem.id === id);
+            if (m) {
+              const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+              if (isTeacher) teacherAttendance++;
+              else memberAttendance++;
+            }
+          });
         });
-      });
+      }
 
       const prevRecords = churchAttendance.filter(r => r.date === effectivePrevDate);
       prevRecords.forEach(r => {
@@ -1540,8 +1571,8 @@ const ChurchDashboard: React.FC<{
           teachers: teacherAttendance,
           prevMembers: prevMemberAttendance,
           prevTeachers: prevTeacherAttendance,
-          latestDateStr,
-          prevDateStr,
+          latestDateStr: effectiveLatestDate,
+          prevDateStr: effectivePrevDate,
           hasLatestRecord,
           hasPrevRecord,
         }

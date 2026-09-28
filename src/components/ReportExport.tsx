@@ -1358,15 +1358,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       report += `*TOTAL PRESENT: ${totalCount}*\n`;
 
       const splits = [];
-      if (eventNameToUse === "Joint Service") {
-        const totalChildren = totalJoy + totalEnlargement + totalSpecial;
-        if (totalChildren > 0) splits.push(`Joint Service: ${totalChildren}`);
-      } else {
-        if (totalJoy > 0) splits.push(`Joy Service: ${totalJoy}`);
-        if (totalEnlargement > 0) splits.push(`Enlargement Service: ${totalEnlargement}`);
-        if (totalSpecial > 0) splits.push(`${eventNameToUse || "Special"}: ${totalSpecial}`);
-      }
-
+      splits.push(`Children: ${allChildren.length}`);
       if (teachersCount > 0) splits.push(`Shepherds: ${teachersCount}`);
 
       if (splits.length > 0) {
@@ -2576,15 +2568,7 @@ function AnnualViewTab({ selectedDate, data, activeChurch, CHURCH_NAMES }: any) 
               report += `*TOTAL PRESENT: ${totalCount}*\n`;
 
               const splits = [];
-              if (eventNameToUse === "Joint Service") {
-                const totalChildren = totalJoy + totalEnlargement + totalSpecial;
-                if (totalChildren > 0) splits.push(`Joint Service: ${totalChildren}`);
-              } else {
-                if (totalJoy > 0) splits.push(`Joy Service: ${totalJoy}`);
-                if (totalEnlargement > 0) splits.push(`Enlargement Service: ${totalEnlargement}`);
-                if (totalSpecial > 0) splits.push(`${eventNameToUse || "Special"}: ${totalSpecial}`);
-              }
-
+              splits.push(`Children: ${allChildren.length}`);
               if (teachersCount > 0) splits.push(`Shepherds: ${teachersCount}`);
 
               if (splits.length > 0) {

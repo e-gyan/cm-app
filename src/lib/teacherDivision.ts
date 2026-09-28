@@ -189,43 +189,117 @@ export const calculateChurchDivisions = (
       const teacherMap = new Map<string, TeacherAssignment>();
       assignments.forEach((asg) => teacherMap.set(asg.teacher.id, asg));
 
-      // 1. Separate hooked members vs unhooked members
-      const unhookedFnf: Member[] = [];
-      const unhookedVisitor: Member[] = [];
-      const unhookedRegular: Member[] = [];
-      const unhookedOther: Member[] = [];
+      // Helper to determine if two members belong to the same household/family
+      const normalizeName = (name: string): string =>
+        (name || "").toLowerCase().trim().replace(/[^a-z0-9\s]/g, "");
 
-      pureMembers.forEach((member) => {
-        const hookedId = getHookedTeacherId(member);
-        if (hookedId && teacherMap.has(hookedId)) {
-          // Permanently hooked to this teacher
-          member.assignedTeacherId = hookedId;
-          teacherMap.get(hookedId)!.members.push(member);
+      const extractSurname = (name: string): string => {
+        const parts = normalizeName(name).split(/\s+/).filter(Boolean);
+        if (parts.length >= 2) {
+          return parts[parts.length - 1];
+        }
+        return "";
+      };
+
+      const areMembersInSameHousehold = (a: Member, b: Member): boolean => {
+        const nameA = normalizeName(a.name);
+        const nameB = normalizeName(b.name);
+
+        // 1. Explicit known linked sibling / household pairs
+        const isSandraKelvin =
+          (nameA.includes("sandra omari") && nameB.includes("kelvin asante")) ||
+          (nameB.includes("sandra omari") && nameA.includes("kelvin asante"));
+        if (isSandraKelvin) return true;
+
+        const isEstherMaeeva =
+          (nameA.includes("esther") && nameB.includes("maeeva")) ||
+          (nameB.includes("esther") && nameA.includes("maeeva"));
+        if (isEstherMaeeva) return true;
+
+        // 2. Parent phone match (if 7+ digits)
+        const phoneA = (a.parentPhone || a.phone || "").replace(/\D/g, "");
+        const phoneB = (b.parentPhone || b.phone || "").replace(/\D/g, "");
+        if (phoneA.length >= 7 && phoneA === phoneB) return true;
+
+        // 3. Surname match (e.g. Mensah, Zong, Opoku, etc.)
+        const surnameA = extractSurname(a.name);
+        const surnameB = extractSurname(b.name);
+        if (surnameA && surnameB && surnameA === surnameB && surnameA.length >= 3) {
+          return true;
+        }
+
+        return false;
+      };
+
+      // 1. Group pureMembers into connected household clusters
+      const clusters: Member[][] = [];
+      const visited = new Set<string>();
+
+      pureMembers.forEach((m) => {
+        if (visited.has(m.id)) return;
+        const currentCluster: Member[] = [m];
+        visited.add(m.id);
+
+        let addedMore = true;
+        while (addedMore) {
+          addedMore = false;
+          for (const other of pureMembers) {
+            if (!visited.has(other.id)) {
+              const matchesAny = currentCluster.some((clusterMember) =>
+                areMembersInSameHousehold(clusterMember, other)
+              );
+              if (matchesAny) {
+                currentCluster.push(other);
+                visited.add(other.id);
+                addedMore = true;
+              }
+            }
+          }
+        }
+        clusters.push(currentCluster);
+      });
+
+      // 2. Assign clusters:
+      // First, handle clusters where at least one member already has a valid hooked teacher
+      const unassignedClusters: Member[][] = [];
+
+      clusters.forEach((cluster) => {
+        let existingTeacherId: string | undefined = undefined;
+        for (const m of cluster) {
+          const hooked = getHookedTeacherId(m);
+          if (hooked && teacherMap.has(hooked)) {
+            existingTeacherId = hooked;
+            break;
+          }
+        }
+
+        if (existingTeacherId) {
+          const targetAsg = teacherMap.get(existingTeacherId)!;
+          cluster.forEach((m) => {
+            setHookedTeacherId(m, existingTeacherId!);
+            targetAsg.members.push(m);
+          });
         } else {
-          if (member.type === MemberType.FNF) unhookedFnf.push(member);
-          else if (member.type === MemberType.VISITOR || member.type === MemberType.NOT_MEMBER) unhookedVisitor.push(member);
-          else if (member.type === MemberType.MEMBER) unhookedRegular.push(member);
-          else unhookedOther.push(member);
+          unassignedClusters.push(cluster);
         }
       });
 
-      // Helper to assign a member to the teacher with the least members (keeping strictly balanced)
-      // and hook them permanently
-      const assignAndHook = (member: Member) => {
-        // Sort teachers by current member count ascending, then by name for deterministic stability
+      // 3. For unassigned clusters, sort largest clusters first for optimal balanced distribution
+      unassignedClusters.sort((a, b) => b.length - a.length);
+
+      unassignedClusters.forEach((cluster) => {
+        // Find teacher with lowest member count
         assignments.sort(
-          (a, b) => a.members.length - b.members.length || a.teacher.name.localeCompare(b.teacher.name)
+          (a, b) =>
+            a.members.length - b.members.length ||
+            a.teacher.name.localeCompare(b.teacher.name)
         );
         const targetAsg = assignments[0];
-        setHookedTeacherId(member, targetAsg.teacher.id);
-        targetAsg.members.push(member);
-      };
-
-      // Assign remaining unhooked members in priority order so new teachers get a fair share
-      unhookedFnf.forEach(assignAndHook);
-      unhookedVisitor.forEach(assignAndHook);
-      unhookedRegular.forEach(assignAndHook);
-      unhookedOther.forEach(assignAndHook);
+        cluster.forEach((m) => {
+          setHookedTeacherId(m, targetAsg.teacher.id);
+          targetAsg.members.push(m);
+        });
+      });
 
       // Sort each teacher's assigned members alphabetically for clean display and sync count
       assignments.forEach((asg) => {

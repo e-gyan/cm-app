@@ -229,6 +229,9 @@ const notifySubscribers = (data: AppData) => {
       console.error("Subscriber callback error:", e);
     }
   });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("dataUpdated"));
+  }
 };
 
 const fetchFromCloud = async (): Promise<AppData> => {
@@ -444,7 +447,8 @@ export const addMember = async (member: Member) => {
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  updateMainDoc({ members }).catch(console.error);
+  pendingUpdates = { ...pendingUpdates, members };
+  await flushPendingWrites();
 
   recordActivityNotification({
     message: `New member registered: ${member.name} (${member.assignedChurch || "General"})`,
@@ -463,7 +467,8 @@ export const addMembers = async (newMembersList: Member[]) => {
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  updateMainDoc({ members }).catch(console.error);
+  pendingUpdates = { ...pendingUpdates, members };
+  await flushPendingWrites();
 
   recordActivityNotification({
     message: `${newMembersList.length} new members imported/registered`,
@@ -480,7 +485,8 @@ export const updateMember = async (id: string, updates: Partial<Member>) => {
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  updateMainDoc({ members }).catch(console.error);
+  pendingUpdates = { ...pendingUpdates, members };
+  await flushPendingWrites();
 
   if (targetMember && updates.status && updates.status !== targetMember.status) {
     recordActivityNotification({
@@ -509,7 +515,8 @@ export const deleteMember = async (id: string) => {
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  updateMainDoc({ members }).catch(console.error);
+  pendingUpdates = { ...pendingUpdates, members };
+  await flushPendingWrites();
   return { success: true, message: "" };
 };
 
@@ -521,7 +528,8 @@ export const bulkArchiveMembers = async (ids: string[]) => {
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  updateMainDoc({ members }).catch(console.error);
+  pendingUpdates = { ...pendingUpdates, members };
+  await flushPendingWrites();
   return { success: true, message: "" };
 };
 
@@ -531,7 +539,8 @@ export const bulkDeleteMembers = async (ids: string[]) => {
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  updateMainDoc({ members }).catch(console.error);
+  pendingUpdates = { ...pendingUpdates, members };
+  await flushPendingWrites();
   return { success: true, message: "" };
 };
 

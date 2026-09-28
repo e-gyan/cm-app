@@ -16,16 +16,30 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.7.6";
-export const APP_RELEASE_NAME = "Branch Coordinator Church Attendance Filtering, Global Children Terminology & Mobile UX Optimization";
-export const APP_BUILD_DATE = "2026-09-26";
+export const APP_VERSION = "1.7.7";
+export const APP_RELEASE_NAME = "Attendance Day Intelligence, Household Shepherd Division, Persistent First Timers & Sunday Dashboard Pending State";
+export const APP_BUILD_DATE = "2026-09-28";
 
 export const CHANGELOG: ReleaseLog[] = [
+  {
+    version: "1.7.7",
+    date: "2026-09-28",
+    title: "Attendance Day Intelligence, Household Shepherd Division, Persistent First Timers & Sunday Dashboard Pending State",
+    badge: "Current Release",
+    changes: [
+      "First Timers Persistence & Cross-Component Sync: Fixed multi-entry first timers saving in Attendance Taker by assigning valid church departments, flushing immediately to Firestore, and broadcasting cross-component dataUpdated events to eliminate data loss upon logout or refresh",
+      "Attendance Day Intelligence: Replaced manual Sunday/LC Live switcher with backend day intelligence where Wednesdays are exclusively LC Live for shepherds (staff mode), Sundays support the 3 Sunday services (Joy, Enlargement, Special), and other days dynamically open for Special Services",
+      "Dynamic Special Service Reusability: When saving attendance on non-Sunday/non-Wednesday dates, the app automatically reuses any existing event name already recorded for that date, asking for an event name only when none exists yet",
+      "Static Header Controls & Floating Save: Positioned attendance header and save controls statically with names flowing underneath, accompanied by a floating quick-save button so users never need to scroll back up through long rosters",
+      "Report Export Children Breakdown: Under 'TOTAL PRESENT', replaced individual service name listings with 'Children: X' alongside shepherds for clear, clean individual shepherd reports",
+      "Sunday Dashboard Pending State: When it is Sunday and attendance has not yet been recorded, 'This Sunday' members and shepherds counts display 0 with a 'Pending' badge instead of falling back to the previous Sunday's numbers",
+      "Equal Household Shepherd Division: Upgraded teacher division algorithm to cluster children with identical surnames (Mensah, Zong, Opoku, etc.), parent phones, and linked siblings (Sandra Omari & Kelvin Asante, Esther & Maeeva) under the same shepherd while strictly balancing total counts equally across all shepherds",
+    ],
+  },
   {
     version: "1.7.6",
     date: "2026-09-26",
     title: "Branch Coordinator Church Attendance Filtering, Global Children Terminology & Mobile UX Optimization",
-    badge: "Current Release",
     changes: [
       "Added church branch filtering for Branch Coordinators and Leadership in Attendance Taker: enabled department dropdown and quick-tap church pills (All, UJ, LJ, K, I) for effortless church scoping and name searching",
       "Unified nomenclature to 'Child' and 'Children': systematically replaced all user-facing instances of 'kid' and 'kids' across Dashboard, Outreach Intelligence, Analytics tables, and service summaries",
