@@ -732,20 +732,28 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         }
       });
 
-      if (recordsToSave.length > 0) {
-        await saveAttendance(recordsToSave[0].id, recordsToSave);
-        await flushPendingWrites();
-      }
-
+      // Instant optimistic feedback in 0ms
       setSuccessMsg(hasActualChanges ? `Changes saved` : `No changes saved`);
       setShowEventModal(false);
       clearDraft();
-      await onUpdate();
+      setIsSaving(false);
       setTimeout(() => setSuccessMsg(""), 2000);
+
+      if (recordsToSave.length > 0) {
+        saveAttendance(recordsToSave[0].id, recordsToSave)
+          .then(() => {
+            onUpdate();
+          })
+          .catch((err) => {
+            console.error("Failed to save attendance in background:", err);
+            setSuccessMsg("Error saving attendance");
+          });
+      } else {
+        onUpdate();
+      }
     } catch (err) {
       console.error("Failed to save attendance:", err);
       setSuccessMsg("Error saving attendance");
-    } finally {
       setIsSaving(false);
     }
   };
@@ -793,10 +801,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         addedAt: Date.now()
       }));
 
-      // Immediately save to local cache and database
-      await addMembers(newMembers);
-      await flushPendingWrites();
-
+      // 1. Instant 0ms optimistic update
       const newSet = new Set(presentIds);
       const newSMap = { ...serviceMap };
       newMembers.forEach((m) => {
@@ -806,17 +811,32 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
       setPresentIds(newSet);
       setServiceMap(newSMap);
-
       saveDraft(newSet, punctualIds, newSMap);
 
       setNewMemberNames([""]);
-      setIsAddingFNF(false);
-      await confirmSave(newSet, newSMap, newMembers);
-      await onUpdate();
+      setIsAddingFNF(false); // Modal closes instantly in 0ms!
+      setIsSubmittingVisitor(false);
+      setSuccessMsg(
+        newMembers.length > 1
+          ? `${newMembers.length} First Timers added & saved`
+          : "First Timer added & saved"
+      );
+      setTimeout(() => setSuccessMsg(""), 2000);
+
+      // 2. Background database persistence
+      (async () => {
+        try {
+          await addMembers(newMembers);
+          await confirmSave(newSet, newSMap, newMembers);
+        } catch (err) {
+          console.error("Failed to save first timers in background:", err);
+          setSuccessMsg("Error saving first timers");
+        }
+      })();
     } catch (err) {
       console.error("Failed to add first timers:", err);
-    } finally {
       setIsSubmittingVisitor(false);
+      setIsAddingFNF(false);
     }
   };
 
@@ -1035,8 +1055,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         )}
 
         {/* Row 1: Main Controls */}
-        <div className="bg-white rounded-3xl p-3 md:p-4 shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
-          <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
+        <div className="bg-white rounded-3xl p-3 md:p-4 shadow-sm border border-slate-100 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-3">
+          <div className="flex justify-between items-center gap-2">
             {/* Members vs Shepherds Mode Toggle (Accessible on all screen sizes) */}
             <div className="flex bg-slate-100 p-1 rounded-2xl shrink-0 border border-slate-200/60 shadow-2xs">
               <button
@@ -1062,101 +1082,150 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                 <span>Shepherds</span>
               </button>
             </div>
+
+            {/* Quick Action Buttons on mobile (visible on small screens) */}
+            <div className="flex lg:hidden items-center gap-1.5">
+              {enablePunctuality && (
+                <button
+                  type="button"
+                  onClick={() => setShowLeaderboard(true)}
+                  className="p-2 text-amber-600 bg-amber-50 rounded-xl hover:bg-amber-100 transition-colors border border-amber-200 shrink-0"
+                  title="Leaderboard"
+                >
+                  <Trophy size={16} />
+                </button>
+              )}
+
+              {attendanceMode === "MEMBERS" && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddingFNF(!isAddingFNF)}
+                  className="p-2 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-200 shrink-0"
+                  title="Add First Timer"
+                >
+                  <UserPlus size={16} />
+                </button>
+              )}
+
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className={`flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white rounded-xl transition-all active:scale-95 shrink-0 ${successMsg && !successMsg.includes("Error")
+                  ? "bg-emerald-600 shadow-md shadow-emerald-200"
+                  : "bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-70"
+                  }`}
+              >
+                {successMsg && !successMsg.includes("Error") ? (
+                  <Check size={14} />
+                ) : (
+                  <Save size={14} />
+                )}
+                <span>{isSaving ? "Saving..." : successMsg && !successMsg.includes("Error") ? "Saved!" : "Save"}</span>
+                <span className="bg-white/20 px-1 py-0.5 rounded text-[10px] font-mono">
+                  {totalSavedInState}
+                </span>
+              </button>
+            </div>
           </div>
 
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-            {canFilterChurch && (
-              <div className="relative min-w-[130px] sm:w-44 shrink-0">
-                <div className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-indigo-600">
-                  <Crown size={15} />
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="flex items-center gap-2 flex-1">
+              {canFilterChurch && (
+                <div className="relative flex-1 sm:w-44 shrink-0">
+                  <div className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-indigo-600">
+                    <Crown size={15} />
+                  </div>
+                  <select
+                    value={internalChurchFilter}
+                    onChange={(e) =>
+                      setInternalChurchFilter(
+                        e.target.value as Church | "COMBINED",
+                      )
+                    }
+                    aria-label="Filter Church"
+                    className="w-full bg-indigo-50 border border-indigo-200 text-indigo-950 text-xs sm:text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block pl-8 pr-3 py-2.5 appearance-none cursor-pointer"
+                  >
+                    <option value="COMBINED">All Churches</option>
+                    {availableChurches.map((church) => (
+                      <option key={church} value={church}>
+                        {CHURCH_DISPLAY_NAMES[church] || church}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <select
-                  value={internalChurchFilter}
-                  onChange={(e) =>
-                    setInternalChurchFilter(
-                      e.target.value as Church | "COMBINED",
-                    )
-                  }
-                  aria-label="Filter Church"
-                  className="w-full bg-indigo-50 border border-indigo-200 text-indigo-950 text-xs sm:text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block pl-8 pr-3 py-2.5 appearance-none cursor-pointer"
-                >
-                  <option value="COMBINED">All Churches</option>
-                  {availableChurches.map((church) => (
-                    <option key={church} value={church}>
-                      {CHURCH_DISPLAY_NAMES[church] || church}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+              )}
 
-            <div className="relative flex-1 min-w-[130px]">
-              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
-                <Calendar size={15} />
+              <div className="relative flex-1 min-w-[120px]">
+                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+                  <Calendar size={15} />
+                </div>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 text-slate-800 text-xs sm:text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-8 pr-2 py-2.5 appearance-none cursor-pointer"
+                />
               </div>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs sm:text-sm font-semibold rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none block w-full pl-8 pr-2 py-2.5 appearance-none cursor-pointer"
-              />
             </div>
 
-            {enablePunctuality && (
-              <div
-                className="flex items-center gap-1 px-2.5 py-2.5 bg-amber-50 text-amber-700 rounded-xl border border-amber-200 shrink-0 font-bold text-xs sm:text-sm"
-                title="Punctual for current service"
-              >
-                <Trophy size={15} className="text-amber-500" />
-                <span>{punctualForCurrentService}</span>
-                <span className="hidden lg:inline text-[11px] font-medium text-amber-600">
-                  Punctual
-                </span>
-              </div>
-            )}
-
-            {enablePunctuality && (
-              <button
-                type="button"
-                onClick={() => setShowLeaderboard(true)}
-                className="p-2.5 text-amber-600 bg-amber-50 rounded-xl hover:bg-amber-100 transition-colors border border-amber-200 shrink-0"
-                title="Leaderboard"
-              >
-                <Trophy size={18} />
-              </button>
-            )}
-
-            {attendanceMode === "MEMBERS" && (
-              <button
-                type="button"
-                onClick={() => setIsAddingFNF(!isAddingFNF)}
-                className="p-2.5 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-200 shrink-0"
-                title="Add First Timer"
-              >
-                <UserPlus size={18} />
-              </button>
-            )}
-
-            <button
-              onClick={handleSave}
-              disabled={isSaving}
-              className={`flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-white rounded-xl transition-all active:scale-95 shrink-0 ${successMsg && !successMsg.includes("Error")
-                ? "bg-emerald-600 shadow-md shadow-emerald-200"
-                : "bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-70"
-                }`}
-            >
-              {successMsg && !successMsg.includes("Error") ? (
-                <Check size={16} />
-              ) : (
-                <Save size={16} />
+            {/* Desktop Actions */}
+            <div className="hidden lg:flex items-center gap-2">
+              {enablePunctuality && (
+                <div
+                  className="flex items-center gap-1 px-2.5 py-2.5 bg-amber-50 text-amber-700 rounded-xl border border-amber-200 shrink-0 font-bold text-xs sm:text-sm"
+                  title="Punctual for current service"
+                >
+                  <Trophy size={15} className="text-amber-500" />
+                  <span>{punctualForCurrentService}</span>
+                  <span className="text-[11px] font-medium text-amber-600">
+                    Punctual
+                  </span>
+                </div>
               )}
-              <span>
-                {isSaving ? "Saving..." : successMsg && !successMsg.includes("Error") ? "Saved!" : "Save"}
-              </span>
-              <span className="bg-white/20 px-1.5 py-0.5 rounded text-[11px] font-mono">
-                {totalSavedInState}
-              </span>
-            </button>
+
+              {enablePunctuality && (
+                <button
+                  type="button"
+                  onClick={() => setShowLeaderboard(true)}
+                  className="p-2.5 text-amber-600 bg-amber-50 rounded-xl hover:bg-amber-100 transition-colors border border-amber-200 shrink-0"
+                  title="Leaderboard"
+                >
+                  <Trophy size={18} />
+                </button>
+              )}
+
+              {attendanceMode === "MEMBERS" && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddingFNF(!isAddingFNF)}
+                  className="p-2.5 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-200 shrink-0"
+                  title="Add First Timer"
+                >
+                  <UserPlus size={18} />
+                </button>
+              )}
+
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className={`flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-white rounded-xl transition-all active:scale-95 shrink-0 ${successMsg && !successMsg.includes("Error")
+                  ? "bg-emerald-600 shadow-md shadow-emerald-200"
+                  : "bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-70"
+                  }`}
+              >
+                {successMsg && !successMsg.includes("Error") ? (
+                  <Check size={16} />
+                ) : (
+                  <Save size={16} />
+                )}
+                <span>
+                  {isSaving ? "Saving..." : successMsg && !successMsg.includes("Error") ? "Saved!" : "Save"}
+                </span>
+                <span className="bg-white/20 px-1.5 py-0.5 rounded text-[11px] font-mono">
+                  {totalSavedInState}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1632,7 +1701,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                 Cancel
               </button>
               <button
-                onClick={() => confirmSave()}
+                onClick={() => {
+                  setShowEventModal(false);
+                  confirmSave();
+                }}
                 disabled={!specialEventName.trim()}
                 className="flex-1 py-3 font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -1755,7 +1827,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       )}
 
       {/* Floating Quick Save Pill so users never have to scroll up to save */}
-      <div className="fixed bottom-6 right-6 md:right-8 z-40 animate-in fade-in slide-in-from-bottom-3">
+      <div className="fixed bottom-20 md:bottom-8 right-4 md:right-8 z-40 animate-in fade-in slide-in-from-bottom-3">
         <button
           type="button"
           onClick={handleSave}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
-import { subscribeToData, loadData, markNotificationRead, clearNotifications } from "./services/storageService";
+import { subscribeToData, loadData, getInstantData, markNotificationRead, clearNotifications } from "./services/storageService";
 import { verifyPasscode } from "./services/storageService";
 import { AppData, Church, Member, Role, Notification as AppNotification } from "./types";
 import Dashboard from "./components/Dashboard";
@@ -56,19 +56,15 @@ enum View {
 }
 
 const App: React.FC = () => {
-  const [data, setData] = useState<AppData>({
-    members: [],
-    attendance: [],
-    transactions: [],
-    notifications: [],
-    settings: DEFAULT_SETTINGS,
-  });
+  const [data, setData] = useState<AppData>(() => getInstantData());
   const [currentView, setCurrentView] = useState<View>(() => {
     const saved = sessionStorage.getItem("currentView");
     return (saved as View) || View.DASHBOARD;
   });
 
-  const [visitedViews, setVisitedViews] = useState<Set<View>>(() => new Set([currentView]));
+  const [visitedViews, setVisitedViews] = useState<Set<View>>(
+    () => new Set(Object.values(View)),
+  );
 
   useEffect(() => {
     sessionStorage.setItem("currentView", currentView);
@@ -871,7 +867,7 @@ const App: React.FC = () => {
             </div>
             <div className="text-left">
               <h1 className="font-bold text-slate-800 text-sm leading-tight flex items-baseline gap-2">
-                {activeChurch === "CM" ? "CM Directorate" : `${activeChurch} Church`} <span className="text-[9px] font-normal text-slate-400">v1.1.0</span>
+                {activeChurch === "CM" ? "CM Directorate" : `${activeChurch} Church`} <span className="text-[9px] font-normal text-slate-400">v{APP_VERSION}</span>
               </h1>
               <p className="text-[10px] text-slate-500 font-medium">
                 {getScopeDisplayLabel(activeBranchId, data.settings.organization)}

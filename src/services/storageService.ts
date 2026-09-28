@@ -198,7 +198,7 @@ const parseAppDataDoc = (docData: any): AppData => {
 };
 
 // Read local cache from localStorage for instant 0ms app boot
-const loadLocalCache = (): AppData | null => {
+export const loadLocalCache = (): AppData | null => {
   try {
     const raw = localStorage.getItem(CACHE_STORAGE_KEY);
     if (raw) {
@@ -211,6 +211,17 @@ const loadLocalCache = (): AppData | null => {
     // localStorage might be unavailable or empty
   }
   return null;
+};
+
+// Returns synchronous cache immediately in 0ms so components render without waiting
+export const getInstantData = (): AppData => {
+  if (memoryCache) return memoryCache;
+  const local = loadLocalCache();
+  if (local) {
+    memoryCache = local;
+    return local;
+  }
+  return parseAppDataDoc({});
 };
 
 const saveLocalCache = (data: AppData) => {
