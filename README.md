@@ -1,11 +1,12 @@
 # Children's Ministry Directorate (CMD) Platform
 
-[![Version](https://img.shields.io/badge/version-1.7.5-indigo.svg)](src/version.ts)
-[![Release](https://img.shields.io/badge/release-Attendance%20First%20Timers%2C%20LC%20Live%20%26%20Transfers-emerald.svg)](src/version.ts)
+[![Version](https://img.shields.io/badge/version-1.7.7-indigo.svg)](src/version.ts)
+[![Release](https://img.shields.io/badge/release-Attendance%20Day%20Intelligence%2C%20Household%20Division%20%26%20Instant%20Sync-emerald.svg)](src/version.ts)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)](tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-cyan.svg)](package.json)
 
 A modern, cloud-synchronized multi-tenant application for Children's Ministry attendance tracking, child photo studio management, children outreach, financial ledger accounting, granular role-based permissions, and automated WhatsApp reporting.
+
 ---
 
 ## Version Control and Release Protocol
@@ -13,7 +14,7 @@ A modern, cloud-synchronized multi-tenant application for Children's Ministry at
 The platform follows **Semantic Versioning (SemVer: `MAJOR.MINOR.PATCH`)**:
 
 ```
-v1.7.5
+v1.7.7
  ┬ ┬ ┬
  │ │ └─ PATCH: Bug fixes, UI adjustments, text-wrapping tweaks, performance improvements.
  │ └─── MINOR: New functional modules.
@@ -27,6 +28,7 @@ v1.7.5
    - Mobile card: Shows a subtle version pill linking to the interactive release notes.
 3. **Application Navigation**:
    - Desktop sidebar footer: Interactive version badge with sparkle icon opening the **Release Notes / Changelog Modal**.
+   - Mobile header: Displays `v{APP_VERSION}` dynamically alongside church scope.
    - **Settings and Config**: Displays platform version, release name, and a **View Release Notes** button.
 
 ### How to Increment the Version
@@ -42,7 +44,7 @@ When introducing changes:
 
 - **Frontend**: React 19, TypeScript 5.8, Tailwind CSS, Lucide React icons, Recharts, Motion.
 - **Backend and Serving**: Node.js & Express 5 (bootstrap in `server.ts`), Vite 6 bundler, esbuild.
-- **Cloud Database**: Cloud Firestore (`appData/main` root document with 0ms `localStorage` caching and real-time `onSnapshot` listeners).
+- **Cloud Database**: Cloud Firestore (`appData/main` root document with synchronous 0ms `localStorage` caching via `getInstantData()`, offline drafts, and real-time `onSnapshot` listeners).
 - **Media and Avatar Storage**: Firebase Cloud Storage (`members/photos/{id}.webp`) with an isolated Firestore fallback collection (`memberPhotos/{id}`) guaranteeing the 1 MB main document limit is never exceeded.
 - **AI Background Removal**: Client-side AI Neural segmentation via `@imgly/background-removal` executed in an isolated background Web Worker (`src/workers/cutoutWorker.ts`), eliminating UI freeze and maintaining 60 FPS while paired with instant sub-3ms smart algorithmic edge sampling.
 - **AI Analytics**: Google GenAI SDK (`@google/genai`) for attendance trend summaries and ministry insights.
@@ -55,21 +57,21 @@ When introducing changes:
 │
 ├── src/
 │   ├── components/                # Modular UI Views and Dialogs
-│   │   ├── Dashboard.tsx          # Key metrics, attendance targets, and charts
-│   │   ├── AttendanceTaker.tsx    # Single-tap check-in, punctuality, and avatar roster
-│   │   ├── MembersList.tsx        # Directory, search, filters, drawer & Photo Studio
+│   │   ├── Dashboard.tsx          # Key metrics, attendance targets, Sunday pending state & charts
+│   │   ├── AttendanceTaker.tsx    # Single-tap check-in, Day Intelligence, 0ms instant save, FNF modal
+│   │   ├── MembersList.tsx        # Directory, search, filters, mobile cards, drawer & Photo Studio
 │   │   ├── PhotoStudioModal.tsx   # AI cutout, studio depth shadow, live previews & WebP export
 │   │   ├── MemberAvatar.tsx       # Reusable avatar with initials fallback
 │   │   ├── ChangelogModal.tsx     # Interactive version notes and release timeline
 │   │   ├── OutreachHub.tsx        # Follow-up radar, shepherd outreach, prayer wall and calendar
 │   │   ├── AnalyticsHub.tsx       # Interactive charts and AI insights
 │   │   ├── Finances.tsx           # Weekly Sunday collections, tithes and category ledgers
-│   │   ├── ReportExport.tsx       # Copy-ready reports for sharing on WhatsApp
+│   │   ├── ReportExport.tsx       # WhatsApp copy-ready reports with Children/Shepherd breakdown
 │   │   ├── Settings.tsx           # Organization, zones, branches, and RBAC matrix
 │   │   └── Login.tsx              # Passcode/Google authentication and session restoration
 │   │
 │   ├── services/
-│   │   ├── storageService.ts      # Cloud Firestore sync, offline cache, branch rename cascade
+│   │   ├── storageService.ts      # Cloud Firestore sync, 0ms getInstantData(), branch rename cascade
 │   │   ├── firebase.ts            # Firebase App, Firestore DB, and Storage uploads
 │   │   └── securityService.ts     # Input sanitization, SHA-256 passcodes, and gender helpers
 │   │
@@ -78,7 +80,7 @@ When introducing changes:
 │   │
 │   ├── lib/
 │   │   ├── permissions.ts         # Granular Role-Based Access Control (RBAC) engine
-│   │   ├── teacherDivision.ts     # Fair pastoral allocation and Thesaurus alias resolver
+│   │   ├── teacherDivision.ts     # Fair pastoral allocation, household clustering & surname grouping
 │   │   └── theme.ts               # Theme tokens and dynamic palette application
 │   │
 │   ├── version.ts                 # Centralized SemVer metadata & release changelog
@@ -117,7 +119,12 @@ When introducing changes:
 - **Storage-Optimized WebP Export**: Automatically scales and exports 256×256 WebP payloads (~15–25 KB) to Firebase Cloud Storage. If Cloud Storage is not yet provisioned, it automatically falls back to a dedicated `memberPhotos` collection to protect the main document.
 - **Roster and Directory Avatars**: Integrated via [`MemberAvatar.tsx`](src/components/MemberAvatar.tsx) across the Member directory, Member side drawer, and Attendance check-in rosters, with deterministic initials fallback.
 
-### 2. Organization Hierarchy and Cascade Branch Renaming
+### 2. Dashboard, Ministry Metrics & Sunday Pending State
+- **Sunday Pending State**: On Sundays when attendance has not yet been recorded, the "This Sunday" cards display `0` with a clean `Pending` badge rather than prematurely showing the previous Sunday's attendance numbers.
+- **Historical Comparison**: "Last Sunday" metrics strictly pull from the last recorded Sunday session for accurate trend comparisons.
+- **Key Ministry Targets**: Visual progress gauges for UJ, LJ, K, and I with automated goal projections and attendance rates.
+
+### 3. Organization Hierarchy and Cascade Branch Renaming
 - **Multi-Level Organization**: Manage Directorate $\rightarrow$ Zones $\rightarrow$ Branches $\rightarrow$ Churches/Classes (Upper Junior, Lower Junior, K, I).
 - **Atomic Cascade Renaming**: Renaming any branch in Settings propagates across all dependent entities:
   - Members (`branchId` and `assignedChurch`).
@@ -126,7 +133,7 @@ When introducing changes:
   - Outreach sessions and prayer bookings.
   - Existing notifications and browser active sessions.
 
-### 3. Role-Based Access Control (RBAC) Permissions Matrix
+### 4. Role-Based Access Control (RBAC) Permissions Matrix
 - Comprehensive permissions matrix in **Settings $\rightarrow$ Role Permissions** allowing Super Admins to toggle access to features and subfeatures across roles:
   - `SUPER_ADMIN` and `ADMIN` (Full global governance).
   - `DIRECTORATE_HEAD` (Cross-zonal oversight).
@@ -134,40 +141,46 @@ When introducing changes:
   - `BRANCH_COORDINATOR` (Scoped to assigned branch).
   - `TEACHER` / Shepherd and `VOLUNTEER` (Scoped to assigned church and class).
 
-### 4. Context-Aware Activity Notification Engine
-- Real-time logging of all critical ministry events:
-  - Attendance submissions.
-  - Member additions, transfers, and status updates.
-  - Financial transactions.
-  - Outreach logs and prayer slot bookings.
-  - Organization changes.
-- Automatically filtered in the top notification bell based on the user's logged-in functional context, with desktop browser notification alerts when minimized.
+### 5. Attendance, Punctuality & Day Intelligence
+- **Attendance Day Intelligence**:
+  - **Wednesdays (LC Live Only)**: Exclusively designated for Shepherds meeting (staff mode), hiding child service switchers and preventing mistaken entries.
+  - **Sundays (3 Main Services)**: Supports **Joy Service**, **Enlargement Service**, and **Special Service**.
+  - **Other Days (Dynamic Special Programs)**: Dynamically opens for special events, conventions, or weekday rehearsals.
+- **Special Event Name Memory**: When saving non-Sunday services, the system checks for existing event names recorded by other users on that date, automatically reusing the name and prompting only when none exists yet.
+- **0ms Seamless Modal Saving**:
+  - Modal dismissal in "+ First Timer" and "Special Event Name" is instantaneous (0ms) without waiting for Firestore cloud round-trips.
+  - Local cache (`localStorage` + `memoryCache`) updates immediately, and changes commit to Firestore in the background with automatic error handling.
+- **Persistent Multi-Entry First Timers**:
+  - Bulk addition of first timers via commas or newlines with instant parsing, automatic gender inference, and direct assignment to the active church and logged-in shepherd.
+  - Emits reactive `dataUpdated` event across components, ensuring newly added first timers persist permanently across logouts and browser refreshes.
+- **Branch Coordinator Church Filtering**: Fast-access department filter dropdown and quick pills (`All`, `UJ`, `LJ`, `K`, `I`) in Attendance Taker for rapid roster search.
+- **Static Controls & Floating Quick Save**:
+  - Fixed top control bar with smooth scrollable member rosters underneath (`h-[calc(100dvh-130px)]`).
+  - Elevated floating quick-save button (`bottom-20`) positioned safely above mobile navigation bars.
 
-### 5. Attendance and Punctuality System
-- Single-tap check-in with visual color indicators.
-- **Dual-Service Support**: Separate tracking for **Joy Service** and **Enlargement Service**.
-- **Punctuality Counter**: Tracks punctuality rewards with custom thresholds (e.g., first 30 attendees).
-- Full-text search and class filters for instantaneous check-in.
-
-### 6. WhatsApp and Multi-Department Consolidation
+### 6. WhatsApp Reports and Service Headcount Breakdown
+- **Clean Headcount Breakdown**:
+  - In individual church and annual detailed reports, replaced cluttered service listings with clean `*(Children: X | Shepherds: Y)*` under `*TOTAL PRESENT*`.
 - **Consolidated Branch Attendance (All / CM Church)**:
-  - Automatically aggregates attendance across all available departments (`UJ`, `LJ`, `K`, `I`) when "All" or "CM" is selected.
+  - Automatically aggregates attendance across all departments (`UJ`, `LJ`, `K`, `I`) when "All" or "CM" is selected.
   - Prevents false "No attendance data" messages for Branch Coordinators and Admins.
-  - Generates full consolidated figures with service breakdowns (Joy, Enlargement, Special) and church-by-church member rosters.
 - **Branch Coordinator Mega Center Service Report**:
   - Provisioned reporting template for Sunday services including Preacher/Message per church, financial collections (Offering, Tithes, Partnerships, First Fruits), soul winning, and cell meeting statistics.
-  - Ensures Branch Coordinators always see their provisioned template.
-- **Department Detail and Summary Reports**: Individual class rosters and high-level summaries copy-ready for instant dispatch.
 
-### 7. Outreach Hub, Shepherd Allocation & Unified Prayer Accounting
-- **Shepherd Nomenclature Migration**:
-  - User-facing references across the application, attendance rosters, member management, report exports, and outreach coordination updated from "Teachers" to "Shepherds".
-  - Full backwards compatibility maintained with existing Firestore schemas and security rules (`Role.TEACHER` and `MemberType.TEACHER`).
+### 7. Outreach Hub, Household Shepherd Division & Unified Prayer Accounting
+- **Equal Household Shepherd Division**:
+  - Smart pastoral allocation algorithm in [`src/lib/teacherDivision.ts`](src/lib/teacherDivision.ts) clusters children with identical surnames (e.g. Mensah, Zong, Opoku), matching parent phone numbers, and linked siblings (e.g., Sandra Omari & Kelvin Asante, Esther & Maeeva) under the same shepherd.
+  - Enforces strict total headcount balance across all shepherds so pastoral workloads remain completely equal.
+- **Shepherd Nomenclature**: Fully unified to "Shepherds" across all user interfaces while maintaining backward-compatible Firestore schemas (`Role.TEACHER` and `MemberType.TEACHER`).
 - **Unified Prayer Accounting Synchronization**:
-  - Synchronized prayer intercession duration (accounting for slot duration minutes with YTD current-year filtering) across the Master Dashboard, Outreach Hub Prayer Wall banner, and the TRACK progress tab.
-  - Personalized Shepherd view in the TRACK tab scopes assigned children and intercessory prayer sessions to their roster.
-- **Fair Shepherd Allocation**:
-  - Balanced division of children (including First Timers and FNF) across active shepherds with persistent assignments and exportable WhatsApp/CSV templates.
+  - Live achievement metric cards on Prayer Wall banner (Sessions Done, Time Interceded, Children Covered, Pending This Week).
+  - Synchronized YTD prayer intercession hours across Master Dashboard, Prayer Wall banner, and the TRACK progress tab.
+
+### 8. Mobile UX Optimization & Instant 0ms Component Navigation
+- **0ms Synchronous Cache Boot (`getInstantData()`)**: Application state initializes synchronously on the first frame from local storage/memory cache, eliminating empty screens, skeleton flickers, and startup lag.
+- **Pre-warmed View Switching**: All application views (Dashboard, Attendance, People Hub, Outreach, Analytics, Finances, Reports, Settings) are pre-mounted in the DOM, enabling 0ms tab switching with zero delay.
+- **Global Child / Children Terminology**: Standardized terminology across the entire application, eliminating all instances of "kid" or "kids".
+- **Responsive Mobile Touch Layout**: 44px minimum touch targets, touch-friendly tab navigation, and responsive card views across all screen sizes.
 
 ---
 
