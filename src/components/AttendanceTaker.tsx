@@ -60,11 +60,11 @@ const formatDateDDMMYYYY = (dateStr: string) => {
 };
 
 const CHURCH_DISPLAY_NAMES: Record<string, string> = {
-  UJ: "Upper Junior (UJ)",
-  LJ: "Lower Junior (LJ)",
-  K: "Kindergarten (K)",
-  I: "Infants (I)",
-  N: "Nursery (N)",
+  UJ: "UJ",
+  LJ: "LJ",
+  K: "K",
+  I: "I",
+
   CM: "Children Ministry",
   All: "All Churches",
 };
@@ -1266,11 +1266,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   <button
                     type="button"
                     onClick={() => setInternalChurchFilter("COMBINED")}
-                    className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
-                      internalChurchFilter === "COMBINED"
+                    className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all ${internalChurchFilter === "COMBINED"
                         ? "bg-indigo-600 text-white shadow-xs"
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
+                      }`}
                   >
                     All
                   </button>
@@ -1279,11 +1278,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                       key={c}
                       type="button"
                       onClick={() => setInternalChurchFilter(c as Church)}
-                      className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${
-                        internalChurchFilter === c
+                      className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${internalChurchFilter === c
                           ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
                           : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
-                      }`}
+                        }`}
                     >
                       {c}
                     </button>
@@ -1832,11 +1830,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           type="button"
           onClick={handleSave}
           disabled={isSaving}
-          className={`flex items-center gap-2 px-5 py-3 rounded-full font-extrabold text-xs sm:text-sm shadow-xl transition-all active:scale-95 text-white ${
-            successMsg && !successMsg.includes("Error")
+          className={`flex items-center gap-2 px-5 py-3 rounded-full font-extrabold text-xs sm:text-sm shadow-xl transition-all active:scale-95 text-white ${successMsg && !successMsg.includes("Error")
               ? "bg-emerald-600 shadow-emerald-200"
               : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-300 disabled:opacity-70"
-          }`}
+            }`}
           title="Save Attendance without scrolling"
         >
           {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
