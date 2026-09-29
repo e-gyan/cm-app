@@ -440,7 +440,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
     const countK = getChurchMembersCount("K");
     const countL = getChurchMembersCount("LJ");
     const countU = getChurchMembersCount("UJ");
-    const countN = getChurchMembersCount("N");
+
 
     let firstTimers = 0;
     let fnf = 0;
@@ -451,7 +451,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       }
     });
 
-    const totalAttendance = pastors + shepherds + countI + countK + countL + countU + countN + firstTimers + fnf;
+    const totalAttendance = pastors + shepherds + countI + countK + countL + countU + firstTimers + fnf;
 
     return {
       pastors,
@@ -460,7 +460,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
       countK,
       countL,
       countU,
-      countN,
+
       firstTimers,
       fnf,
       totalAttendance,
