@@ -53,27 +53,238 @@ export const isStaffOrTeacher = (m: Member): boolean => {
 
 // Persistent teacher hook helper
 export const getHookedTeacherId = (member: Member): string | undefined => {
-  if (member.assignedTeacherId) return member.assignedTeacherId;
-  if (typeof window !== "undefined") {
-    try {
-      const stored = localStorage.getItem(`cm_hooked_teacher_${member.id}`);
-      if (stored) return stored;
-    } catch {
-      // ignore
-    }
-  }
-  return undefined;
+  return member.assignedTeacherId || undefined;
 };
 
-export const setHookedTeacherId = (member: Member, teacherId: string): void => {
-  member.assignedTeacherId = teacherId;
+export const setHookedTeacherId = (member: Member, teacherId?: string): void => {
+  member.assignedTeacherId = teacherId || undefined;
   if (typeof window !== "undefined") {
     try {
-      localStorage.setItem(`cm_hooked_teacher_${member.id}`, teacherId);
+      if (teacherId) {
+        localStorage.setItem(`cm_hooked_teacher_${member.id}`, teacherId);
+      } else {
+        localStorage.removeItem(`cm_hooked_teacher_${member.id}`);
+      }
     } catch {
       // ignore
     }
   }
+};
+
+// Normalizes name string for comparison
+export const normalizeName = (name: string): string =>
+  (name || "").toLowerCase().trim().replace(/[^a-z0-9\s]/g, "");
+
+// Extracts surname/last name
+export const extractSurname = (name: string): string => {
+  const parts = normalizeName(name).split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return parts[parts.length - 1];
+  }
+  return "";
+};
+
+// Helper to check if member was explicitly separated from family grouping
+export const isExplicitlySolo = (member: Member): boolean => {
+  return !!member.householdId && member.householdId.startsWith("SOLO");
+};
+
+// Helper to check if member has an explicit custom family link
+export const isExplicitlyLinkedFamily = (member: Member): boolean => {
+  return !!member.householdId && !member.householdId.startsWith("SOLO");
+};
+
+// Determines whether two members share a household (explicit user override, surname, parent phone, or linked siblings)
+export const areMembersInSameHousehold = (a: Member, b: Member): boolean => {
+  // 0. Explicit User Decisions / Overrides
+  // If either child was explicitly marked as SOLO ("Not a family"), they are strictly individual
+  if (isExplicitlySolo(a) || isExplicitlySolo(b)) {
+    return false;
+  }
+
+  // If both have an explicit custom householdId
+  if (a.householdId && b.householdId) {
+    return a.householdId === b.householdId;
+  }
+
+  // If one has an explicit custom householdId and the other does not:
+  // Custom families are closed and do not auto-absorb other non-tagged members
+  if (a.householdId || b.householdId) {
+    return false;
+  }
+
+  const nameA = normalizeName(a.name);
+  const nameB = normalizeName(b.name);
+
+  // 1. Explicit known linked sibling / household pairs
+  const isSandraKelvin =
+    (nameA.includes("sandra omari") && nameB.includes("kelvin asante")) ||
+    (nameB.includes("sandra omari") && nameA.includes("kelvin asante"));
+  if (isSandraKelvin) return true;
+
+  const isEstherMaeeva =
+    (nameA.includes("esther") && nameB.includes("maeeva")) ||
+    (nameB.includes("esther") && nameA.includes("maeeva"));
+  if (isEstherMaeeva) return true;
+
+  // 2. Parent phone match (if 7+ digits)
+  const phoneA = (a.parentPhone || a.phone || "").replace(/\D/g, "");
+  const phoneB = (b.parentPhone || b.phone || "").replace(/\D/g, "");
+  if (phoneA.length >= 7 && phoneA === phoneB) return true;
+
+  // 3. Surname match (e.g. Mensah, Zong, Opoku, etc.)
+  const surnameA = extractSurname(a.name);
+  const surnameB = extractSurname(b.name);
+  if (surnameA && surnameB && surnameA === surnameB && surnameA.length >= 3) {
+    return true;
+  }
+
+  return false;
+};
+
+// Groups members into connected household/family clusters
+export const groupMembersIntoHouseholds = (members: Member[]): Member[][] => {
+  const clusters: Member[][] = [];
+  const visited = new Set<string>();
+
+  members.forEach((m) => {
+    if (visited.has(m.id)) return;
+    const currentCluster: Member[] = [m];
+    visited.add(m.id);
+
+    let addedMore = true;
+    while (addedMore) {
+      addedMore = false;
+      for (const other of members) {
+        if (!visited.has(other.id)) {
+          const matchesAny = currentCluster.some((clusterMember) =>
+            areMembersInSameHousehold(clusterMember, other)
+          );
+          if (matchesAny) {
+            currentCluster.push(other);
+            visited.add(other.id);
+            addedMore = true;
+          }
+        }
+      }
+    }
+    clusters.push(currentCluster);
+  });
+
+  return clusters;
+};
+
+// Gets eligible shepherds for a specific church department
+export const getEligibleShepherdsForChurch = (
+  church: string,
+  allMembers: Member[],
+  branchFilter?: string,
+): Member[] => {
+  const teachersInChurch = allMembers.filter((m) => {
+    if (m.status === MemberStatus.ARCHIVED || m.status === MemberStatus.TRANSFERRED) return false;
+    const matchChurch =
+      m.assignedChurch === church ||
+      (m.assignedChurch === "All" && isStaffOrTeacher(m));
+    const matchBranch =
+      !branchFilter || branchFilter === "ALL" || m.branchId === branchFilter;
+    return matchChurch && matchBranch && isStaffOrTeacher(m);
+  });
+
+  const uniqueTeachersMap = new Map<string, Member>();
+  teachersInChurch.forEach((t) => uniqueTeachersMap.set(t.id, t));
+  const allTeachers = Array.from(uniqueTeachersMap.values());
+
+  const eligibleTeachers: Member[] = [];
+  allTeachers.forEach((t) => {
+    if (church === "UJ" && isBranchHead(t)) {
+      // omit branch head for UJ division
+    } else if (
+      (t.role === "ADMIN" || t.role === "SUPER_ADMIN") &&
+      t.name.toLowerCase() === "admin"
+    ) {
+      // omit system admin
+    } else {
+      eligibleTeachers.push(t);
+    }
+  });
+
+  return eligibleTeachers.sort((a, b) => a.name.localeCompare(b.name));
+};
+
+// Auto-allocates children to shepherds equally while keeping households intact
+export const autoAllocateChildrenForChurch = (
+  church: string,
+  allMembers: Member[],
+  branchFilter?: string,
+): { updatedMembers: Member[]; assignments: TeacherAssignment[] } => {
+  const eligibleShepherds = getEligibleShepherdsForChurch(church, allMembers, branchFilter);
+  const pureMembers = allMembers.filter((m) => {
+    const matchChurch = m.assignedChurch === church;
+    const matchBranch =
+      !branchFilter || branchFilter === "ALL" || m.branchId === branchFilter;
+    return (
+      matchChurch &&
+      matchBranch &&
+      m.status !== MemberStatus.ARCHIVED &&
+      m.status !== MemberStatus.TRANSFERRED &&
+      !isStaffOrTeacher(m)
+    );
+  }).sort((a, b) => a.name.localeCompare(b.name));
+
+  if (eligibleShepherds.length === 0 || pureMembers.length === 0) {
+    return {
+      updatedMembers: allMembers,
+      assignments: eligibleShepherds.map((s) => ({ teacher: s, members: [], count: 0 })),
+    };
+  }
+
+  const assignments: TeacherAssignment[] = eligibleShepherds.map((s) => ({
+    teacher: s,
+    members: [],
+    count: 0,
+  }));
+
+  const clusters = groupMembersIntoHouseholds(pureMembers);
+  // Sort largest clusters first for optimal balanced distribution
+  clusters.sort((a, b) => b.length - a.length);
+
+  clusters.forEach((cluster) => {
+    // Pick shepherd with lowest member count
+    assignments.sort(
+      (a, b) =>
+        a.members.length - b.members.length ||
+        a.teacher.name.localeCompare(b.teacher.name)
+    );
+    const targetAsg = assignments[0];
+    cluster.forEach((child) => {
+      targetAsg.members.push(child);
+    });
+  });
+
+  assignments.forEach((asg) => {
+    asg.members.sort((a, b) => a.name.localeCompare(b.name));
+    asg.count = asg.members.length;
+  });
+  assignments.sort((a, b) => a.teacher.name.localeCompare(b.teacher.name));
+
+  // Build map of new child assignments
+  const childToShepherdMap = new Map<string, string>();
+  assignments.forEach((asg) => {
+    asg.members.forEach((child) => {
+      childToShepherdMap.set(child.id, asg.teacher.id);
+    });
+  });
+
+  const updatedMembers = allMembers.map((m) => {
+    if (childToShepherdMap.has(m.id)) {
+      const assignedTeacherId = childToShepherdMap.get(m.id);
+      setHookedTeacherId(m, assignedTeacherId!);
+      return { ...m, assignedTeacherId };
+    }
+    return m;
+  });
+
+  return { updatedMembers, assignments };
 };
 
 export const calculateChurchDivisions = (
@@ -84,98 +295,32 @@ export const calculateChurchDivisions = (
   const results: Record<string, ChurchDivisionResult> = {};
 
   for (const church of targetChurches) {
-    // 1. Filter members belonging to this church and optional branch
-    const churchMembers = allMembers.filter((m) => {
+    const pureMembers = allMembers.filter((m) => {
       const matchChurch = m.assignedChurch === church;
       const matchBranch =
         !branchFilter || branchFilter === "ALL" || m.branchId === branchFilter;
-      return matchChurch && matchBranch;
-    });
+      return (
+        matchChurch &&
+        matchBranch &&
+        m.status !== MemberStatus.ARCHIVED &&
+        m.status !== MemberStatus.TRANSFERRED &&
+        !isStaffOrTeacher(m)
+      );
+    }).sort((a, b) => a.name.localeCompare(b.name));
 
-    // 2. Separate people into categories so that each teacher receives a fair share of fnf and first timers
-    const fnfList = churchMembers
-      .filter(
-        (m) =>
-          m.type === MemberType.FNF &&
-          m.status !== MemberStatus.ARCHIVED &&
-          m.status !== MemberStatus.TRANSFERRED &&
-          !isStaffOrTeacher(m)
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const eligibleTeachers = getEligibleShepherdsForChurch(church, allMembers, branchFilter);
+    const totalMembers = pureMembers.length;
+    const totalEligibleTeachers = eligibleTeachers.length;
 
-    const visitorList = churchMembers
-      .filter(
-        (m) =>
-          (m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER) &&
-          m.status !== MemberStatus.ARCHIVED &&
-          m.status !== MemberStatus.TRANSFERRED &&
-          !isStaffOrTeacher(m)
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    const membersList = churchMembers
-      .filter(
-        (m) =>
-          m.type === MemberType.MEMBER &&
-          m.status !== MemberStatus.ARCHIVED &&
-          m.status !== MemberStatus.TRANSFERRED &&
-          !isStaffOrTeacher(m)
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    const otherList = churchMembers
-      .filter(
-        (m) =>
-          m.type !== MemberType.FNF &&
-          m.type !== MemberType.VISITOR &&
-          m.type !== MemberType.NOT_MEMBER &&
-          m.type !== MemberType.MEMBER &&
-          !isStaffOrTeacher(m) &&
-          m.status !== MemberStatus.ARCHIVED &&
-          m.status !== MemberStatus.TRANSFERRED
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
-
-    const pureMembers = [...fnfList, ...visitorList, ...membersList, ...otherList];
-
-    // 3. Find teachers for this church
-    const teachersInChurch = allMembers.filter((m) => {
+    const omittedTeachers = allMembers.filter((m) => {
       if (m.status === MemberStatus.ARCHIVED || m.status === MemberStatus.TRANSFERRED) return false;
       const matchChurch =
         m.assignedChurch === church ||
         (m.assignedChurch === "All" && isStaffOrTeacher(m));
       const matchBranch =
         !branchFilter || branchFilter === "ALL" || m.branchId === branchFilter;
-      return matchChurch && matchBranch && isStaffOrTeacher(m);
+      return matchChurch && matchBranch && isStaffOrTeacher(m) && !eligibleTeachers.some((et) => et.id === m.id);
     });
-
-    // Deduplicate teachers by ID
-    const uniqueTeachersMap = new Map<string, Member>();
-    teachersInChurch.forEach((t) => uniqueTeachersMap.set(t.id, t));
-    const allTeachers = Array.from(uniqueTeachersMap.values());
-
-    const omittedTeachers: Member[] = [];
-    const eligibleTeachers: Member[] = [];
-
-    allTeachers.forEach((t) => {
-      // For UJ church: omit Branch Head as part of this division
-      if (church === "UJ" && isBranchHead(t)) {
-        omittedTeachers.push(t);
-      } else if (
-        (t.role === "ADMIN" || t.role === "SUPER_ADMIN") &&
-        t.name.toLowerCase() === "admin"
-      ) {
-        // System admin account omitted
-        omittedTeachers.push(t);
-      } else {
-        eligibleTeachers.push(t);
-      }
-    });
-
-    eligibleTeachers.sort((a, b) => a.name.localeCompare(b.name));
-
-    const totalMembers = pureMembers.length;
-    const totalEligibleTeachers = eligibleTeachers.length;
 
     const assignments: TeacherAssignment[] = eligibleTeachers.map((t) => ({
       teacher: t,
@@ -189,75 +334,7 @@ export const calculateChurchDivisions = (
       const teacherMap = new Map<string, TeacherAssignment>();
       assignments.forEach((asg) => teacherMap.set(asg.teacher.id, asg));
 
-      // Helper to determine if two members belong to the same household/family
-      const normalizeName = (name: string): string =>
-        (name || "").toLowerCase().trim().replace(/[^a-z0-9\s]/g, "");
-
-      const extractSurname = (name: string): string => {
-        const parts = normalizeName(name).split(/\s+/).filter(Boolean);
-        if (parts.length >= 2) {
-          return parts[parts.length - 1];
-        }
-        return "";
-      };
-
-      const areMembersInSameHousehold = (a: Member, b: Member): boolean => {
-        const nameA = normalizeName(a.name);
-        const nameB = normalizeName(b.name);
-
-        // 1. Explicit known linked sibling / household pairs
-        const isSandraKelvin =
-          (nameA.includes("sandra omari") && nameB.includes("kelvin asante")) ||
-          (nameB.includes("sandra omari") && nameA.includes("kelvin asante"));
-        if (isSandraKelvin) return true;
-
-        const isEstherMaeeva =
-          (nameA.includes("esther") && nameB.includes("maeeva")) ||
-          (nameB.includes("esther") && nameA.includes("maeeva"));
-        if (isEstherMaeeva) return true;
-
-        // 2. Parent phone match (if 7+ digits)
-        const phoneA = (a.parentPhone || a.phone || "").replace(/\D/g, "");
-        const phoneB = (b.parentPhone || b.phone || "").replace(/\D/g, "");
-        if (phoneA.length >= 7 && phoneA === phoneB) return true;
-
-        // 3. Surname match (e.g. Mensah, Zong, Opoku, etc.)
-        const surnameA = extractSurname(a.name);
-        const surnameB = extractSurname(b.name);
-        if (surnameA && surnameB && surnameA === surnameB && surnameA.length >= 3) {
-          return true;
-        }
-
-        return false;
-      };
-
-      // 1. Group pureMembers into connected household clusters
-      const clusters: Member[][] = [];
-      const visited = new Set<string>();
-
-      pureMembers.forEach((m) => {
-        if (visited.has(m.id)) return;
-        const currentCluster: Member[] = [m];
-        visited.add(m.id);
-
-        let addedMore = true;
-        while (addedMore) {
-          addedMore = false;
-          for (const other of pureMembers) {
-            if (!visited.has(other.id)) {
-              const matchesAny = currentCluster.some((clusterMember) =>
-                areMembersInSameHousehold(clusterMember, other)
-              );
-              if (matchesAny) {
-                currentCluster.push(other);
-                visited.add(other.id);
-                addedMore = true;
-              }
-            }
-          }
-        }
-        clusters.push(currentCluster);
-      });
+      const clusters = groupMembersIntoHouseholds(pureMembers);
 
       // 2. Assign clusters:
       // First, handle clusters where at least one member already has a valid hooked teacher

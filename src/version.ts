@@ -16,16 +16,59 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.7.7";
-export const APP_RELEASE_NAME = "Attendance Day Intelligence, Household Shepherd Division, Persistent First Timers & Sunday Dashboard Pending State";
-export const APP_BUILD_DATE = "2026-09-28";
+export const APP_VERSION = "1.7.10";
+export const APP_RELEASE_NAME = "Instant DB Auto-Save, Live Shepherd Badges & Multi-Component Sync";
+export const APP_BUILD_DATE = "2026-09-29";
 
 export const CHANGELOG: ReleaseLog[] = [
+  {
+    version: "1.7.10",
+    date: "2026-09-29",
+    title: "Instant DB Auto-Save, Live Shepherd Badges & Multi-Component Sync",
+    badge: "Current Release",
+    changes: [
+      "Instant DB Auto-Save: All shepherd allocation movements, bulk transfers, auto-allocations, and custom family overrides immediately persist to Cloud Firestore and localStorage without requiring a manual save button click",
+      "Live Cloud DB Status: Added real-time animated saving status ('Saving to Database...') and timestamped confirmation badges ('Auto-Saved & Live HH:MM:SS') with an on-demand 'Sync Now' action in Shepherd Allocation Manager",
+      "Immediate Multi-Component Sync: Allocation modifications immediately propagate across the app, reflecting synchronously in Attendance Taker, People Hub (Members Directory), and Report Export",
+      "Assigned Shepherd Badges in Attendance Taker: Displayed assigned shepherd badges on child attendance cards with direct visual indicators for assigned and unassigned children",
+      "Shepherd Attendance Filter: Added a dedicated Shepherd Filter selector in Attendance Taker so shepherds and coordinators can filter rosters directly to their assigned children",
+      "People Hub Shepherd Integration: Added assigned shepherd badges to both desktop table rows and mobile member cards, and added an 'Assigned Shepherd' selector inside the Member Edit Drawer",
+      "Ghost-Free Allocation Sync: Hardened setHookedTeacherId and storageService to cleanly remove localStorage allocation keys when unassigning, eliminating ghost overrides across devices",
+    ],
+  },
+  {
+    version: "1.7.9",
+    date: "2026-09-29",
+    title: "Family & Household Decision Overrides in Shepherd Allocation",
+    badge: "Previous Release",
+    changes: [
+      "Custom Family Decision Controls: Empowered users to explicitly decide whether children sharing surnames/phones are a family or independent individuals within Shepherd Allocation",
+      "One-Click 'Not a Family' Separation: Separate coincidentally named children into independent records with 1-click, preventing unwanted household auto-grouping or transfers",
+      "Cross-Surname Family Linking: Easily link siblings, cousins, or guardians with different surnames into a shared household unit with optional custom family names",
+      "Interactive Family Decision Modal: Added intuitive family management modal accessible directly from child cards across Grid View, Side-by-Side Mode, and Unassigned Tray",
+      "In-Transfer Separation Shortcut: Added direct 'Not in this family? Separate Child' action right inside the Transfer Modal for fast allocation workflow without leaving the dialog",
+      "Multi-Campus Transfer: Support transferring members between different campus branches with automatic zone resolution in People Hub",
+      "Full Persistence: Custom family choices (`householdId` & `householdName`) persist seamlessly to localStorage and Firestore and automatically influence auto-allocation and reports",
+    ],
+  },
+  {
+    version: "1.7.8",
+    date: "2026-09-29",
+    title: "Shepherd Allocations Manager, Instant Archiving & Shepherd Nomenclature",
+    badge: "Previous Release",
+    changes: [
+      "Shepherd Nomenclature: Systematically replaced all user-facing references to 'Teachers' and 'Staff' with 'Shepherds' across Attendance Taker and People Hub",
+      "Instant 0ms Archiving: Optimized single member archive and bulk archive actions to immediately dismiss confirmation dialogs and update local UI cache with zero delay while completing Firestore cloud sync in the background",
+      "Interactive Shepherd Allocation Manager in Settings: Built a dedicated configuration view to visualize, organize, and reassign children to their shepherds per church department (UJ, LJ, K, I)",
+      "Automatic & Manual Capacity Balancing: Added one-click 'Auto-Allocate & Equalize' ensuring balanced child quotas per shepherd while preserving household and sibling units",
+      "Household-Aware Reorganization: Enabled moving individual children or entire family household units together between shepherds in a single click, with real-time capacity and quota indicators",
+      "Unassigned Children Tray: Added a responsive unassigned tray with instant 1-click assignment and automatic even distribution among least-loaded shepherds",
+    ],
+  },
   {
     version: "1.7.7",
     date: "2026-09-28",
     title: "Attendance Day Intelligence, Household Shepherd Division, Persistent First Timers & Sunday Dashboard Pending State",
-    badge: "Current Release",
     changes: [
       "First Timers Persistence & Cross-Component Sync: Fixed multi-entry first timers saving in Attendance Taker by assigning valid church departments, flushing immediately to Firestore, and broadcasting cross-component dataUpdated events to eliminate data loss upon logout or refresh",
       "Attendance Day Intelligence: Replaced manual Sunday/LC Live switcher with backend day intelligence where Wednesdays are exclusively LC Live for shepherds (staff mode), Sundays support the 3 Sunday services (Joy, Enlargement, Special), and other days dynamically open for Special Services",

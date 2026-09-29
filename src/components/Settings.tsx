@@ -6,6 +6,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { db, loginWithGoogle } from "../services/firebase";
 import { APP_VERSION, APP_RELEASE_NAME } from "../version";
 import { ChangelogModal } from "./ChangelogModal";
+import { ShepherdAllocationManager } from "./ShepherdAllocationManager";
 import {
   Settings as SettingsIcon,
   Cloud,
@@ -63,11 +64,11 @@ const Settings: React.FC<SettingsProps> = ({
   const isAdmin =
     currentUser.role === "ADMIN" || currentUser.role === "SUPER_ADMIN";
   const [activeTab, setActiveTab] = useState<
-    "GENERAL" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS" | "MAINTENANCE"
+    "GENERAL" | "ALLOCATIONS" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS" | "MAINTENANCE"
   >(() => {
     return (
       (sessionStorage.getItem("settings_activeTab") as
-        "GENERAL" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS" | "MAINTENANCE") ||
+        "GENERAL" | "ALLOCATIONS" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS" | "MAINTENANCE") ||
       "GENERAL"
     );
   });
@@ -462,8 +463,9 @@ const Settings: React.FC<SettingsProps> = ({
   };
 
   const visibleSettingsTabs = useMemo(() => {
-    const tabs: { id: "GENERAL" | "CHURCHES" | "ORGANIZATION" | "THEME" | "PERMISSIONS" | "CLOUD" | "MAINTENANCE"; label: string; icon: any }[] = [
+    const tabs: { id: "GENERAL" | "ALLOCATIONS" | "CHURCHES" | "ORGANIZATION" | "THEME" | "PERMISSIONS" | "CLOUD" | "MAINTENANCE"; label: string; icon: any }[] = [
       { id: "GENERAL", label: "General", icon: SettingsIcon },
+      { id: "ALLOCATIONS", label: "Shepherd Allocations", icon: Users },
       { id: "CHURCHES", label: "Church Branches", icon: Database },
       { id: "ORGANIZATION", label: "Organization Structure", icon: List },
       { id: "THEME", label: "Theme Colors", icon: Palette },
@@ -629,6 +631,16 @@ const Settings: React.FC<SettingsProps> = ({
                 </label>
               </div>
             </div>
+          )}
+
+          {/* ALLOCATIONS TAB */}
+          {activeTab === "ALLOCATIONS" && (
+            <ShepherdAllocationManager
+              data={data}
+              onUpdate={onUpdate}
+              currentUser={currentUser}
+              activeBranchId={activeBranchId}
+            />
           )}
 
           {/* CHURCHES TAB */}

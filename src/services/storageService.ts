@@ -446,10 +446,12 @@ export const saveMembers = async (members: Member[]) => {
     else newMembers.push(m);
   });
 
-  memoryCache = { ...current, members: newMembers };
+  // Strip undefined properties for safe Firestore array serialization
+  const sanitizedMembers: Member[] = JSON.parse(JSON.stringify(newMembers));
+  memoryCache = { ...current, members: sanitizedMembers };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  updateMainDoc({ members: newMembers }).catch(console.error);
+  await updateMainDoc({ members: sanitizedMembers });
 };
 
 export const addMember = async (member: Member) => {

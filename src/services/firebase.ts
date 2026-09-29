@@ -35,7 +35,10 @@ let dbInstance;
 try {
   dbInstance = initializeFirestore(
     app,
-    { experimentalForceLongPolling: true },
+    {
+      experimentalForceLongPolling: true,
+      ignoreUndefinedProperties: true,
+    },
     firebaseConfig.firestoreDatabaseId
   );
 } catch (e) {

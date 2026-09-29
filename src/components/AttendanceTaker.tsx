@@ -24,6 +24,7 @@ import {
   Info,
   Users,
   UserCheck,
+  UserX,
   Loader2,
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -131,6 +132,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const [attendanceMode, setAttendanceMode] = useState<"MEMBERS" | "STAFF">(
     () => (sessionStorage.getItem("attendance_mode") as any) || "MEMBERS",
   );
+  const [selectedShepherdFilter, setSelectedShepherdFilter] = useState<string>("ALL");
 
   // Persist State
   useEffect(() => {
@@ -862,11 +864,27 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     );
   }
 
+  const availableShepherdsForAttendance = useMemo(() => {
+    return (data.members || []).filter(
+      (m) =>
+        isStaffOrTeacher(m) &&
+        m.status !== MemberStatus.ARCHIVED &&
+        m.status !== MemberStatus.TRANSFERRED
+    );
+  }, [data.members]);
+
   const filteredMembers = membersToList.filter((m) => {
     const matchesSearch = m.name
       .toLowerCase()
       .includes(searchTerm.toLowerCase());
     const matchesType = filterType === "All" || m.type === filterType;
+
+    const matchesShepherd =
+      attendanceMode !== "MEMBERS" ||
+      selectedShepherdFilter === "ALL" ||
+      (selectedShepherdFilter === "UNASSIGNED"
+        ? !m.assignedTeacherId
+        : m.assignedTeacherId === selectedShepherdFilter);
 
     // --- SPECIAL LOGIC: HIDE JOY ATTENDEES IN ENLARGEMENT VIEW ---
     if (attendanceMode === "MEMBERS" && currentService === "ENLARGEMENT") {
@@ -876,7 +894,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       }
     }
 
-    return matchesSearch && matchesType;
+    return matchesSearch && matchesType && matchesShepherd;
   });
 
   const sortedMembers = [...filteredMembers].sort((a, b) => {
@@ -1308,9 +1326,32 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   onClick={() => setFilterType(type)}
                   className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterType === type ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
                 >
-                  {type === MemberType.VISITOR ? "First Timer" : type}
+                  {type === MemberType.VISITOR ? "First Timer" : type === MemberType.TEACHER ? "Shepherd" : type}
                 </button>
               ))}
+
+              {attendanceMode === "MEMBERS" && (
+                <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-200 px-3 py-1 rounded-full text-xs font-bold text-purple-900 shadow-2xs">
+                  <UserCheck size={13} className="text-purple-600 shrink-0" />
+                  <span className="text-[11px] text-purple-600 font-semibold">Shepherd:</span>
+                  <select
+                    value={selectedShepherdFilter}
+                    onChange={(e) => setSelectedShepherdFilter(e.target.value)}
+                    className="bg-transparent text-purple-900 font-bold focus:outline-none cursor-pointer pr-1 text-xs"
+                  >
+                    <option value="ALL">All Shepherds</option>
+                    <option value="UNASSIGNED">Unassigned Only</option>
+                    {availableShepherdsForAttendance.map((shepherd) => {
+                      const count = membersToList.filter((m) => m.assignedTeacherId === shepherd.id).length;
+                      return (
+                        <option key={shepherd.id} value={shepherd.id}>
+                          {shepherd.name} ({count})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1487,7 +1528,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               <UserPlus size={28} />
             </div>
             <h3 className="text-base font-bold text-slate-800">
-              No {attendanceMode === "STAFF" ? "Staff" : "Members"} Found for {getScopeDisplayLabel(activeBranchId, data.settings?.organization)}
+              No {attendanceMode === "STAFF" ? "Shepherds" : "Members"} Found for {getScopeDisplayLabel(activeBranchId, data.settings?.organization)}
             </h3>
             <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto font-medium">
               No active profiles match this church and branch scope. Switch scope or click "+ First Timer" to record a visitor.
@@ -1557,7 +1598,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                       >
                         {member.name}
                       </h4>
-                      <div className="flex flex-wrap gap-1 mt-1">
+                      <div className="flex flex-wrap items-center gap-1 mt-1">
                         <p
                           className={`text-xs font-medium uppercase tracking-wider ${isPresent ? "opacity-80" : "text-slate-400"}`}
                         >
@@ -1569,6 +1610,41 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                           >
                             {member.assignedChurch}
                           </span>
+                        )}
+                        {/* Assigned Shepherd Badge */}
+                        {attendanceMode === "MEMBERS" && (
+                          (() => {
+                            const shepherd = member.assignedTeacherId
+                              ? data.members.find((m) => m.id === member.assignedTeacherId)
+                              : null;
+                            if (shepherd) {
+                              return (
+                                <span
+                                  className={`text-[10px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1 ${
+                                    isPresent
+                                      ? "bg-white/25 text-current border border-white/30"
+                                      : "bg-purple-50 text-purple-700 border border-purple-200"
+                                  }`}
+                                  title={`Assigned Shepherd: ${shepherd.name}`}
+                                >
+                                  <UserCheck size={9} className="shrink-0" />
+                                  <span>Shepherd: {shepherd.name.split(" ")[0]}</span>
+                                </span>
+                              );
+                            }
+                            return (
+                              <span
+                                className={`text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1 ${
+                                  isPresent
+                                    ? "bg-white/15 text-current opacity-75"
+                                    : "bg-slate-50 text-slate-400 border border-slate-200"
+                                }`}
+                              >
+                                <UserX size={9} className="shrink-0" />
+                                <span>Unassigned</span>
+                              </span>
+                            );
+                          })()
                         )}
                       </div>
 

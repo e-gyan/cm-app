@@ -1,7 +1,7 @@
 # Children's Ministry Directorate (CMD) Platform
 
-[![Version](https://img.shields.io/badge/version-1.7.7-indigo.svg)](src/version.ts)
-[![Release](https://img.shields.io/badge/release-Attendance%20Day%20Intelligence%2C%20Household%20Division%20%26%20Instant%20Sync-emerald.svg)](src/version.ts)
+[![Version](https://img.shields.io/badge/version-1.7.10-indigo.svg)](src/version.ts)
+[![Release](https://img.shields.io/badge/release-Instant%20DB%20Auto--Save%20%26%20Multi--Component%20Sync-emerald.svg)](src/version.ts)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)](tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-cyan.svg)](package.json)
 
@@ -67,6 +67,7 @@ When introducing changes:
 │   │   ├── AnalyticsHub.tsx       # Interactive charts and AI insights
 │   │   ├── Finances.tsx           # Weekly Sunday collections, tithes and category ledgers
 │   │   ├── ReportExport.tsx       # WhatsApp copy-ready reports with Children/Shepherd breakdown
+│   │   ├── ShepherdAllocationManager.tsx # Visual pastoral allocations, household groups & quota balancing
 │   │   ├── Settings.tsx           # Organization, zones, branches, and RBAC matrix
 │   │   └── Login.tsx              # Passcode/Google authentication and session restoration
 │   │
@@ -181,6 +182,35 @@ When introducing changes:
 - **Pre-warmed View Switching**: All application views (Dashboard, Attendance, People Hub, Outreach, Analytics, Finances, Reports, Settings) are pre-mounted in the DOM, enabling 0ms tab switching with zero delay.
 - **Global Child / Children Terminology**: Standardized terminology across the entire application, eliminating all instances of "kid" or "kids".
 - **Responsive Mobile Touch Layout**: 44px minimum touch targets, touch-friendly tab navigation, and responsive card views across all screen sizes.
+
+### 9. Interactive Shepherd Allocations, Instant DB Auto-Save & Multi-Component Sync
+- **Instant DB Auto-Save on Allocation Changes**:
+  - Every child movement, household relocation, bulk reassignment, auto-allocation, unassigned distribution, or family decision immediately writes to Cloud Firestore and local storage without requiring manual "Save Allocations" button clicks.
+  - Replaced the static save button with real-time animated feedback badges (`"Saving to Database..."` and `"Auto-Saved & Live (HH:MM:SS)"`), accompanied by an on-demand `"Sync Now"` trigger.
+- **Immediate Multi-Component Reflection**:
+  - **Attendance Taker**:
+    - Child attendance cards immediately display assigned shepherd badges (`"Shepherd: [Name]"`) or `"Unassigned"` badges.
+    - Added an interactive **Shepherd Filter** allowing shepherds and coordinators to instantly filter attendance rosters to their assigned children.
+  - **People Hub (Members Directory)**:
+    - Displays assigned shepherd badges in both desktop table rows and mobile member cards.
+    - Added an **"Assigned Shepherd"** select dropdown inside the Member Edit Drawer, allowing manual shepherd assignments directly from member profiles.
+  - **Report Export**:
+    - Automatically updates shepherd divisions and headcount groupings in real time.
+- **Shepherd Allocation Manager in Settings**:
+  - Full configuration interface in **Settings > Shepherd Allocations** for organizing children among active shepherds per church department (`UJ`, `LJ`, `K`, `I`).
+  - **Direct Family & Household Decision Overrides**:
+    - Decide whether children sharing surnames/phones are actually a family or completely independent individuals.
+    - **One-Click "Not a Family" Separation**: Instantly marks coincidentally named children as individual records (`SOLO`), preventing them from being grouped or moved together.
+    - **Cross-Surname Sibling Linking**: Connect siblings or household members with different surnames (e.g. half-siblings, cousins, guardians) into custom household units with optional family names.
+    - **In-Transfer Separation Shortcut**: Quickly separate a child directly inside the **Transfer Modal** without interrupting the assignment workflow.
+    - **1-Click Reset to Auto**: Easily revert any manual override back to standard heuristic surname/phone auto-clustering.
+  - **One-Click Auto-Allocate & Equalize**: Automatically calculates and balances child quotas per shepherd while strictly honoring custom and auto-detected household clusters.
+  - **Side-by-Side Direct Transfer Mode**: Compare two shepherds side-by-side with directional move arrows for real-time visual transfer feedback.
+  - **Unassigned Children Tray**: Highlights unplaced children with immediate 1-click assignment or even distribution among shepherds with the lowest workload.
+  - **Live Capacity Metrics & Undo**: Real-time quota indicators (`Balanced`, `Over Quota`, `Under Quota`) and a live **Recently Moved Banner** with 1-click **Undo**.
+- **Instant 0ms Archiving & Seamless Deletion**:
+  - Dismisses confirmation modals in 0ms with instantaneous optimistic local state removal.
+  - Updates Firestore in the background with zero blocking spinners or user wait times.
 
 ---
 

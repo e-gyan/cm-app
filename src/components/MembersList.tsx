@@ -42,14 +42,16 @@ import {
   UserCircle,
   BadgeCheck,
   CheckCircle,
+  Camera,
   UserPlus,
   Search,
-  Camera,
+  UserCheck,
+  UserX,
 } from "lucide-react";
 import { updateMember, addMember, deleteMember, bulkArchiveMembers, bulkDeleteMembers } from "../services/storageService";
 import { uploadMemberPhoto } from "../services/firebase";
 import { sanitizeInput } from "../services/securityService";
-import { matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
+import { matchesScope, getScopeDisplayLabel, setHookedTeacherId, isStaffOrTeacher } from "../lib/teacherDivision";
 import { MemberAvatar } from "./MemberAvatar";
 import { PhotoStudioModal } from "./PhotoStudioModal";
 import {
@@ -142,7 +144,9 @@ const MembersList: React.FC<MembersListProps> = ({
   const [isBulkArchiveConfirming, setIsBulkArchiveConfirming] = useState(false);
   const [isBulkDeleteConfirming, setIsBulkDeleteConfirming] = useState(false);
   const [transferMember, setTransferMember] = useState<Member | null>(null);
-  const [transferTarget, setTransferTarget] = useState<Church | "">("");
+  const [transferTarget, setTransferTarget] = useState<string>("");
+  const [transferBranchTarget, setTransferBranchTarget] = useState<string>("");
+  const [transferZoneTarget, setTransferZoneTarget] = useState<string>("");
 
   // HISTORY MODAL STATE
   const [historyMemberId, setHistoryMemberId] = useState<string | null>(null);
@@ -251,6 +255,7 @@ const MembersList: React.FC<MembersListProps> = ({
       zoneId: member.zoneId || "",
       gender: member.gender || undefined,
       photoUrl: member.photoUrl || "",
+      assignedTeacherId: member.assignedTeacherId || "",
     });
     setIsEditModalOpen(true);
   };
@@ -274,6 +279,7 @@ const MembersList: React.FC<MembersListProps> = ({
       zoneId: currentUser.zoneId || "",
       gender: undefined,
       photoUrl: "",
+      assignedTeacherId: "",
     });
     setIsCreateModalOpen(true);
   };
@@ -373,13 +379,18 @@ const MembersList: React.FC<MembersListProps> = ({
       // UPDATE EXISTING
       const original = data.members.find((m) => m.id === editingId);
       if (original) {
+        const assignedShepherd = (formData as any).assignedTeacherId !== undefined
+          ? (formData as any).assignedTeacherId || undefined
+          : original.assignedTeacherId;
+
         let updatedMember = {
           ...original,
           ...formData,
           name: cleanName,
-          // Hooked assignedTeacherId must never be lost when status, church, or type changes
-          assignedTeacherId: original.assignedTeacherId || (formData as any).assignedTeacherId,
+          assignedTeacherId: assignedShepherd,
         } as Member;
+
+        setHookedTeacherId(updatedMember, assignedShepherd);
 
         // Check for promotion/transfer
         if (original.assignedChurch !== formData.assignedChurch) {
@@ -417,6 +428,7 @@ const MembersList: React.FC<MembersListProps> = ({
     } else {
       // CREATE NEW
       const mId = crypto.randomUUID();
+      const assignedShepherd = (formData as any).assignedTeacherId || undefined;
       const newMember: Member = {
         id: mId,
         name: cleanName,
@@ -428,7 +440,12 @@ const MembersList: React.FC<MembersListProps> = ({
         passcode: formData.birthDate || "",
         addedAt: Date.now(),
         ...formData,
+        assignedTeacherId: assignedShepherd,
       } as Member;
+
+      if (assignedShepherd) {
+        setHookedTeacherId(newMember, assignedShepherd);
+      }
 
       setIsCreateModalOpen(false);
       setEditingId(null);
@@ -448,16 +465,14 @@ const MembersList: React.FC<MembersListProps> = ({
     setMemberToArchive(member);
   };
 
-  const confirmArchiveSingle = async () => {
+  const confirmArchiveSingle = () => {
     if (memberToArchive) {
       const target = memberToArchive;
       setMemberToArchive(null);
-      try {
-        await updateMember(target.id, { ...target, status: MemberStatus.ARCHIVED });
-        await onUpdate();
-      } catch (err) {
+      updateMember(target.id, { ...target, status: MemberStatus.ARCHIVED }).catch((err) => {
         console.error("Failed to archive member:", err);
-      }
+      });
+      onUpdate();
     }
   };
 
@@ -470,62 +485,86 @@ const MembersList: React.FC<MembersListProps> = ({
 
   const openTransferModal = (member: Member) => {
     setTransferMember(member);
-    setTransferTarget("");
+    setTransferTarget(member.assignedChurch || "UJ");
+    setTransferBranchTarget(member.branchId || "");
+    setTransferZoneTarget(member.zoneId || "");
   };
 
   const confirmTransfer = async () => {
-    if (
-      transferMember &&
-      transferTarget &&
-      transferTarget !== transferMember.assignedChurch
-    ) {
-      const isArchiving = (transferTarget as string) === "ARCHIVED";
-      const targetChurch = isArchiving ? transferMember.assignedChurch : (transferTarget as Church);
-      const promotion: PromotionRecord = {
-        date: new Date().toISOString(),
-        fromChurch: transferMember.assignedChurch,
-        toChurch: targetChurch,
-      };
-      const updatedMember: Member = {
-        ...transferMember,
-        assignedChurch: targetChurch,
-        status: isArchiving ? MemberStatus.ARCHIVED : transferMember.status,
-        promotionHistory: [
-          ...(transferMember.promotionHistory || []),
-          promotion,
-        ],
-      };
-      const mId = transferMember.id;
-      const memberName = transferMember.name;
+    if (!transferMember) return;
+
+    const isArchiving = (transferTarget as string) === "ARCHIVED";
+    const targetChurch = isArchiving ? transferMember.assignedChurch : (transferTarget as Church);
+    const targetBranch = transferBranchTarget.trim();
+    const targetZone = transferZoneTarget.trim();
+
+    const churchChanged = targetChurch !== transferMember.assignedChurch;
+    const branchChanged = targetBranch !== (transferMember.branchId || "");
+    const archivingChanged = isArchiving && transferMember.status !== MemberStatus.ARCHIVED;
+
+    if (!churchChanged && !branchChanged && !archivingChanged) {
       setTransferMember(null);
       setTransferTarget("");
-      try {
-        await updateMember(mId, updatedMember);
-        setToastMessage({
-          title: "Transfer Successful",
-          message: `${memberName} was moved to ${
-            isArchiving
-              ? "Archived"
-              : targetChurch === "UJ"
-                ? "Upper Junior (UJ)"
-                : targetChurch === "LJ"
-                  ? "Lower Junior (LJ)"
-                  : targetChurch === "K"
-                    ? "Kindergarten (K)"
-                    : targetChurch === "I"
-                      ? "Infants (I)"
-                      : targetChurch
-          }`,
-        });
-        setTimeout(() => setToastMessage(null), 3000);
-        await onUpdate();
-      } catch (err) {
-        console.error("Failed to transfer member:", err);
-      }
-    } else {
-      setTransferMember(null);
-      setTransferTarget("");
+      setTransferBranchTarget("");
+      setTransferZoneTarget("");
+      return;
     }
+
+    const promotion: PromotionRecord = {
+      date: new Date().toISOString(),
+      fromChurch: transferMember.assignedChurch,
+      toChurch: targetChurch,
+    };
+
+    const updatedMember: Member = {
+      ...transferMember,
+      assignedChurch: targetChurch,
+      branchId: targetBranch || undefined,
+      zoneId: targetZone || undefined,
+      status: isArchiving ? MemberStatus.ARCHIVED : transferMember.status,
+      promotionHistory: [
+        ...(transferMember.promotionHistory || []),
+        promotion,
+      ],
+    };
+
+    const mId = transferMember.id;
+    const memberName = transferMember.name;
+    setTransferMember(null);
+    setTransferTarget("");
+    setTransferBranchTarget("");
+    setTransferZoneTarget("");
+
+    updateMember(mId, updatedMember).catch((err) => {
+      console.error("Failed to transfer member:", err);
+    });
+
+    const destinationParts = [];
+    if (churchChanged || isArchiving) {
+      destinationParts.push(
+        isArchiving
+          ? "Archived"
+          : targetChurch === "UJ"
+          ? "Upper Junior (UJ)"
+          : targetChurch === "LJ"
+          ? "Lower Junior (LJ)"
+          : targetChurch === "K"
+          ? "Kindergarten (K)"
+          : targetChurch === "I"
+          ? "Infants (I)"
+          : targetChurch
+      );
+    }
+    if (branchChanged && targetBranch) {
+      destinationParts.push(`Branch: ${targetBranch}`);
+    }
+
+    setToastMessage({
+      title: "Transfer Successful",
+      message: `${memberName} was transferred to ${destinationParts.join(" • ") || "new target"}.`,
+    });
+    setTimeout(() => setToastMessage(null), 3500);
+    onUpdate();
   };
   const restoreMember = async (member: Member) => {
     updateMember(member.id, {  ...member, status: MemberStatus.ACTIVE  }).catch(console.error);
@@ -579,11 +618,14 @@ const MembersList: React.FC<MembersListProps> = ({
     setIsBulkArchiveConfirming(true);
   };
 
-  const confirmBulkArchive = async () => {
+  const confirmBulkArchive = () => {
     if (selectedIds.size > 0) {
-      await bulkArchiveMembers(Array.from(selectedIds));
+      const ids = Array.from(selectedIds);
       setSelectedIds(new Set());
       setIsBulkArchiveConfirming(false);
+      bulkArchiveMembers(ids).catch((err) => {
+        console.error("Failed to bulk archive members:", err);
+      });
       onUpdate();
     }
   };
@@ -1058,6 +1100,29 @@ const MembersList: React.FC<MembersListProps> = ({
                                   <PartyPopper size={12} /> Birthday Week!
                                 </div>
                               )}
+                              {!isTeacherSection && (
+                                <div className="mt-1 flex items-center gap-1.5">
+                                  {(() => {
+                                    const shepherd = member.assignedTeacherId
+                                      ? data.members.find((m) => m.id === member.assignedTeacherId)
+                                      : null;
+                                    if (shepherd) {
+                                      return (
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded" title={`Assigned Shepherd: ${shepherd.name}`}>
+                                          <UserCheck size={9} />
+                                          <span>Shepherd: {shepherd.name}</span>
+                                        </span>
+                                      );
+                                    }
+                                    return (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
+                                        <UserX size={9} />
+                                        <span>No Shepherd</span>
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -1094,7 +1159,9 @@ const MembersList: React.FC<MembersListProps> = ({
                           <span
                             className={`px-2 py-1 rounded-lg text-xs font-semibold ${badgeClass}`}
                           >
-                            {member.type === "Visitor" ? "First Timer" : member.type}
+                            {isTeacherSection
+                              ? ((member.type as string) === "Teacher" || member.type === MemberType.TEACHER ? "Shepherd" : member.type)
+                              : ((member.type as string) === "Visitor" ? "First Timer" : (member.type as string) === "Teacher" ? "Shepherd" : member.type)}
                           </span>
                         </td>
 
@@ -1283,6 +1350,11 @@ const MembersList: React.FC<MembersListProps> = ({
                             <span className="text-xs px-2 py-1 rounded-md bg-gray-100 text-gray-600 border border-gray-200 font-medium">
                               {member.assignedChurch}
                             </span>
+                            {isTeacherSection && (
+                              <span className="text-xs px-2 py-1 rounded-md bg-purple-50 text-purple-700 border border-purple-100 font-bold">
+                                {(member.type as string) === "Teacher" || member.type === MemberType.TEACHER ? "Shepherd" : member.type}
+                              </span>
+                            )}
                             {isAdmin && member.branchId && (
                               <span className="text-xs px-2 py-1 rounded-md bg-slate-100 text-slate-600 border border-slate-200 font-medium">
                                 {member.branchId}
@@ -1307,6 +1379,25 @@ const MembersList: React.FC<MembersListProps> = ({
                                   <span className="opacity-75">({promoStatus.remainingText})</span>
                                 )}
                               </span>
+                            )}
+                            {!isTeacherSection && (
+                              (() => {
+                                const shepherd = member.assignedTeacherId
+                                  ? data.members.find((m) => m.id === member.assignedTeacherId)
+                                  : null;
+                                if (shepherd) {
+                                  return (
+                                    <span className="text-xs px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 font-bold flex items-center gap-1">
+                                      <UserCheck size={11} /> Shepherd: {shepherd.name}
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className="text-xs px-2 py-1 rounded-md bg-slate-50 text-slate-400 border border-slate-200 font-medium flex items-center gap-1">
+                                    <UserX size={11} /> No Shepherd
+                                  </span>
+                                );
+                              })()
                             )}
                             {isTeacherSection && member.isAccessActive && (
                               <span className="text-xs px-2 py-1 rounded-md bg-green-50 text-green-700 border border-green-100 flex items-center gap-1 font-medium">
@@ -1801,7 +1892,7 @@ const MembersList: React.FC<MembersListProps> = ({
               >
                 {getCreationRoleOptions().map((t) => (
                   <option key={t} value={t}>
-                    {t === "Visitor" ? "First Timer" : t}
+                    {(t as string) === "Visitor" ? "First Timer" : (t as string) === "Teacher" ? "Shepherd" : t}
                   </option>
                 ))}
               </select>
@@ -1844,6 +1935,52 @@ const MembersList: React.FC<MembersListProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Assigned Shepherd Selector (for children/members) */}
+        {hubTab !== "TEACHERS" && formData.type !== MemberType.TEACHER && (
+          <div className="pt-2 border-t border-gray-100">
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1 flex items-center justify-between">
+              <span>Assigned Shepherd</span>
+              {(formData as any).assignedTeacherId && (
+                <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">Assigned</span>
+              )}
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <UserCheck size={18} className="text-indigo-500" />
+              </div>
+              <select
+                className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800 appearance-none"
+                value={(formData as any).assignedTeacherId || ""}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    assignedTeacherId: e.target.value || undefined,
+                  })
+                }
+              >
+                <option value="">-- No Assigned Shepherd (Unassigned) --</option>
+                {data.members
+                  .filter((m) =>
+                    isStaffOrTeacher(m) &&
+                    m.status !== MemberStatus.ARCHIVED &&
+                    m.status !== MemberStatus.TRANSFERRED
+                  )
+                  .map((shepherd) => (
+                    <option key={shepherd.id} value={shepherd.id}>
+                      {shepherd.name} ({shepherd.assignedChurch || "All"} {shepherd.branchId ? `· ${shepherd.branchId}` : ""})
+                    </option>
+                  ))}
+              </select>
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                <ChevronDown size={16} className="text-gray-400" />
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1 ml-1">
+              Changes persist directly to the database and reflect across Shepherd Allocation and Attendance.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Organization Section */}
@@ -2119,7 +2256,7 @@ const MembersList: React.FC<MembersListProps> = ({
           <h2 className="text-xl font-bold text-gray-800">
             People Hub: {activeChurch === "All" || activeChurch === "CM" ? getScopeDisplayLabel(activeBranchId, data.settings?.organization) : `${activeChurch} Church`}
           </h2>
-          <p className="text-sm text-gray-500">Manage teachers and members.</p>
+          <p className="text-sm text-gray-500">Manage shepherds and members.</p>
         </div>
         <div className="flex items-center gap-3">
           {isAdmin && hubTab === "MEMBERS" && (
@@ -2231,7 +2368,7 @@ const MembersList: React.FC<MembersListProps> = ({
                 }}
                 className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${filter === f ? "bg-white text-indigo-600 shadow-sm ring-1 ring-black/5" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
               >
-                {f === "CM" ? "All Active" : f === "MISSING_GENDER" ? "Missing Gender" : f === "UNASSIGNED_BRANCH" ? "Unassigned Branch" : f === "ARCHIVED" ? "Archived" : f === "Visitor" ? "First Timer" : f}
+                {(f as string) === "CM" ? "All Active" : (f as string) === "MISSING_GENDER" ? "Missing Gender" : (f as string) === "UNASSIGNED_BRANCH" ? "Unassigned Branch" : (f as string) === "ARCHIVED" ? "Archived" : (f as string) === "Visitor" ? "First Timer" : (f as string) === "Teacher" ? "Shepherd" : f}
               </button>
             ))}
           </div>
@@ -2252,7 +2389,7 @@ const MembersList: React.FC<MembersListProps> = ({
               <option value="CM">All Active</option>
               {getCreationRoleOptions().map((f) => (
                 <option key={f} value={f}>
-                  {f === "Visitor" ? "First Timer" : f}
+                  {(f as string) === "Visitor" ? "First Timer" : (f as string) === "Teacher" ? "Shepherd" : f}
                 </option>
               ))}
               <option value="MISSING_GENDER">Missing Gender</option>
@@ -2827,66 +2964,135 @@ const MembersList: React.FC<MembersListProps> = ({
       {/* TRANSFER MODAL */}
       {transferMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
-            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-fuchsia-100 text-fuchsia-600 mb-4 mx-auto">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 border border-slate-100">
+            <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-fuchsia-100 text-fuchsia-600 mb-3 mx-auto">
               <ArrowRightLeft size={24} />
             </div>
-            <h3 className="text-lg font-bold text-gray-800 text-center mb-2">
-              Transfer Member
+            <h3 className="text-xl font-extrabold text-gray-900 text-center mb-1">
+              Transfer Member / Child
             </h3>
-            <p className="text-gray-500 text-center text-sm mb-4">
-              Move {transferMember.name} to a different church branch.
+            <p className="text-gray-500 text-center text-xs mb-4">
+              Transfer <span className="font-bold text-gray-800">{transferMember.name}</span> to a different church department or campus branch.
             </p>
-            <div className="mb-6">
-              <label className="block text-sm font-bold text-gray-700 mb-1">
-                Target Church
-              </label>
-              <select
-                className="w-full p-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
-                value={transferTarget}
-                onChange={(e) => setTransferTarget(e.target.value as Church)}
-              >
-                <option value="">Select a branch</option>
-                {getTransferOptions(transferMember.assignedChurch).map((c) => (
-                  <option
-                    key={c}
-                    value={c}
-                    disabled={c === transferMember.assignedChurch}
-                  >
-                    {c === "UJ"
-                      ? "Upper Junior (UJ)"
-                      : c === "LJ"
-                        ? "Lower Junior (LJ)"
-                        : c === "K"
-                          ? "Kindergarten (K)"
-                          : c === "I"
-                            ? "Infants (I)"
-                            : (c as string) === "ARCHIVED"
-                              ? "Archive (Graduated / Teen)"
-                              : c}{" "}
-                    {c === transferMember.assignedChurch ? "(Current)" : ""}
-                  </option>
-                ))}
-              </select>
+
+            {/* Current Profile Summary */}
+            <div className="p-3 bg-slate-50 border border-slate-200/70 rounded-2xl mb-4 flex items-center justify-between text-xs">
+              <div>
+                <span className="text-slate-400 font-bold block text-[10px] uppercase">Current Church</span>
+                <span className="font-extrabold text-slate-800">{transferMember.assignedChurch} Church</span>
+              </div>
+              <div className="text-right">
+                <span className="text-slate-400 font-bold block text-[10px] uppercase">Current Branch</span>
+                <span className="font-extrabold text-slate-800">{transferMember.branchId || "None (Unassigned)"}</span>
+              </div>
             </div>
+
+            <div className="space-y-4 mb-6">
+              {/* Target Church Selector */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5 flex items-center gap-1.5">
+                  <Building2 size={14} className="text-fuchsia-600" />
+                  Target Church Department
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full p-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none text-xs font-bold text-gray-800 appearance-none"
+                    value={transferTarget}
+                    onChange={(e) => setTransferTarget(e.target.value as Church)}
+                  >
+                    {["UJ", "LJ", "K", "I", ...availableChurches.filter((c) => !["UJ", "LJ", "K", "I"].includes(c))].map((c) => (
+                      <option key={c} value={c}>
+                        {c === "UJ"
+                          ? "Upper Junior (UJ)"
+                          : c === "LJ"
+                            ? "Lower Junior (LJ)"
+                            : c === "K"
+                              ? "Kindergarten (K)"
+                              : c === "I"
+                                ? "Infants (I)"
+                                : `${c} Church`}{" "}
+                        {c === transferMember.assignedChurch ? "(Current)" : ""}
+                      </option>
+                    ))}
+                    <option value="ARCHIVED">Archive (Graduated / Teen)</option>
+                  </select>
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    <ChevronDown size={16} className="text-gray-400" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Target Campus Branch Selector */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5 flex items-center gap-1.5">
+                  <MapPin size={14} className="text-fuchsia-600" />
+                  Target Campus Branch
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full p-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none text-xs font-bold text-gray-800 appearance-none"
+                    value={transferBranchTarget}
+                    onChange={(e) => {
+                      const newBranchId = e.target.value;
+                      let matchedZone = "";
+                      if (data.settings.organization?.zones) {
+                        const foundZone = data.settings.organization.zones.find((z) =>
+                          z.branches?.some((b) => (b.id || b.name) === newBranchId)
+                        );
+                        if (foundZone) {
+                          matchedZone = foundZone.id || foundZone.name;
+                        }
+                      }
+                      setTransferBranchTarget(newBranchId);
+                      setTransferZoneTarget(matchedZone);
+                    }}
+                  >
+                    <option value="">No Branch (Unassigned)</option>
+                    {(data.settings.organization?.zones?.flatMap((z) => z.branches || []) || []).map((b) => {
+                      const bVal = b.id || b.name;
+                      const isCurrent = bVal === transferMember.branchId;
+                      return (
+                        <option key={bVal} value={bVal}>
+                          {b.name} {isCurrent ? "(Current)" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    <ChevronDown size={16} className="text-gray-400" />
+                  </div>
+                </div>
+                {transferZoneTarget && (
+                  <p className="text-[10px] text-fuchsia-600 font-bold mt-1 ml-1">
+                    Auto-linked Zone: {transferZoneTarget}
+                  </p>
+                )}
+              </div>
+            </div>
+
             <div className="flex gap-3">
               <button
+                type="button"
                 onClick={() => {
                   setTransferMember(null);
                   setTransferTarget("");
+                  setTransferBranchTarget("");
+                  setTransferZoneTarget("");
                 }}
-                className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
+                className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors text-xs"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={confirmTransfer}
                 disabled={
-                  !transferTarget ||
-                  transferTarget === transferMember.assignedChurch
+                  (!transferTarget || transferTarget === transferMember.assignedChurch) &&
+                  transferBranchTarget === (transferMember.branchId || "")
                 }
-                className="flex-1 py-3 bg-fuchsia-600 text-white font-bold rounded-xl hover:bg-fuchsia-700 transition-colors shadow-lg shadow-fuchsia-200 disabled:opacity-50 disabled:pointer-events-none"
+                className="flex-1 py-3 bg-fuchsia-600 text-white font-bold rounded-xl hover:bg-fuchsia-700 transition-colors shadow-lg shadow-fuchsia-200 disabled:opacity-50 disabled:pointer-events-none text-xs flex items-center justify-center gap-1.5"
               >
+                <ArrowRightLeft size={16} />
                 Transfer
               </button>
             </div>

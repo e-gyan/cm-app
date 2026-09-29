@@ -121,6 +121,7 @@ export const APP_FEATURES_REGISTRY: FeatureDef[] = [
     iconName: "Settings",
     subfeatures: [
       { id: "GENERAL", name: "General", description: "Configure system name, defaults, and feature flags." },
+      { id: "ALLOCATIONS", name: "Shepherd Allocations", description: "Configure and organize children allocations to shepherds per church." },
       { id: "CHURCHES", name: "Churches", description: "Add or remove ministry categories (UJ, LJ, K, I, N)." },
       { id: "ORGANIZATION", name: "Organization Structure", description: "Build and modify Directorates, Zones, and Branches." },
       { id: "THEME", name: "Theme and Colors", description: "Customize primary brand accents and church color schemes." },

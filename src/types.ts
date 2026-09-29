@@ -85,6 +85,8 @@ export interface Member {
   vacationStartDate?: string;
   vacationEndDate?: string;
   assignedTeacherId?: string;
+  householdId?: string;
+  householdName?: string;
   photoUrl?: string;
 }
 
