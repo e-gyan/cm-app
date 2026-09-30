@@ -10,6 +10,7 @@ import {
   MemberType,
   MemberStatus,
   Church,
+  isFnfMember,
 } from "../types";
 import {
   saveOutreachSession,
@@ -249,8 +250,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       data.members
         .filter(
           (m) =>
-            m.type === MemberType.VISITOR ||
-            m.type === MemberType.FNF ||
+            isFnfMember(m) ||
             m.type === MemberType.NOT_MEMBER,
         )
         .map((m) => m.id)
@@ -1555,12 +1555,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     return list.sort((a, b) => a.name.localeCompare(b.name));
   }, [data.members, activeChurch, filterChurch, isAdmin, currentUser, divisions, memberSearch]);
 
-  // --- VISITOR / FIRST TIMER / FNF COUNT POOL ---
   const visitorList = useMemo(() => {
     return connectList.filter(
       (m) =>
-        m.type === MemberType.VISITOR ||
-        m.type === MemberType.FNF ||
+        isFnfMember(m) ||
         m.type === MemberType.NOT_MEMBER,
     );
   }, [connectList]);
@@ -2140,11 +2138,8 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         const notActiveMembers = connectList.filter(
           (m) => m.type === MemberType.MEMBER && m.status === MemberStatus.NOT_ACTIVE,
         );
-        const firstTimers = connectList.filter(
-          (m) => m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER,
-        );
         const fnfMembers = connectList.filter(
-          (m) => m.type === MemberType.FNF,
+          (m) => isFnfMember(m) || m.type === MemberType.NOT_MEMBER,
         );
 
         return (
@@ -2231,20 +2226,6 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 </button>
 
                 <button
-                  onClick={() => setMemberCategoryFilter("VISITOR")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${memberCategoryFilter === "VISITOR"
-                    ? "bg-teal-600 text-white shadow-sm"
-                    : "bg-teal-50 text-teal-700 hover:bg-teal-100"
-                    }`}
-                >
-                  <UserPlus size={12} />
-                  <span>First Timers</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${memberCategoryFilter === "VISITOR" ? "bg-teal-700 text-white" : "bg-teal-200/70 text-teal-800"}`}>
-                    {firstTimers.length}
-                  </span>
-                </button>
-
-                <button
                   onClick={() => setMemberCategoryFilter("FNF")}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${memberCategoryFilter === "FNF"
                     ? "bg-emerald-600 text-white shadow-sm"
@@ -2300,28 +2281,13 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               />
             )}
 
-            {(memberCategoryFilter === "ALL" || memberCategoryFilter === "VISITOR") && (
+            {(memberCategoryFilter === "ALL" || memberCategoryFilter === "FNF" || (memberCategoryFilter as string) === "VISITOR") && (
               <CollapsibleContactSection
-                title="First Timers (Follow Up)"
-                members={firstTimers}
-                color="teal"
-                icon={UserPlus}
-                defaultOpen={memberCategoryFilter === "VISITOR" || memberCategoryFilter === "ALL"}
-                onTrackCall={handleTrackCall}
-                onMessageClick={handleMessageClick}
-                onEditClick={handleEditClick}
-                onPromoteClick={handlePromoteToMember}
-                promotingId={promotingId}
-              />
-            )}
-
-            {(memberCategoryFilter === "ALL" || memberCategoryFilter === "FNF") && (
-              <CollapsibleContactSection
-                title="(FNF)"
+                title="Friends & Family (FNFs)"
                 members={fnfMembers}
                 color="emerald"
                 icon={Heart}
-                defaultOpen={memberCategoryFilter === "FNF"}
+                defaultOpen={memberCategoryFilter === "FNF" || (memberCategoryFilter as string) === "VISITOR"}
                 onTrackCall={handleTrackCall}
                 onMessageClick={handleMessageClick}
                 onEditClick={handleEditClick}
@@ -3020,20 +2986,11 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 color="indigo"
               />
               <CollapsibleProgressSection
-                title="Friends and Family"
-                members={connectList.filter((m) => m.type === MemberType.FNF)}
+                title="Friends & Family (FNFs)"
+                members={connectList.filter((m) => isFnfMember(m))}
                 data={data}
                 icon={User}
                 color="amber"
-              />
-              <CollapsibleProgressSection
-                title="First Timers"
-                members={connectList.filter(
-                  (m) => m.type === MemberType.VISITOR,
-                )}
-                data={data}
-                icon={UserPlus}
-                color="teal"
               />
             </div>
           );
@@ -3977,13 +3934,13 @@ const CollapsibleProgressSection = ({
           ) : (
             members.map((m: Member) => {
               const stats = getMemberStats(m.id, data);
-              const isVisitor = m.type === MemberType.VISITOR;
+              const isFnf = isFnfMember(m);
               const cardStyle = m.status === MemberStatus.INCONSISTENT
                 ? "border-l-4 border-l-rose-500 bg-rose-50/5 hover:bg-rose-50/10"
                 : m.status === MemberStatus.NOT_ACTIVE
                   ? "border-l-4 border-l-yellow-500 bg-yellow-50/5 hover:bg-yellow-50/10"
-                  : isVisitor
-                    ? "border-l-4 border-l-teal-500 bg-teal-50/5 hover:bg-teal-50/10"
+                  : isFnf
+                    ? "border-l-4 border-l-emerald-500 bg-emerald-50/5 hover:bg-emerald-50/10"
                     : "hover:bg-slate-50";
               return (
                 <div
@@ -4003,9 +3960,9 @@ const CollapsibleProgressSection = ({
                           Not Active
                         </span>
                       )}
-                      {isVisitor && (
-                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1 shrink-0">
-                          <UserPlus size={8} /> First Timer
+                      {isFnf && (
+                        <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 flex items-center gap-1 shrink-0">
+                          <Heart size={8} /> FNF
                         </span>
                       )}
                     </h4>
@@ -4142,20 +4099,17 @@ const CollapsibleContactSection = ({
                 ? `https://www.google.com/maps/dir/?api=1&destination=${gps}`
                 : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address || "")}`;
 
-              const isVisitor = member.type === MemberType.VISITOR || member.type === MemberType.NOT_MEMBER;
-              const isFnf = member.type === MemberType.FNF;
-              const canPromote = isVisitor || isFnf;
+              const isFnf = isFnfMember(member) || member.type === MemberType.NOT_MEMBER;
+              const canPromote = isFnf;
               const isPromoting = promotingId === member.id;
 
               const cardStyle = member.status === MemberStatus.INCONSISTENT
                 ? "border-l-4 border-l-rose-500 bg-rose-50/10 hover:bg-rose-50/20"
                 : member.status === MemberStatus.NOT_ACTIVE
                   ? "border-l-4 border-l-yellow-500 bg-yellow-50/10 hover:bg-yellow-50/20"
-                  : isVisitor
-                    ? "border-l-4 border-l-teal-500 bg-teal-50/10 hover:bg-teal-50/20"
-                    : isFnf
-                      ? "border-l-4 border-l-emerald-500 bg-emerald-50/10 hover:bg-emerald-50/20"
-                      : "border-slate-100 bg-white hover:border-indigo-200";
+                  : isFnf
+                    ? "border-l-4 border-l-emerald-500 bg-emerald-50/10 hover:bg-emerald-50/20"
+                    : "border-slate-100 bg-white hover:border-indigo-200";
 
               return (
                 <div
@@ -4175,11 +4129,6 @@ const CollapsibleContactSection = ({
                         {member.status === MemberStatus.NOT_ACTIVE && (
                           <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-600 border border-yellow-100 shrink-0">
                             Not Active
-                          </span>
-                        )}
-                        {isVisitor && (
-                          <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-100 flex items-center gap-1 shrink-0">
-                            <UserPlus size={10} /> First Timer
                           </span>
                         )}
                         {isFnf && (
@@ -4430,7 +4379,7 @@ const SessionChildList = ({
                   <span
                     className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold ${m.type === "Member" ? "bg-indigo-50 text-indigo-600" : "bg-amber-50 text-amber-600"}`}
                   >
-                    {m.type === "Visitor" ? "First Timer" : m.type}
+                    {isFnfMember(m) ? "FNF" : m.type}
                   </span>
                   {m.address && (
                     <span className="text-[10px] text-slate-400 flex items-center gap-0.5">

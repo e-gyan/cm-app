@@ -7,6 +7,7 @@ import {
   type Church,
   type Role,
   PromotionRecord,
+  isFnfMember,
 } from "../types";
 import {
   User,
@@ -907,8 +908,7 @@ const MembersList: React.FC<MembersListProps> = ({
       }
     } else if (member.status === MemberStatus.NOT_ACTIVE || member.status === MemberStatus.INCONSISTENT) {
       if (
-        (member.type === MemberType.VISITOR ||
-          member.type === MemberType.FNF) &&
+        isFnfMember(member) &&
         consecutiveAttendances >= 2
       ) {
         alertMsg = "1 visit away from Active FNF";
@@ -1101,9 +1101,9 @@ const MembersList: React.FC<MembersListProps> = ({
                                     {member.gender.charAt(0)}
                                   </span>
                                 )}
-                                {member.type === MemberType.VISITOR && (
-                                  <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1">
-                                    <UserPlus size={8} /> First Timer
+                                {isFnfMember(member) && (
+                                  <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
+                                    <UserPlus size={8} /> FNF
                                   </span>
                                 )}
                               </div>
@@ -1173,7 +1173,7 @@ const MembersList: React.FC<MembersListProps> = ({
                           >
                             {isTeacherSection
                               ? ((member.type as string) === "Teacher" || member.type === MemberType.TEACHER ? "Shepherd" : member.type)
-                              : ((member.type as string) === "Visitor" ? "First Timer" : (member.type as string) === "Teacher" ? "Shepherd" : member.type)}
+                              : (isFnfMember(member) ? "FNF" : (member.type as string) === "Teacher" ? "Shepherd" : member.type)}
                           </span>
                         </td>
 
@@ -1345,9 +1345,9 @@ const MembersList: React.FC<MembersListProps> = ({
                                 {member.gender.charAt(0)}
                               </span>
                             )}
-                            {member.type === MemberType.VISITOR && (
-                              <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1">
-                                <UserPlus size={10} /> First Timer
+                            {isFnfMember(member) && (
+                              <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
+                                <UserPlus size={10} /> FNF
                               </span>
                             )}
                             {bdayWeek && (
@@ -1666,9 +1666,11 @@ const MembersList: React.FC<MembersListProps> = ({
       (m) => m.status !== MemberStatus.ARCHIVED,
     );
     if (filter !== "CM") {
-      membersToShow = membersToShow.filter((m) => m.type === filter);
+      membersToShow = membersToShow.filter((m) =>
+        filter === MemberType.FNF ? isFnfMember(m) : m.type === filter
+      );
       return renderMemberTableSection({
-        title: `${filter}s`,
+        title: filter === MemberType.FNF ? "Friends & Family (FNFs)" : `${filter}s`,
         members: membersToShow,
         icon: Users,
         colorClass: "text-indigo-600",
@@ -1719,18 +1721,11 @@ const MembersList: React.FC<MembersListProps> = ({
             badgeClass: "bg-indigo-100 text-indigo-700",
           })}
           {renderMemberTableSection({
-            title: "Friends & Family",
-            members: membersToShow.filter((m) => m.type === MemberType.FNF),
+            title: "Friends & Family (FNFs)",
+            members: membersToShow.filter((m) => isFnfMember(m)),
             icon: Users,
             colorClass: "text-amber-600",
             badgeClass: "bg-amber-100 text-amber-700",
-          })}
-          {renderMemberTableSection({
-            title: "First Timers",
-            members: membersToShow.filter((m) => m.type === MemberType.VISITOR),
-            icon: UserPlus,
-            colorClass: "text-teal-600",
-            badgeClass: "bg-teal-100 text-teal-700",
           })}
           {renderMemberTableSection({
             title: "Not A Member",
@@ -1753,7 +1748,6 @@ const MembersList: React.FC<MembersListProps> = ({
       return [
         MemberType.MEMBER,
         MemberType.FNF,
-        MemberType.VISITOR,
         MemberType.NOT_MEMBER,
       ];
     }
@@ -1927,7 +1921,7 @@ const MembersList: React.FC<MembersListProps> = ({
               >
                 {getCreationRoleOptions().map((t) => (
                   <option key={t} value={t}>
-                    {(t as string) === "Visitor" ? "First Timer" : (t as string) === "Teacher" ? "Shepherd" : t}
+                    {(t as string) === "Teacher" ? "Shepherd" : t === MemberType.FNF ? "FNF (Friends & Family)" : t}
                   </option>
                 ))}
               </select>
@@ -2403,7 +2397,7 @@ const MembersList: React.FC<MembersListProps> = ({
                 }}
                 className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${filter === f ? "bg-white text-indigo-600 shadow-sm ring-1 ring-black/5" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
               >
-                {(f as string) === "CM" ? "All Active" : (f as string) === "MISSING_GENDER" ? "Missing Gender" : (f as string) === "UNASSIGNED_BRANCH" ? "Unassigned Branch" : (f as string) === "ARCHIVED" ? "Archived" : (f as string) === "Visitor" ? "First Timer" : (f as string) === "Teacher" ? "Shepherd" : f}
+                {(f as string) === "CM" ? "All Active" : (f as string) === "MISSING_GENDER" ? "Missing Gender" : (f as string) === "UNASSIGNED_BRANCH" ? "Unassigned Branch" : (f as string) === "ARCHIVED" ? "Archived" : f === MemberType.FNF ? "FNFs" : (f as string) === "Teacher" ? "Shepherd" : f}
               </button>
             ))}
           </div>
@@ -2424,7 +2418,7 @@ const MembersList: React.FC<MembersListProps> = ({
               <option value="CM">All Active</option>
               {getCreationRoleOptions().map((f) => (
                 <option key={f} value={f}>
-                  {(f as string) === "Visitor" ? "First Timer" : (f as string) === "Teacher" ? "Shepherd" : f}
+                  {(f as string) === "Teacher" ? "Shepherd" : f === MemberType.FNF ? "FNFs" : f}
                 </option>
               ))}
               <option value="MISSING_GENDER">Missing Gender</option>
@@ -2727,9 +2721,7 @@ const MembersList: React.FC<MembersListProps> = ({
                   data.members.filter(
                     (m) =>
                       m.assignedChurch === member.assignedChurch &&
-                      ["Member", "FNF", "Visitor"].includes(
-                        m.type,
-                      ) &&
+                      (m.type === MemberType.MEMBER || isFnfMember(m)) &&
                       ["Active", "Inconsistent", "Not Active"].includes(m.status),
                   ).length || 1;
 
@@ -2771,11 +2763,7 @@ const MembersList: React.FC<MembersListProps> = ({
                           const m = data.members.find((x) => x.id === id);
                           return (
                             m &&
-                            [
-                              "Member",
-                              "FNF",
-                              "Visitor",
-                            ].includes(m.type)
+                            (m.type === MemberType.MEMBER || isFnfMember(m))
                           );
                         }).length
                       );

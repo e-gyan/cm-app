@@ -105,21 +105,33 @@ const parseAppDataDoc = (docData: any): AppData => {
     }));
   }
 
+  let hasVisitorMigrations = false;
+
   data.members = data.members.map((m) => {
     let changed = false;
     let bId = m.branchId;
     let ch = m.assignedChurch;
+    let mType = m.type;
+
     if (isThesaurusHQ(bId)) {
       bId = "Thesaurus";
       changed = true;
+      hasThesaurusMigrations = true;
     }
     if (isThesaurusHQ(ch)) {
       ch = "Thesaurus";
       changed = true;
-    }
-    if (changed) {
       hasThesaurusMigrations = true;
-      return { ...m, branchId: bId, assignedChurch: ch };
+    }
+    // Automatically merge legacy "Visitor" records into FNF
+    if ((mType as string) === "Visitor" || (mType as any) === MemberType.VISITOR) {
+      mType = MemberType.FNF;
+      changed = true;
+      hasVisitorMigrations = true;
+    }
+
+    if (changed) {
+      return { ...m, branchId: bId, assignedChurch: ch, type: mType };
     }
     return m;
   });
@@ -164,8 +176,8 @@ const parseAppDataDoc = (docData: any): AppData => {
     return n;
   });
 
-  // If any records were migrated from Thesaurus HQ, queue persistence so cloud data is updated permanently
-  if (hasThesaurusMigrations) {
+  // If any records were migrated from Thesaurus HQ or Visitor to FNF, queue persistence so cloud data is updated permanently
+  if (hasThesaurusMigrations || hasVisitorMigrations) {
     setTimeout(() => {
       updateMainDoc({
         settings: data.settings,
@@ -501,7 +513,14 @@ export const saveMembers = async (members: Member[]) => {
 
 export const addMember = async (member: Member) => {
   const current = memoryCache || (await loadData());
-  const members = [...current.members, member];
+  const normalizedMember: Member = {
+    ...member,
+    type:
+      (member.type as string) === "Visitor" || (member.type as any) === MemberType.VISITOR
+        ? MemberType.FNF
+        : member.type,
+  };
+  const members = [...current.members, normalizedMember];
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
@@ -509,19 +528,26 @@ export const addMember = async (member: Member) => {
   await flushPendingWrites();
 
   recordActivityNotification({
-    message: `New member registered: ${member.name} (${member.assignedChurch || "General"})`,
+    message: `New member registered: ${normalizedMember.name} (${normalizedMember.assignedChurch || "General"})`,
     type: "MEMBER_ADDED",
-    branchId: member.branchId || "ALL",
-    zoneId: member.zoneId,
-    targetChurch: member.assignedChurch || "ALL",
-    relatedMemberId: member.id,
+    branchId: normalizedMember.branchId || "ALL",
+    zoneId: normalizedMember.zoneId,
+    targetChurch: normalizedMember.assignedChurch || "ALL",
+    relatedMemberId: normalizedMember.id,
   }).catch(console.error);
 };
 
 export const addMembers = async (newMembersList: Member[]) => {
   if (!newMembersList || newMembersList.length === 0) return;
   const current = memoryCache || (await loadData());
-  const members = [...current.members, ...newMembersList];
+  const normalizedList: Member[] = newMembersList.map((m) => ({
+    ...m,
+    type:
+      (m.type as string) === "Visitor" || (m.type as any) === MemberType.VISITOR
+        ? MemberType.FNF
+        : m.type,
+  }));
+  const members = [...current.members, ...normalizedList];
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
@@ -529,10 +555,10 @@ export const addMembers = async (newMembersList: Member[]) => {
   await flushPendingWrites();
 
   recordActivityNotification({
-    message: `${newMembersList.length} new members imported/registered`,
+    message: `${normalizedList.length} new members imported/registered`,
     type: "MEMBER_ADDED",
-    branchId: newMembersList[0]?.branchId || "ALL",
-    targetChurch: newMembersList[0]?.assignedChurch || "ALL",
+    branchId: normalizedList[0]?.branchId || "ALL",
+    targetChurch: normalizedList[0]?.assignedChurch || "ALL",
   }).catch(console.error);
 };
 
@@ -542,6 +568,9 @@ export const updateMember = async (id: string, updates: Partial<Member>) => {
   const members = current.members.map((m) => {
     if (m.id === id) {
       const up = { ...m, ...updates };
+      if ((up.type as string) === "Visitor" || (up.type as any) === MemberType.VISITOR) {
+        up.type = MemberType.FNF;
+      }
       if (!up.assignedTeacherId || up.assignedTeacherId === "UNASSIGNED") {
         delete up.assignedTeacherId;
         if (typeof window !== "undefined") {

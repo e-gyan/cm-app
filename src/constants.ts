@@ -21,7 +21,7 @@ export const APP_FEATURES_REGISTRY: FeatureDef[] = [
     description: "Central ministry overview, attendance trends, and key performance indicators.",
     iconName: "LayoutDashboard",
     subfeatures: [
-      { id: "overview_stats", name: "Overview Statistics", description: "View total registered children, attendance rate, first timers count, and growth." },
+      { id: "overview_stats", name: "Overview Statistics", description: "View total registered children, attendance rate, FNF count, and growth." },
       { id: "weekly_trend_chart", name: "Weekly Attendance Trends", description: "Interactive trend chart comparing actual vs previous year attendance." },
       { id: "church_distribution", name: "Church Distribution", description: "Breakdown of attendance across UJ, LJ, K, I churches." },
       { id: "gender_age_breakdown", name: "Gender and Age Analytics", description: "Distribution statistics for gender and age groups." },
@@ -31,7 +31,7 @@ export const APP_FEATURES_REGISTRY: FeatureDef[] = [
   {
     id: "People Hub",
     name: "People Hub",
-    description: "Comprehensive management of children, members, shepherds, visitors, and volunteers.",
+    description: "Comprehensive management of children, members, shepherds, FNFs, and volunteers.",
     iconName: "Users",
     subfeatures: [
       { id: "MEMBERS", name: "Children and Members", description: "Directory and profiles of children and regular church members." },
@@ -51,12 +51,12 @@ export const APP_FEATURES_REGISTRY: FeatureDef[] = [
     description: "Sunday and event attendance registration, punctuality tracking, and service selection.",
     iconName: "CalendarCheck",
     subfeatures: [
-      { id: "MEMBERS", name: "Children Attendance", description: "Record and review attendance for children and visitors." },
+      { id: "MEMBERS", name: "Children Attendance", description: "Record and review attendance for children and FNFs." },
       { id: "STAFF", name: "Shepherds Attendance", description: "Track attendance for shepherds, helpers, and volunteers." },
       { id: "mark_attendance", name: "Mark Attendance", description: "Mark attendees present for Sunday services." },
       { id: "track_punctuality", name: "Punctuality Tracking", description: "Record early arrivals and crown on-time attendees." },
       { id: "service_selection", name: "Service Selection", description: "Toggle between Joy Service, Enlargement Service, or Special Events." },
-      { id: "add_first_timer_quick", name: "Add First Timer", description: "Register and mark present new visitors directly during attendance." },
+      { id: "add_first_timer_quick", name: "Add FNF", description: "Register and mark present new FNFs directly during attendance." },
       { id: "attendance_history", name: "Attendance History", description: "Review past service records and attendance sheets." },
       { id: "duplicate_cleaner", name: "Duplicate Cleaner", description: "Scan and resolve accidental duplicate submissions." },
     ],

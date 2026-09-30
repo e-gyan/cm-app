@@ -16,16 +16,30 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.7.16";
-export const APP_RELEASE_NAME = "Shepherd-Scoped Add Member Modal & Generation Safeguards";
+export const APP_VERSION = "1.7.17";
+export const APP_RELEASE_NAME = "Unified FNFs (Friends & Family) & Database Migration";
 export const APP_BUILD_DATE = "2026-09-30";
 
 export const CHANGELOG: ReleaseLog[] = [
   {
+    version: "1.7.17",
+    date: "2026-09-30",
+    title: "Unified FNFs (Friends & Family) & Database Migration",
+    badge: "Current Release",
+    changes: [
+      "Unified FNF Classification: Merged FNFs and First Timers (Visitors) into a single cohesive category titled 'FNFs' (Friends & Family) across the database and all application components",
+      "Automatic Database Migration: Built seamless in-memory and Firestore persistence migration automatically updating legacy Visitor records to MemberType.FNF while preserving historical records",
+      "Attendance Taker Unification: Streamlined quick-add modal, role chips, and filters to exclusively register and display FNFs, maintaining them unassigned from shepherds as per ministry guidelines",
+      "Directory & People Hub Consolidation: Merged First Timers and Friends & Family table sections into a single 'Friends & Family (FNFs)' section, updating badges and member creation options",
+      "Outreach Hub & Connect Directory: Consolidated Connect directory categories, filters, progress breakdowns, and member cards under unified 'FNFs' with 1-click full member promotion",
+      "Reports, Analytics & Dashboard Synchronization: Unified WhatsApp reports, weekly attendance breakdowns, prediction targets, and dashboard status cards under FNFs",
+    ],
+  },
+  {
     version: "1.7.16",
     date: "2026-09-30",
     title: "Shepherd-Scoped Add Member Modal & Generation Safeguards",
-    badge: "Current Release",
+    badge: "Previous Release",
     changes: [
       "Shepherd-Scoped Add Member Modal: Restricted the 'Add Member' selection list in Outreach visitation sessions for logged-in shepherds exclusively to children assigned directly to their care",
       "Roster Integrity in Manual Selection: Filtered Add Member candidate children to active, inconsistent, and not active members only, strictly excluding FNFs, First Timers, and staff",

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { AppData, MemberType, MemberStatus, type Church, Member } from "../types";
+import { AppData, MemberType, MemberStatus, type Church, Member, isFnfMember } from "../types";
 import { calculateChurchDivisions, matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
 import { updateTargets } from "../services/storageService";
 import { isSundayAttendance } from "../lib/dateUtils";
@@ -512,7 +512,7 @@ const AdminDashboard: React.FC<{
       const fallbackMembers = data.members.filter(
         (m) =>
           matchesScope(m, activeBranchId, data.settings?.organization) &&
-          [MemberType.MEMBER, MemberType.FNF, MemberType.VISITOR].includes(m.type) &&
+          (m.type === MemberType.MEMBER || isFnfMember(m)) &&
           ["Active", "Inconsistent", "Not Active"].includes(m.status)
       );
       totalAssignedKids = fallbackMembers.length;
@@ -1168,7 +1168,7 @@ const UpcomingBirthdays: React.FC<{ members: Member[] }> = ({ members }) => {
                 <Calendar size={12} />
                 {member.birthDate}
                 <span className="text-[10px] bg-white px-2 py-0.5 rounded-full border border-pink-100 text-pink-500 uppercase tracking-wider font-bold">
-                  {member.type === "Visitor" ? "First Timer" : member.type}
+                  {isFnfMember(member) ? "FNF" : member.type}
                 </span>
               </p>
             </div>
@@ -1381,7 +1381,7 @@ const ChurchDashboard: React.FC<{
             (m) =>
               m.assignedChurch === activeChurch &&
               matchesScope(m, activeBranchId, data.settings?.organization) &&
-              [MemberType.MEMBER, MemberType.FNF, MemberType.VISITOR].includes(m.type) &&
+              (m.type === MemberType.MEMBER || isFnfMember(m)) &&
               ["Active", "Inconsistent", "Not Active"].includes(m.status)
           );
         }
@@ -1490,7 +1490,6 @@ const ChurchDashboard: React.FC<{
         inconsistent: 0,
         notActive: 0,
         fnf: 0,
-        firstTimers: 0
       };
 
       data.members.forEach(m => {
@@ -1499,10 +1498,8 @@ const ChurchDashboard: React.FC<{
             if (m.status === MemberStatus.ACTIVE) statuses.active++;
             else if (m.status === MemberStatus.INCONSISTENT) statuses.inconsistent++;
             else if (m.status === MemberStatus.NOT_ACTIVE) statuses.notActive++;
-          } else if (m.type === MemberType.FNF) {
+          } else if (isFnfMember(m)) {
             statuses.fnf++;
-          } else if (m.type === MemberType.VISITOR) {
-            statuses.firstTimers++;
           }
 
           if ([MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)) {
@@ -1637,7 +1634,7 @@ const ChurchDashboard: React.FC<{
           tips.push({
             id: tips.length + 1,
             text: `Attendance was steady at ${curAtt} children last Sunday.`,
-            action: "A great foundation! Look for ways to invite new First Timers."
+            action: "A great foundation! Look for ways to invite new FNFs."
           });
         }
       } else if (churchAttendanceBreakdown.hasLatestRecord) {
@@ -1648,12 +1645,11 @@ const ChurchDashboard: React.FC<{
         });
       }
 
-      // 2. Un-converted FNF/First Timers
-      const fnfTotal = statusBreakdown.fnf + statusBreakdown.firstTimers;
-      if (fnfTotal > 0) {
+      // 2. Un-converted FNFs
+      if (statusBreakdown.fnf > 0) {
         tips.push({
           id: tips.length + 1,
-          text: `You have ${statusBreakdown.firstTimers} First Timer(s) and ${statusBreakdown.fnf} FNF(s).`,
+          text: `You have ${statusBreakdown.fnf} FNF(s) recorded in directory.`,
           action: "Visit the Outreach Hub to easily promote them to full members."
         });
       }
@@ -1708,7 +1704,7 @@ const ChurchDashboard: React.FC<{
         tips.push({ id: 1, text: "Great job! All your members are active.", action: "Use the Punctual toggle for early arrivals to gamify the experience." });
       }
       if (tips.length < 2) {
-        tips.push({ id: tips.length + 1, text: "Ensure accurate tracking.", action: "Mark new First Timers to track outreach separately." });
+        tips.push({ id: tips.length + 1, text: "Ensure accurate tracking.", action: "Mark new FNFs to track friends and family outreach." });
       }
       if (tips.length < 3) {
         tips.push({ id: tips.length + 1, text: "Keep members engaged.", action: "Regularly check the Outreach Hub to schedule visits and calls." });
@@ -1767,13 +1763,9 @@ const ChurchDashboard: React.FC<{
                     <span className="text-slate-600 font-medium">Not Active</span>
                     <span className="font-bold text-amber-600">{statusBreakdown.notActive}</span>
                   </div>
-                  <div className="flex justify-between items-center text-sm bg-slate-50 p-1.5 rounded-lg">
-                    <span className="text-slate-600 font-medium">FNF</span>
-                    <span className="font-bold text-teal-600">{statusBreakdown.fnf}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm bg-slate-50 p-1.5 rounded-lg col-span-2 mt-1 border border-indigo-100">
-                    <span className="text-indigo-600 font-medium">First Timers</span>
-                    <span className="font-black text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded">{statusBreakdown.firstTimers}</span>
+                  <div className="flex justify-between items-center text-sm bg-slate-50 p-1.5 rounded-lg col-span-2 mt-1 border border-teal-100">
+                    <span className="text-teal-700 font-medium">FNFs (Friends & Family)</span>
+                    <span className="font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded">{statusBreakdown.fnf}</span>
                   </div>
                 </div>
               </div>

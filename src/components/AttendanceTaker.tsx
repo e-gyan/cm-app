@@ -6,6 +6,7 @@ import {
   MemberStatus,
   Church,
   ServiceType,
+  isFnfMember,
 } from "../types";
 import { getSundaysInYear } from "../constants";
 import {
@@ -792,14 +793,14 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       const newMembers: Member[] = parsedFirstTimerNames.map((cleanName) => ({
         id: crypto.randomUUID(),
         name: cleanName,
-        type: MemberType.VISITOR, // Role category: First Timer
+        type: MemberType.FNF, // Unified FNF category
         assignedChurch: targetChurch,
         passcode: "",
         status: MemberStatus.ACTIVE,
         gender: determineGenderByName(cleanName),
         branchId: targetBranchId,
         zoneId: targetZoneId,
-        assignedTeacherId: currentUser?.id, // Hooked directly to logged-in shepherd
+        assignedTeacherId: undefined, // FNFs remain unassigned
         addedAt: Date.now()
       }));
 
@@ -820,8 +821,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       setIsSubmittingVisitor(false);
       setSuccessMsg(
         newMembers.length > 1
-          ? `${newMembers.length} First Timers added & saved`
-          : "First Timer added & saved"
+          ? `${newMembers.length} FNFs added & saved`
+          : "FNF added & saved"
       );
       setTimeout(() => setSuccessMsg(""), 2000);
 
@@ -831,12 +832,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           await addMembers(newMembers);
           await confirmSave(newSet, newSMap, newMembers);
         } catch (err) {
-          console.error("Failed to save first timers in background:", err);
-          setSuccessMsg("Error saving first timers");
+          console.error("Failed to save FNFs in background:", err);
+          setSuccessMsg("Error saving FNFs");
         }
       })();
     } catch (err) {
-      console.error("Failed to add first timers:", err);
+      console.error("Failed to add FNFs:", err);
       setIsSubmittingVisitor(false);
       setIsAddingFNF(false);
     }
@@ -878,7 +879,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     const matchesSearch = m.name
       .toLowerCase()
       .includes(searchTerm.toLowerCase());
-    const matchesType = filterType === "All" || m.type === filterType;
+    const matchesType =
+      filterType === "All" ||
+      (filterType === MemberType.FNF ? isFnfMember(m) : m.type === filterType);
 
     const matchesShepherd =
       attendanceMode !== "MEMBERS" ||
@@ -1120,7 +1123,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   type="button"
                   onClick={() => setIsAddingFNF(!isAddingFNF)}
                   className="p-2 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-200 shrink-0"
-                  title="Add First Timer"
+                  title="Add FNF"
                 >
                   <UserPlus size={16} />
                 </button>
@@ -1218,7 +1221,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   type="button"
                   onClick={() => setIsAddingFNF(!isAddingFNF)}
                   className="p-2.5 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-200 shrink-0"
-                  title="Add First Timer"
+                  title="Add FNF"
                 >
                   <UserPlus size={18} />
                 </button>
@@ -1319,7 +1322,6 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                 : [
                   MemberType.MEMBER,
                   MemberType.FNF,
-                  MemberType.VISITOR,
                 ]
               ).map((type) => (
                 <button
@@ -1327,7 +1329,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                   onClick={() => setFilterType(type)}
                   className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterType === type ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
                 >
-                  {type === MemberType.VISITOR ? "First Timer" : type === MemberType.TEACHER ? "Shepherd" : type}
+                  {type === MemberType.FNF ? "FNF" : type === MemberType.TEACHER ? "Shepherd" : type}
                 </button>
               ))}
 
@@ -1386,17 +1388,17 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
             <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
               <UserPlus className="text-indigo-600" size={22} />
-              Add First Timer(s)
+              Add FNF(s)
             </h3>
             <p className="text-xs text-slate-500 mb-3">
-              Add one or multiple First Timers to directory and mark them present for this {isWednesdayCell ? "Wednesday" : "Sunday"} ({formatDateDDMMYYYY(selectedDate)}). Type or paste names separated by new lines or commas.
+              Add one or multiple FNFs (Friends & Family) to directory and mark them present for this {isWednesdayCell ? "Wednesday" : "Sunday"} ({formatDateDDMMYYYY(selectedDate)}). Type or paste names separated by new lines or commas.
             </p>
 
             {newMemberNames.map((name, index) => (
               <div key={index} className="flex gap-2 mb-2">
                 <input
                   type="text"
-                  placeholder="Enter First Timer full name"
+                  placeholder="Enter FNF full name"
                   value={name}
                   onChange={(e) => {
                     const updated = [...newMemberNames];
@@ -1485,7 +1487,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-slate-500 font-medium">Role Category:</span>
                 <span className="font-bold text-teal-700 bg-teal-100/90 px-2 py-0.5 rounded-lg">
-                  First Timer (Visitor)
+                  FNF (Friends & Family)
                 </span>
               </div>
             </div>
@@ -1532,7 +1534,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               No {attendanceMode === "STAFF" ? "Shepherds" : "Members"} Found for {getScopeDisplayLabel(activeBranchId, data.settings?.organization)}
             </h3>
             <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto font-medium">
-              No active profiles match this church and branch scope. Switch scope or click "+ First Timer" to record a visitor.
+              No active profiles match this church and branch scope. Switch scope or click "+ FNF" to record a friend/family visitor.
             </p>
           </div>
         )}
@@ -1603,8 +1605,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                         <p
                           className={`text-xs font-medium uppercase tracking-wider ${isPresent ? "opacity-80" : "text-slate-400"}`}
                         >
-                          {member.type === "Visitor"
-                            ? "First Timer"
+                          {isFnfMember(member)
+                            ? "FNF"
                             : (member.type as any) === "Teacher" || (member.type as any) === MemberType.TEACHER || attendanceMode === "STAFF"
                               ? "Shepherd"
                               : member.type}

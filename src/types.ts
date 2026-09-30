@@ -1,12 +1,16 @@
 export enum MemberType {
   MEMBER = "Member",
   FNF = "FNF",
-  VISITOR = "Visitor",
+  VISITOR = "Visitor", // Merged into FNF (retained as alias for DB/runtime backwards compatibility)
   TEACHER = "Teacher",
   HELPER = "Helper",
   VOLUNTEER = "Volunteer",
   NOT_MEMBER = "Not Member"
 }
+
+export const isFnfMember = (m: { type: MemberType | string }): boolean => {
+  return m.type === MemberType.FNF || m.type === "FNF" || m.type === MemberType.VISITOR || m.type === "Visitor";
+};
 
 export enum MemberStatus {
   ACTIVE = "Active",

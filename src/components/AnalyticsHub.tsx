@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { AppData, type Church, Member, MemberType, MemberStatus } from "../types";
+import { AppData, type Church, Member, MemberType, MemberStatus, isFnfMember } from "../types";
 import { calculateChurchDivisions, matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
 import { isSundayAttendance } from "../lib/dateUtils";
 import {
@@ -548,8 +548,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
             m.type === MemberType.TEACHER;
           if (m.status === MemberStatus.INCONSISTENT) entry.Inconsistent++;
           else if (m.type === MemberType.MEMBER || isTeacher) entry.Member++;
-          else if (m.type === MemberType.FNF) entry.FNF++;
-          else if (m.type === MemberType.VISITOR) entry.Visitor++;
+          else if (isFnfMember(m)) entry.FNF++;
 
           if ([MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)) {
             if (m.gender === "MALE") entry.Male++;
@@ -898,23 +897,17 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       (m) => isMember(m) && m.status === MemberStatus.NOT_ACTIVE
     );
 
-    // First Timers (Visitors)
-    const firstTimers = churchPeople.filter(
-      (m) => m.type === MemberType.VISITOR || (m.type as string) === "Visitor"
-    );
-
-    // Friends & Family (FNF)
-    const fnf = churchPeople.filter((m) => m.type === MemberType.FNF || (m.type as string) === "FNF");
+    // Friends & Family (FNFs)
+    const fnf = churchPeople.filter((m) => isFnfMember(m));
 
     const totalCount =
       activeMembers.length +
       inconsistentMembers.length +
       inactiveMembers.length +
-      firstTimers.length +
       fnf.length;
 
     if (totalCount === 0) {
-      alert(`No members, first timers, or FNF found for ${church}.`);
+      alert(`No members or FNFs found for ${church}.`);
       return;
     }
 
@@ -948,18 +941,9 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       text += `\n`;
     }
 
-    // 4. FIRST TIMERS
-    if (firstTimers.length > 0) {
-      text += `*FIRST TIMERS (${firstTimers.length})*\n`;
-      firstTimers.forEach((m, i) => {
-        text += `${i + 1}. ${m.name}\n`;
-      });
-      text += `\n`;
-    }
-
-    // 5. FRIENDS & FAMILY (FNF)
+    // 4. FRIENDS & FAMILY (FNFs)
     if (fnf.length > 0) {
-      text += `*FNF (${fnf.length})*\n`;
+      text += `*FNFS (${fnf.length})*\n`;
       fnf.forEach((m, i) => {
         text += `${i + 1}. ${m.name}\n`;
       });
@@ -997,8 +981,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
           if (m) {
             const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
             if (isTeacher) teachersCount++;
-            else if (m.type === MemberType.FNF) fnfCount++;
-            else if (m.type === MemberType.VISITOR) visitorsCount++;
+            else if (isFnfMember(m)) fnfCount++;
             else membersCount++;
           }
         });
@@ -1008,9 +991,9 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
         dateStr,
         membersCount,
         fnfCount,
-        visitorsCount,
+        visitorsCount: 0,
         teachersCount,
-        total: membersCount + fnfCount + visitorsCount + teachersCount
+        total: membersCount + fnfCount + teachersCount
       };
     });
 
@@ -1020,14 +1003,14 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
     const avg2W = {
       members: Math.round(latest2.reduce((acc, s) => acc + s.membersCount, 0) / (latest2.length || 1)),
       fnf: Math.round(latest2.reduce((acc, s) => acc + s.fnfCount, 0) / (latest2.length || 1)),
-      visitors: Math.round(latest2.reduce((acc, s) => acc + s.visitorsCount, 0) / (latest2.length || 1)),
+      visitors: 0,
       teachers: Math.round(latest2.reduce((acc, s) => acc + s.teachersCount, 0) / (latest2.length || 1)),
     };
 
     const avg1M = {
       members: Math.round(latest4.reduce((acc, s) => acc + s.membersCount, 0) / (latest4.length || 1)),
       fnf: Math.round(latest4.reduce((acc, s) => acc + s.fnfCount, 0) / (latest4.length || 1)),
-      visitors: Math.round(latest4.reduce((acc, s) => acc + s.visitorsCount, 0) / (latest4.length || 1)),
+      visitors: 0,
       teachers: Math.round(latest4.reduce((acc, s) => acc + s.teachersCount, 0) / (latest4.length || 1)),
     };
 
@@ -1035,15 +1018,14 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
     const calcTarget = (a, b) => Math.ceil(Math.max(a, b) * 1.05);
     const membersTarget = calcTarget(avg2W.members, avg1M.members);
     const fnfTarget = calcTarget(avg2W.fnf, avg1M.fnf);
-    const visitorsTarget = calcTarget(avg2W.visitors, avg1M.visitors);
     const teachersTarget = Math.max(avg2W.teachers, avg1M.teachers); // Teachers don't need arbitrary growth
 
     const target = {
       members: membersTarget,
       fnf: fnfTarget,
-      visitors: visitorsTarget,
+      visitors: 0,
       teachers: teachersTarget,
-      total: membersTarget + fnfTarget + visitorsTarget + teachersTarget
+      total: membersTarget + fnfTarget + teachersTarget
     };
 
     const trend = target.total >= (dateStats[0]?.total || 0) ? "UP" : "DOWN";
@@ -1176,7 +1158,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
               </p>
             </div>
             <div className="w-full xl:w-auto">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center">
                   <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">Members</div>
                   <div className="text-2xl font-bold text-white mb-2">{predictionModel.target.members}</div>
@@ -1186,7 +1168,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                   </div>
                 </div>
                 <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center">
-                  <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">FNF</div>
+                  <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">FNFs</div>
                   <div className="text-2xl font-bold text-white mb-2">{predictionModel.target.fnf}</div>
                   <div className="flex gap-2 text-[9px] text-indigo-300/80">
                     <span title="2-Week Avg">2W: {predictionModel.avg2W.fnf}</span>
@@ -1194,15 +1176,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                   </div>
                 </div>
                 <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center">
-                  <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">First Timers</div>
-                  <div className="text-2xl font-bold text-white mb-2">{predictionModel.target.visitors}</div>
-                  <div className="flex gap-2 text-[9px] text-indigo-300/80">
-                    <span title="2-Week Avg">2W: {predictionModel.avg2W.visitors}</span>
-                    <span title="1-Month Avg">1M: {predictionModel.avg1M.visitors}</span>
-                  </div>
-                </div>
-                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center">
-                  <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">Teachers</div>
+                  <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">Shepherds</div>
                   <div className="text-2xl font-bold text-emerald-300 mb-2">{predictionModel.target.teachers}</div>
                   <div className="flex gap-2 text-[9px] text-indigo-300/80">
                     <span title="2-Week Avg">2W: {predictionModel.avg2W.teachers}</span>
@@ -1345,10 +1319,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                     Member
                   </div>
                   <div className="flex items-center gap-1 text-amber-600">
-                    <div className="w-2 h-2 rounded-full bg-amber-500"></div> FNF
-                  </div>
-                  <div className="flex items-center gap-1 text-pink-600">
-                    <div className="w-2 h-2 rounded-full bg-pink-500"></div> First Timers
+                    <div className="w-2 h-2 rounded-full bg-amber-500"></div> FNFs
                   </div>
                   <div className="flex items-center gap-1 text-rose-600">
                     <div className="w-2 h-2 rounded-full bg-rose-500"></div> Inconsistent
@@ -1443,19 +1414,10 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                         <Area
                           type="monotone"
                           dataKey="FNF"
-                          name="FNF"
+                          name="FNFs"
                           stackId="1"
                           stroke="#f59e0b"
                           fill="url(#colorFnf)"
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="Visitor"
-                          name="First Timers"
-                          stackId="1"
-                          stroke="#ec4899"
-                          fill="#ec4899"
-                          fillOpacity={0.6}
                         />
                         <Area
                           type="monotone"
@@ -1921,7 +1883,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
               Export
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              Export members grouped by status (Active, Inconsistent, Inactive), First Timers &amp; FNF directly to WhatsApp.
+              Export members grouped by status (Active, Inconsistent, Inactive) &amp; FNFs directly to WhatsApp.
             </p>
           </div>
         </div>
