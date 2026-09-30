@@ -196,7 +196,7 @@ const Finances: React.FC<FinancesProps> = ({
       {scopeLabel && (
         <div className="flex items-center justify-between bg-white px-5 py-3 rounded-2xl border border-slate-100 shadow-sm">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-400 uppercase">Active Scope:</span>
+            <span className="text-xs font-bold text-slate-400 uppercase">Active Branch:</span>
             <span className="text-xs font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-full">
               {scopeLabel}
             </span>
@@ -417,31 +417,31 @@ const Finances: React.FC<FinancesProps> = ({
                 >
                   {formData.type === "INCOME"
                     ? [
-                        "Offering",
-                        "Tithes",
-                        "Partnerships",
-                        "First Fruits",
-                        "Donation",
-                        "Fundraising",
-                        "Other",
-                      ].map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))
+                      "Offering",
+                      "Tithes",
+                      "Partnerships",
+                      "First Fruits",
+                      "Donation",
+                      "Fundraising",
+                      "Other",
+                    ].map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))
                     : [
-                        "Supplies",
-                        "Food",
-                        "Transport",
-                        "Equipment",
-                        "Event",
-                        "Benevolence",
-                        "Other",
-                      ].map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
+                      "Supplies",
+                      "Food",
+                      "Transport",
+                      "Equipment",
+                      "Event",
+                      "Benevolence",
+                      "Other",
+                    ].map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
                 </select>
               </div>
 

@@ -16,16 +16,95 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.7.10";
-export const APP_RELEASE_NAME = "Instant DB Auto-Save, Live Shepherd Badges & Multi-Component Sync";
-export const APP_BUILD_DATE = "2026-09-29";
+export const APP_VERSION = "1.7.16";
+export const APP_RELEASE_NAME = "Shepherd-Scoped Add Member Modal & Generation Safeguards";
+export const APP_BUILD_DATE = "2026-09-30";
 
 export const CHANGELOG: ReleaseLog[] = [
+  {
+    version: "1.7.16",
+    date: "2026-09-30",
+    title: "Shepherd-Scoped Add Member Modal & Generation Safeguards",
+    badge: "Current Release",
+    changes: [
+      "Shepherd-Scoped Add Member Modal: Restricted the 'Add Member' selection list in Outreach visitation sessions for logged-in shepherds exclusively to children assigned directly to their care",
+      "Roster Integrity in Manual Selection: Filtered Add Member candidate children to active, inconsistent, and not active members only, strictly excluding FNFs, First Timers, and staff",
+      "Enhanced Modal Context & UX: Added dedicated 'Your Assigned Children' header indicator, search placeholder, member status chips (Active/Inconsistent/Not Active), and informative empty state guidance when all assigned children are already scheduled",
+    ],
+  },
+  {
+    version: "1.7.15",
+    date: "2026-09-30",
+    title: "Shepherd-Scoped Visit & Prayer Generation Lock",
+    badge: "Previous Release",
+    changes: [
+      "Strict Shepherd-Specific Generation: Locked visit and weekly prayer schedule generation for logged-in shepherds exclusively to children assigned directly to their care, preventing cross-shepherd or church-wide candidate leakage",
+      "Unified Assignment Lookup: Implemented comprehensive multi-tier lookup (direct assignedTeacherId and division assignments) to reliably pinpoint children assigned to the logged-in shepherd across active sessions",
+      "Safe Generation Fallbacks: Replaced church-wide fallback allocations with clear guided alerts prompting shepherds to request or complete child allocations before generating schedules when no children are currently assigned",
+      "Member-Only Filtering: Guaranteed that generated outreach and prayer schedules only include active, inconsistent, and not active members, strictly excluding FNFs and First Timers",
+    ],
+  },
+  {
+    version: "1.7.14",
+    date: "2026-09-30",
+    title: "Visit & Prayer Generation Roster Refinement",
+    badge: "Previous Release",
+    changes: [
+      "Targeted Visit & Prayer Rosters: Configured visitation and weekly prayer generation to strictly target active, inconsistent, and not active members only",
+      "Excluded FNFs & First Timers from Generation: Removed Friends & Family (FNF) and Visitors/First Timers from automated and manual visit and prayer schedule algorithms, reserving pastoral follow-up slots for church members",
+      "Shepherd Pool Hardening: Updated shepherd-assigned visitation and prayer generation filters to strictly draw from assigned regular members, preventing fallback assignment of unassigned FNFs or visitors",
+      "Auto-Fill Candidate Filtering: Enhanced Outreach session auto-fill to exclusively propose active, inconsistent, and not active church members without staff, FNFs, or first timers",
+    ],
+  },
+  {
+    version: "1.7.13",
+    date: "2026-09-30",
+    title: "Dashboard Metric Streamlining & Shepherd Allocation Roster Refinement",
+    badge: "Previous Release",
+    changes: [
+      "Streamlined Dashboard Overview: Removed Shepherd Coverage metric card and All Churches pastoral care breakdown rows to maintain a cleaner, focused high-level ministry pulse",
+      "Optimized Dashboard Metric Grid: Adjusted StatCard layout to a balanced 5-column responsive grid (Total Membership, Retention Rate, Last Attendance, WoW Change, Membership Goal)",
+      "Dedicated Member Allocations: Excluded Friends & Family (FNF) and First Timers (Visitors) from shepherd assignments within Shepherd Allocation so only active church members are divided among shepherds",
+      "Automated FNF & First Timer Unassignment: Added automatic background unassignment and DB persistence for any existing FNF or First Timer records with assigned shepherds, keeping rosters strictly aligned with ministry guidelines",
+      "Division & Balancing Safeguards: Hardened autoAllocateChildrenForChurch and calculateChurchDivisions routines to filter out FNF and visitor profiles when calculating target capacities and household clusters",
+    ],
+  },
+  {
+    version: "1.7.12",
+    date: "2026-09-30",
+    title: "Revamped Shepherd Cards, Prominent Unassign Actions, Hardened Persistence & Analytics First Timers Export",
+    badge: "Previous Release",
+    changes: [
+      "Revamped Shepherd Card Headers: Modernized Shepherd headers with a deep purple gradient banner, distinctive purple Shepherd badge with shield icon, branch badge, capacity indicator (total / ~target), and styled action menu",
+      "Always-Visible Unassign Hero Card in Transfer Modal: Added a prominent top-level 'Move to Unassigned Tray' action card and retained the footer unassign button, guaranteeing easy access at all times",
+      "Explicit Quick-Unassign Buttons: Provided styled Unassign buttons with UserX icon across individual child cards in both Grid View and Side-by-Side View",
+      "Hardened Unassignment Engine: Prevented auto-reassignment loops in calculation routines and ensured assignedTeacherId deletion across in-memory state, localStorage cache, and Firestore payloads for instant Unassigned Tray updates",
+      "Enhanced Analytics Export: Expanded analytics export to include First Timers (Visitors) and Friends & Family (FNF), alongside grouped active, inactive, and inconsistent members with clean WhatsApp breakdowns",
+      "Shepherd-Scoped Church Visibility: Restricted Shepherd Allocation Manager for shepherds and teachers to exclusively display their assigned church department (and branch), locking church switching and displaying a dedicated 'Your Church' indicator while preserving multi-church administration for leadership",
+    ],
+  },
+  {
+    version: "1.7.11",
+    date: "2026-09-30",
+    title: "Branch Shepherd Filters, Mobile Vacation Toggle, Collapsible Navigation & Pastoral Coverage Sync",
+    badge: "Previous Release",
+    changes: [
+      "Branch-Scoped Shepherd Filters: Added dedicated branch-scoped shepherd filter dropdowns to both Attendance Taker and People Hub (MembersList) so coordinators and shepherds can view children assigned specifically to shepherds in that branch",
+      "Accurate Shepherd Role Labels: Ensured shepherds in Attendance Taker display 'Shepherd' under their names when toggling to Shepherd attendance mode rather than 'Teacher'",
+      "Outreach Hub & Dashboard Pastoral Divisions Sync: Live shepherd allocations now dynamically drive divisions and coverage metrics across all Outreach Hub tabs (Visit, Prayer, Connect, Track) and Dashboard calculations",
+      "Concise Branch Identifiers: Standardized department and church display names across dropdowns, filters, headers, and cards to concise identifiers (I, K, LJ, and UJ)",
+      "Collapsible Settings Navigation: Built an expandable/collapsible settings sidebar for desktop with icon toggle, paired with a compact accordion and horizontal quick-pill selector on mobile",
+      "Mobile Vacation Toggle & Table Cleanup: Added the Vacation toggle button directly to mobile cards in People Hub and removed the Teens check column for shepherds on desktop tables",
+      "Swift 0ms Response & Offline Queue: Strengthened optimistic updates with instant 0ms latency and automatic queued offline sync upon connection restoration",
+      "Adaptive Child Name Wrapping & Enhanced Shepherd Holders: Enhanced Shepherd Allocation cards with full text-wrapping for multi-line child names, prominent purple role badges, and enhanced shepherd header containers",
+      "Functional Unassign & Instant Reflection: Made 'Move to Unassigned' and direct quick-unassign buttons fully functional, immediately updating the unassigned roster, counts, and persistence across devices",
+    ],
+  },
   {
     version: "1.7.10",
     date: "2026-09-29",
     title: "Instant DB Auto-Save, Live Shepherd Badges & Multi-Component Sync",
-    badge: "Current Release",
+    badge: "Previous Release",
     changes: [
       "Instant DB Auto-Save: All shepherd allocation movements, bulk transfers, auto-allocations, and custom family overrides immediately persist to Cloud Firestore and localStorage without requiring a manual save button click",
       "Live Cloud DB Status: Added real-time animated saving status ('Saving to Database...') and timestamped confirmation badges ('Auto-Saved & Live HH:MM:SS') with an on-demand 'Sync Now' action in Shepherd Allocation Manager",

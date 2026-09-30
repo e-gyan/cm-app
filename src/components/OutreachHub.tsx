@@ -1,4 +1,4 @@
-import { calculateChurchDivisions, matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
+import { calculateChurchDivisions, matchesScope, getScopeDisplayLabel, isStaffOrTeacher } from "../lib/teacherDivision";
 import { generatePrayerSchedule, generateOutreachSchedule } from "../services/storageService";
 import { hasRoleSubfeature, isSuperAdminUser } from "../lib/permissions";
 import React, { useState, useMemo, useEffect } from "react";
@@ -217,8 +217,32 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     return calculateChurchDivisions(
       data.members,
       ["UJ", "LJ", "K", "I"],
+      activeBranchId,
     );
-  }, [data.members]);
+  }, [data.members, activeBranchId]);
+
+  // Children strictly assigned to the logged-in shepherd (combining direct assignedTeacherId and division assignments)
+  const shepherdAssignedChildIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!currentUser || !currentUser.id) return ids;
+
+    // 1. Direct assignedTeacherId from database / state
+    data.members.forEach((m) => {
+      if (m.assignedTeacherId === currentUser.id) {
+        ids.add(m.id);
+      }
+    });
+
+    // 2. Division assignments across church divisions
+    Object.values(divisions).forEach((div) => {
+      const asg = div.assignments.find((a) => a.teacher.id === currentUser.id);
+      if (asg) {
+        asg.members.forEach((m) => ids.add(m.id));
+      }
+    });
+
+    return ids;
+  }, [data.members, currentUser.id, divisions]);
 
   const visitorFnfIds = useMemo(() => {
     return new Set(
@@ -443,41 +467,30 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       const startOfCurrentWeek = getStartOfWeek(today);
       const startStr = startOfCurrentWeek.toISOString().split("T")[0];
 
-      // Check if we have *any* slots for this week (Mon-Fri)
+      // Check if we have *any* slots for this week (Mon-Fri) for this logged-in shepherd
       let hasSlots = false;
       for (let i = 0; i < 5; i++) {
         const checkDate = new Date(startOfCurrentWeek);
         checkDate.setDate(startOfCurrentWeek.getDate() + i);
         const dateStr = checkDate.toISOString().split("T")[0];
-        if (data.prayerSchedule?.some((s) => s.date === dateStr)) {
+        if (data.prayerSchedule?.some((s) => s.date === dateStr && (!s.teacherId || s.teacherId === currentUser.id))) {
           hasSlots = true;
           break;
         }
       }
 
-      if (!hasSlots) {
-        let targetMembers = data.members.filter(
+      if (!hasSlots && shepherdAssignedChildIds.size > 0) {
+        const targetMembers = data.members.filter(
           (m) =>
-            isMemberInActiveChurch(m) &&
+            shepherdAssignedChildIds.has(m.id) &&
             !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-            m.status !== MemberStatus.ARCHIVED,
+            !isStaffOrTeacher(m) &&
+            (m.type === MemberType.MEMBER || (m.type as string) === "Member") &&
+            [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status),
         );
 
-        const isTeacher = !isAdmin && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER);
-
-        if (isTeacher && activeChurch !== "All" && activeChurch !== "CM") {
-          const churchDiv = divisions[activeChurch] || divisions[currentUser.assignedChurch || ""];
-          if (churchDiv) {
-            const assignment = churchDiv.assignments.find((a) => a.teacher.id === currentUser.id);
-            if (assignment) {
-              const assignedIds = new Set(assignment.members.map((m) => m.id));
-              targetMembers = targetMembers.filter(m => assignedIds.has(m.id) || visitorFnfIds.has(m.id));
-            }
-          }
-        }
-
         if (targetMembers.length > 0) {
-          const res = await generatePrayerSchedule(startOfCurrentWeek, targetMembers, isTeacher ? currentUser.id : undefined);
+          const res = await generatePrayerSchedule(startOfCurrentWeek, targetMembers, currentUser.id);
           if (res.success) {
             onUpdate();
             setGenMsg({
@@ -493,7 +506,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     // Short delay to ensure data is loaded
     const timer = setTimeout(checkAndAutoGenerate, 1000);
     return () => clearTimeout(timer);
-  }, [data.prayerSchedule?.length]);
+  }, [data.prayerSchedule?.length, shepherdAssignedChildIds, currentUser.id, onUpdate]);
 
   // --- ACTIONS ---
 
@@ -518,41 +531,23 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   };
 
   const handleGenerateSchedule = async () => {
-    let targetMembers = data.members.filter(
+    // Strictly filter to children assigned to the logged-in shepherd
+    const targetMembers = data.members.filter(
       (m) =>
-        isMemberInActiveChurch(m) &&
+        shepherdAssignedChildIds.has(m.id) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-        m.status !== MemberStatus.ARCHIVED
+        !isStaffOrTeacher(m) &&
+        (m.type === MemberType.MEMBER || (m.type as string) === "Member") &&
+        [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)
     );
 
-    const isTeacher = !isAdmin && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER);
-
-    if (isTeacher && activeChurch !== "All" && activeChurch !== "CM") {
-      const churchDiv = divisions[activeChurch] || divisions[currentUser.assignedChurch || ""];
-      if (churchDiv) {
-        const assignment = churchDiv.assignments.find((a) => a.teacher.id === currentUser.id);
-        if (assignment && assignment.members.length > 0) {
-          const assignedIds = new Set(assignment.members.map((m) => m.id));
-          const hasAssignedFnf = assignment.members.some((m) => m.type === MemberType.FNF);
-          const hasAssignedVisitor = assignment.members.some(
-            (m) => m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER,
-          );
-
-          targetMembers = targetMembers.filter((m) => {
-            if (assignedIds.has(m.id)) return true;
-            if (!hasAssignedFnf && m.type === MemberType.FNF) return true;
-            if (
-              !hasAssignedVisitor &&
-              (m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER)
-            )
-              return true;
-            return false;
-          });
-        }
-      }
+    if (targetMembers.length === 0) {
+      setErrorMsg("No active, inconsistent, or not active children are currently assigned to you. Please allocate children to your care in Shepherd Allocation first.");
+      setTimeout(() => setErrorMsg(""), 5000);
+      return;
     }
 
-    const res = await generateOutreachSchedule(targetMembers, selectedDates, isTeacher ? currentUser.id : undefined);
+    const res = await generateOutreachSchedule(targetMembers, selectedDates, currentUser.id);
     if (res.success) {
       if (res.data) {
         setLocalSessions(JSON.parse(JSON.stringify(res.data)));
@@ -960,27 +955,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     const session = { ...localSessions[sessionIdx] };
     const currentMemberIds = session.assignedMemberIds;
 
-    // 1. Analyze Composition (Strict Goal: 2 Members, 1 FNF, 1 First Timer)
-    const currentMembers = currentMemberIds
-      .map((id) => data.members.find((m) => m.id === id))
-      .filter(Boolean) as Member[];
-    const memberCount = currentMembers.filter(
-      (m) => m.type === MemberType.MEMBER,
-    ).length;
-    const fnfCount = currentMembers.filter(
-      (m) => m.type === MemberType.FNF,
-    ).length;
-    const visitorCount = currentMembers.filter(
-      (m) => m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER,
-    ).length;
-
-    // 2. Determine Priority Need
-    let neededCategory: "MEMBER" | "FNF" | "VISITOR" | "ANY" = "ANY";
-    if (visitorCount < 1) neededCategory = "VISITOR";
-    else if (fnfCount < 1) neededCategory = "FNF";
-    else if (memberCount < 2) neededCategory = "MEMBER";
-
-    // 3. Find Candidate
+    // Find Candidate (Strictly active, inconsistent, or not active members only)
     const twoMonthsAgo = new Date();
     twoMonthsAgo.setDate(twoMonthsAgo.getDate() - 60);
 
@@ -999,21 +974,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       });
 
     const candidates = data.members.filter((m) => {
-      if (!isMemberInActiveChurch(m)) return false;
+      if (!shepherdAssignedChildIds.has(m.id)) return false;
       if (currentMemberIds.includes(m.id)) return false;
       if (recentlyVisited.has(m.id) || assignedInPending.has(m.id)) return false;
-      if (m.status === MemberStatus.ARCHIVED || m.status === MemberStatus.TRANSFERRED) return false;
-      if (["Teacher", "Helper", "Volunteer"].includes(m.type)) return false;
-
-      if (neededCategory === "VISITOR") {
-        return m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER;
-      }
-      if (neededCategory === "FNF") {
-        return m.type === MemberType.FNF;
-      }
-      if (neededCategory === "MEMBER") {
-        return m.type === MemberType.MEMBER;
-      }
+      if (![MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)) return false;
+      if (["Teacher", "Helper", "Volunteer"].includes(m.type) || isStaffOrTeacher(m)) return false;
+      if (m.type !== MemberType.MEMBER && (m.type as string) !== "Member") return false;
       return true;
     });
 
@@ -1022,16 +988,18 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         ? candidates[Math.floor(Math.random() * candidates.length)]
         : null;
 
-    // Fallback to any unassigned non-staff member in church
+    // Fallback to any active/inconsistent/not active member assigned to this shepherd
     if (!candidate) {
       const fallbackCandidates = data.members.filter(
         (m) =>
-          isMemberInActiveChurch(m) &&
+          shepherdAssignedChildIds.has(m.id) &&
           !currentMemberIds.includes(m.id) &&
           !recentlyVisited.has(m.id) &&
           !assignedInPending.has(m.id) &&
           !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-          m.status !== MemberStatus.ARCHIVED,
+          !isStaffOrTeacher(m) &&
+          (m.type === MemberType.MEMBER || (m.type as string) === "Member") &&
+          [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status),
       );
       if (fallbackCandidates.length > 0)
         candidate =
@@ -1074,8 +1042,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     endOfWeek.setDate(endOfWeek.getDate() + 7);
     const endStr = endOfWeek.toISOString().split("T")[0];
 
-    // Check if there are already slots for this week for this user
-    const teacherHasSlots = filteredLocalPrayerSlots.some(s => s.date >= startStr && s.date < endStr);
+    // Check if there are already slots for this week for this logged-in shepherd
+    const teacherHasSlots = filteredLocalPrayerSlots.some(
+      (s) => s.date >= startStr && s.date < endStr && (!s.teacherId || s.teacherId === currentUser.id)
+    );
 
     if (teacherHasSlots) {
       setGenMsg({ type: "error", text: "You already have a prayer schedule for this week!" });
@@ -1083,41 +1053,26 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       return;
     }
 
-    let targetMembers = data.members.filter(
+    // Strictly filter to children assigned to the logged-in shepherd
+    const targetMembers = data.members.filter(
       (m) =>
-        isMemberInActiveChurch(m) &&
+        shepherdAssignedChildIds.has(m.id) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-        m.status !== MemberStatus.ARCHIVED,
+        !isStaffOrTeacher(m) &&
+        (m.type === MemberType.MEMBER || (m.type as string) === "Member") &&
+        [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status),
     );
 
-    const isTeacher = !isAdmin && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER);
-
-    if (isTeacher && activeChurch !== "All" && activeChurch !== "CM") {
-      const churchDiv = divisions[activeChurch] || divisions[currentUser.assignedChurch || ""];
-      if (churchDiv) {
-        const assignment = churchDiv.assignments.find((a) => a.teacher.id === currentUser.id);
-        if (assignment && assignment.members.length > 0) {
-          const assignedIds = new Set(assignment.members.map((m) => m.id));
-          const hasAssignedFnf = assignment.members.some((m) => m.type === MemberType.FNF);
-          const hasAssignedVisitor = assignment.members.some(
-            (m) => m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER,
-          );
-
-          targetMembers = targetMembers.filter((m) => {
-            if (assignedIds.has(m.id)) return true;
-            if (!hasAssignedFnf && m.type === MemberType.FNF) return true;
-            if (
-              !hasAssignedVisitor &&
-              (m.type === MemberType.VISITOR || m.type === MemberType.NOT_MEMBER)
-            )
-              return true;
-            return false;
-          });
-        }
-      }
+    if (targetMembers.length === 0) {
+      setGenMsg({
+        type: "error",
+        text: "No active, inconsistent, or not active children are currently assigned to you. Please allocate children to your care in Shepherd Allocation first.",
+      });
+      setTimeout(() => setGenMsg(null), 5000);
+      return;
     }
 
-    const res = await generatePrayerSchedule(prayerWeek, targetMembers, isTeacher ? currentUser.id : undefined);
+    const res = await generatePrayerSchedule(prayerWeek, targetMembers, currentUser.id);
 
     if (res.success) {
       if (res.data) {
@@ -1263,14 +1218,85 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
   // --- DERIVED DATA & EXPORT LOGIC ---
 
+  const isShepherdUser = useMemo(() => {
+    const isTeacherRole =
+      currentUser.type === MemberType.TEACHER ||
+      currentUser.role === "TEACHER" ||
+      currentUser.type === MemberType.HELPER;
+    if (isTeacherRole) return true;
+    return !isAdmin && currentUser.role !== "BRANCH_COORDINATOR" && shepherdAssignedChildIds.size > 0;
+  }, [isAdmin, currentUser.role, currentUser.type, shepherdAssignedChildIds.size]);
+
+  // Candidates for "Add Member" button: locked strictly to assigned members for shepherds
+  const addMemberCandidates = useMemo(() => {
+    if (!addMemberModal) return [];
+    const session = localSessions.find((s) => s.id === addMemberModal.sessionId);
+
+    // If logged-in user is a shepherd, or if this session belongs to the logged-in shepherd
+    if (isShepherdUser || (session?.teacherId && session.teacherId === currentUser.id)) {
+      return data.members.filter(
+        (m) =>
+          shepherdAssignedChildIds.has(m.id) &&
+          m.type === MemberType.MEMBER &&
+          [
+            MemberStatus.ACTIVE,
+            MemberStatus.INCONSISTENT,
+            MemberStatus.NOT_ACTIVE,
+          ].includes(m.status)
+      );
+    }
+
+    // If an admin/coordinator is adding to a session designated for a specific shepherd
+    if (session?.teacherId) {
+      const assignedIds = new Set<string>();
+      data.members.forEach((m) => {
+        if (m.assignedTeacherId === session.teacherId) assignedIds.add(m.id);
+      });
+      Object.values(divisions).forEach((div) => {
+        const asg = div.assignments.find((a) => a.teacher.id === session.teacherId);
+        if (asg) asg.members.forEach((m) => assignedIds.add(m.id));
+      });
+      if (assignedIds.size > 0) {
+        return data.members.filter(
+          (m) =>
+            assignedIds.has(m.id) &&
+            m.type === MemberType.MEMBER &&
+            [
+              MemberStatus.ACTIVE,
+              MemberStatus.INCONSISTENT,
+              MemberStatus.NOT_ACTIVE,
+            ].includes(m.status)
+        );
+      }
+    }
+
+    // Default admin view: regular members belonging to the active church/branch (excluding FNFs, Visitors, Staff)
+    return data.members.filter(
+      (m) =>
+        m.type === MemberType.MEMBER &&
+        [
+          MemberStatus.ACTIVE,
+          MemberStatus.INCONSISTENT,
+          MemberStatus.NOT_ACTIVE,
+        ].includes(m.status) &&
+        (activeChurch === "All" ||
+          activeChurch === "CM" ||
+          m.assignedChurch === activeChurch)
+    );
+  }, [
+    addMemberModal,
+    isShepherdUser,
+    localSessions,
+    currentUser.id,
+    shepherdAssignedChildIds,
+    data.members,
+    divisions,
+    activeChurch,
+  ]);
+
   const filteredLocalSessions = useMemo(() => {
     let sessions = localSessions || [];
-    const isTeacher =
-      !isAdmin &&
-      currentUser.role !== "BRANCH_COORDINATOR" &&
-      (currentUser.type === MemberType.TEACHER ||
-        currentUser.role === "TEACHER" ||
-        currentUser.type === MemberType.HELPER);
+    const isTeacher = isShepherdUser;
 
     if (isTeacher) {
       const focusChurch =
@@ -1291,7 +1317,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
       sessions = sessions.filter((s) => {
         if (s.teacherId) return s.teacherId === currentUser.id;
-        return (s.assignedMemberIds || []).some((id) => assignedIds.has(id));
+        return (s.assignedMemberIds || []).some((id) => shepherdAssignedChildIds.has(id));
       });
     } else if (activeChurch !== "All" && activeChurch !== "CM") {
       const churchKidIds = new Set(
@@ -1375,7 +1401,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
       slots = slots.filter((s) => {
         if (s.teacherId) return s.teacherId === currentUser.id;
-        return (s.assignedMemberIds || []).some((id) => assignedIds.has(id));
+        return (s.assignedMemberIds || []).some((id) => shepherdAssignedChildIds.has(id));
       });
     } else if (activeChurch !== "All" && activeChurch !== "CM") {
       const churchKidIds = new Set(
@@ -2226,7 +2252,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                     }`}
                 >
                   <Heart size={12} />
-                  <span>Friends & Family</span>
+                  <span>FNFs</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${memberCategoryFilter === "FNF" ? "bg-emerald-700 text-white" : "bg-emerald-200/70 text-emerald-800"}`}>
                     {fnfMembers.length}
                   </span>
@@ -2515,7 +2541,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 <div className="flex flex-col xl:flex-row items-center justify-between gap-6">
                   <div className="flex-1 text-center xl:text-left">
                     <h3 className="font-bold text-xl text-slate-800 mb-1">
-                      Prayer & Intercession Progress {currentYear} ({currentChurch.name})
+                      Prayer and Intercession Progress {currentYear} ({currentChurch.name})
                     </h3>
                     <p className="text-sm text-slate-500">
                       Accounting of children interceded for and sessions logged.
@@ -2994,7 +3020,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 color="indigo"
               />
               <CollapsibleProgressSection
-                title="Friends & Family (FNF)"
+                title="Friends and Family"
                 members={connectList.filter((m) => m.type === MemberType.FNF)}
                 data={data}
                 icon={User}
@@ -3226,16 +3252,13 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
           onSelect={(mid: string) =>
             handleAddMember(addMemberModal.sessionId, mid)
           }
-          members={
-            !isAdmin && activeChurch !== "All" && activeChurch !== "CM" && (currentUser.type === MemberType.TEACHER || currentUser.role === "TEACHER" || currentUser.role === "BRANCH_COORDINATOR" || currentUser.type === MemberType.HELPER)
-              ? data.members.filter(m => connectList.some(cl => cl.id === m.id) || visitorFnfIds.has(m.id))
-              : data.members
-          }
+          members={addMemberCandidates}
           currentSessionMembers={
             filteredLocalSessions.find((s) => s.id === addMemberModal.sessionId)
               ?.assignedMemberIds || []
           }
           activeChurch={activeChurch}
+          isShepherd={isShepherdUser}
         />
       )}
 
@@ -4463,6 +4486,7 @@ const AddMemberModal = ({
   members,
   currentSessionMembers,
   activeChurch,
+  isShepherd,
 }: any) => {
   const [search, setSearch] = useState("");
   if (!isOpen) return null;
@@ -4471,7 +4495,8 @@ const AddMemberModal = ({
     .filter(
       (m: Member) =>
         !currentSessionMembers.includes(m.id) &&
-        (activeChurch === "CM" ||
+        (isShepherd ||
+          activeChurch === "CM" ||
           activeChurch === "All" ||
           m.assignedChurch === activeChurch) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
@@ -4483,46 +4508,79 @@ const AddMemberModal = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
       <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl flex flex-col max-h-[80vh]">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-lg text-slate-800">Add Member</h3>
-          <button onClick={onClose}>
-            <X size={20} className="text-slate-400" />
+          <div>
+            <h3 className="font-bold text-lg text-slate-800">Add Member</h3>
+            {isShepherd && (
+              <p className="text-[11px] text-indigo-600 font-semibold">
+                Your Assigned Children
+              </p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors"
+          >
+            <X size={20} />
           </button>
         </div>
-        <input
-          type="text"
-          placeholder="Search..."
-          className="w-full p-3 bg-slate-50 rounded-xl mb-4 outline-none focus:ring-2 focus:ring-indigo-500"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          autoFocus
-        />
+        <div className="relative mb-4">
+          <Search size={16} className="absolute left-3.5 top-3.5 text-slate-400" />
+          <input
+            type="text"
+            placeholder={isShepherd ? "Search assigned children..." : "Search members..."}
+            className="w-full pl-10 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            autoFocus
+          />
+        </div>
         <div className="overflow-y-auto flex-1 space-y-2">
           {available.map((m: Member) => (
             <button
               key={m.id}
               onClick={() => onSelect(m.id)}
-              className="w-full p-3 text-left hover:bg-slate-50 rounded-xl flex items-center justify-between group"
+              className="w-full p-3 text-left hover:bg-indigo-50/50 border border-slate-100 hover:border-indigo-200 rounded-xl flex items-center justify-between group transition-all"
             >
               <div>
-                <div className="font-bold text-slate-700">{m.name}</div>
-                <div className="text-[10px] text-slate-400 uppercase font-bold">
-                  {m.type === "Visitor" ? "First Timer" : m.type}
+                <div className="font-bold text-slate-700 text-sm">{m.name}</div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span
+                    className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                      m.status === MemberStatus.ACTIVE
+                        ? "bg-green-100 text-green-700"
+                        : m.status === MemberStatus.INCONSISTENT
+                        ? "bg-rose-100 text-rose-700"
+                        : "bg-amber-100 text-amber-700"
+                    }`}
+                  >
+                    {m.status || "Member"}
+                  </span>
+                  {m.assignedChurch && (
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      {m.assignedChurch}
+                    </span>
+                  )}
                 </div>
               </div>
               <Plus
                 size={16}
-                className="text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="text-indigo-500 opacity-60 group-hover:opacity-100 transition-opacity"
               />
             </button>
           ))}
           {available.length === 0 && (
-            <p className="text-center text-slate-400 text-sm py-4">
-              No members found.
-            </p>
+            <div className="text-center py-6 px-3">
+              <UserCheck size={28} className="mx-auto text-slate-300 mb-2" />
+              <p className="font-bold text-slate-600 text-sm">No members available</p>
+              <p className="text-slate-400 text-xs mt-1">
+                {isShepherd
+                  ? "Only active, inconsistent, or not active children assigned to your care can be added. All assigned children may already be in this session or none are assigned."
+                  : "No eligible members found matching the criteria."}
+              </p>
+            </div>
           )}
         </div>
       </div>
-
     </div>
   );
 };

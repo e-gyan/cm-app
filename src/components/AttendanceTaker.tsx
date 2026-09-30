@@ -867,11 +867,12 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   const availableShepherdsForAttendance = useMemo(() => {
     return (data.members || []).filter(
       (m) =>
+        matchesScope(m, activeBranchId, data.settings?.organization) &&
         isStaffOrTeacher(m) &&
         m.status !== MemberStatus.ARCHIVED &&
         m.status !== MemberStatus.TRANSFERRED
     );
-  }, [data.members]);
+  }, [data.members, activeBranchId, data.settings?.organization]);
 
   const filteredMembers = membersToList.filter((m) => {
     const matchesSearch = m.name
@@ -1285,8 +1286,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                     type="button"
                     onClick={() => setInternalChurchFilter("COMBINED")}
                     className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all ${internalChurchFilter === "COMBINED"
-                        ? "bg-indigo-600 text-white shadow-xs"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                       }`}
                   >
                     All
@@ -1297,8 +1298,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                       type="button"
                       onClick={() => setInternalChurchFilter(c as Church)}
                       className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${internalChurchFilter === c
-                          ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
-                          : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                        ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                        : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
                         }`}
                     >
                       {c}
@@ -1602,7 +1603,11 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                         <p
                           className={`text-xs font-medium uppercase tracking-wider ${isPresent ? "opacity-80" : "text-slate-400"}`}
                         >
-                          {member.type === "Visitor" ? "First Timer" : member.type}
+                          {member.type === "Visitor"
+                            ? "First Timer"
+                            : (member.type as any) === "Teacher" || (member.type as any) === MemberType.TEACHER || attendanceMode === "STAFF"
+                              ? "Shepherd"
+                              : member.type}
                         </p>
                         {(isCombinedView || effectiveChurch === "CM") && (
                           <span
@@ -1620,11 +1625,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                             if (shepherd) {
                               return (
                                 <span
-                                  className={`text-[10px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1 ${
-                                    isPresent
+                                  className={`text-[10px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1 ${isPresent
                                       ? "bg-white/25 text-current border border-white/30"
                                       : "bg-purple-50 text-purple-700 border border-purple-200"
-                                  }`}
+                                    }`}
                                   title={`Assigned Shepherd: ${shepherd.name}`}
                                 >
                                   <UserCheck size={9} className="shrink-0" />
@@ -1634,11 +1638,10 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                             }
                             return (
                               <span
-                                className={`text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1 ${
-                                  isPresent
+                                className={`text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1 ${isPresent
                                     ? "bg-white/15 text-current opacity-75"
                                     : "bg-slate-50 text-slate-400 border border-slate-200"
-                                }`}
+                                  }`}
                               >
                                 <UserX size={9} className="shrink-0" />
                                 <span>Unassigned</span>
@@ -1907,8 +1910,8 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           onClick={handleSave}
           disabled={isSaving}
           className={`flex items-center gap-2 px-5 py-3 rounded-full font-extrabold text-xs sm:text-sm shadow-xl transition-all active:scale-95 text-white ${successMsg && !successMsg.includes("Error")
-              ? "bg-emerald-600 shadow-emerald-200"
-              : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-300 disabled:opacity-70"
+            ? "bg-emerald-600 shadow-emerald-200"
+            : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-300 disabled:opacity-70"
             }`}
           title="Save Attendance without scrolling"
         >

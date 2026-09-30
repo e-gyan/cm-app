@@ -15,6 +15,7 @@ import {
   PrayerSlot,
   AppSettings,
   MemberStatus,
+  MemberType,
 } from "../types";
 import { DEFAULT_SETTINGS } from "../constants";
 import { verifyPasscode as verifyHash, hashPasscode as createHash } from "./securityService";
@@ -364,7 +365,37 @@ if (typeof window !== "undefined") {
   window.addEventListener("beforeunload", () => {
     flushPendingWrites().catch(console.error);
   });
+  window.addEventListener("online", () => {
+    console.log("[Offline Sync] Connection restored. Flushing queued writes...");
+    flushPendingWrites().catch(console.error);
+    loadData(true).catch(console.error);
+  });
 }
+
+const OFFLINE_QUEUE_KEY = "cm_offline_pending_writes";
+
+const getOfflineQueue = (): Partial<AppData> => {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+const saveOfflineQueue = (queue: Partial<AppData>) => {
+  if (typeof window === "undefined") return;
+  try {
+    if (Object.keys(queue).length === 0) {
+      localStorage.removeItem(OFFLINE_QUEUE_KEY);
+    } else {
+      localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+    }
+  } catch {
+    // Ignore storage quota errors
+  }
+};
 
 const updateMainDoc = async (updates: Partial<AppData>): Promise<void> => {
   pendingUpdates = { ...pendingUpdates, ...updates };
@@ -376,12 +407,17 @@ const updateMainDoc = async (updates: Partial<AppData>): Promise<void> => {
   return new Promise((resolve) => {
     writeTimeout = setTimeout(async () => {
       writeTimeout = null;
-      const payload = { ...pendingUpdates };
+      // Merge with any existing offline queue
+      const offlineQueue = getOfflineQueue();
+      const payload = { ...offlineQueue, ...pendingUpdates };
       pendingUpdates = {};
 
       try {
         await setDoc(getAppDataRef(), payload, { merge: true });
+        saveOfflineQueue({}); // Clear offline queue on success
       } catch (error) {
+        // Save to offline queue so it syncs immediately when connectivity returns
+        saveOfflineQueue(payload);
         handleFirestoreError(error, OperationType.WRITE, "appData/main");
       } finally {
         resolve();
@@ -441,9 +477,18 @@ export const saveMembers = async (members: Member[]) => {
   const current = memoryCache || (await loadData());
   const newMembers = [...current.members];
   members.forEach((m) => {
+    const updated = { ...m };
+    if (!updated.assignedTeacherId || updated.assignedTeacherId === "UNASSIGNED") {
+      delete updated.assignedTeacherId;
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.removeItem(`cm_hooked_teacher_${m.id}`);
+        } catch {}
+      }
+    }
     const idx = newMembers.findIndex((x) => x.id === m.id);
-    if (idx >= 0) newMembers[idx] = m;
-    else newMembers.push(m);
+    if (idx >= 0) newMembers[idx] = updated;
+    else newMembers.push(updated);
   });
 
   // Strip undefined properties for safe Firestore array serialization
@@ -494,11 +539,26 @@ export const addMembers = async (newMembersList: Member[]) => {
 export const updateMember = async (id: string, updates: Partial<Member>) => {
   const current = memoryCache || (await loadData());
   const targetMember = current.members.find((m) => m.id === id);
-  const members = current.members.map((m) => (m.id === id ? { ...m, ...updates } : m));
-  memoryCache = { ...current, members };
+  const members = current.members.map((m) => {
+    if (m.id === id) {
+      const up = { ...m, ...updates };
+      if (!up.assignedTeacherId || up.assignedTeacherId === "UNASSIGNED") {
+        delete up.assignedTeacherId;
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.removeItem(`cm_hooked_teacher_${id}`);
+          } catch {}
+        }
+      }
+      return up;
+    }
+    return m;
+  });
+  const sanitizedMembers: Member[] = JSON.parse(JSON.stringify(members));
+  memoryCache = { ...current, members: sanitizedMembers };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  pendingUpdates = { ...pendingUpdates, members };
+  pendingUpdates = { ...pendingUpdates, members: sanitizedMembers };
   await flushPendingWrites();
 
   if (targetMember && updates.status && updates.status !== targetMember.status) {
@@ -1011,12 +1071,21 @@ export const generateOutreachSchedule = async (targetMembers: any[], dates: stri
     const data = memoryCache || (await loadData());
     const existingSessions = data.outreachSessions || [];
 
-    if (targetMembers.length === 0) {
-      return { success: false, message: "No members available to assign for visitation." };
+    // Strictly filter to active, inconsistent, and not active members only (no FNFs or First Timers/Visitors)
+    const eligibleMembers = targetMembers.filter(
+      (m) =>
+        m.type === MemberType.MEMBER &&
+        (m.status === MemberStatus.ACTIVE ||
+          m.status === MemberStatus.INCONSISTENT ||
+          m.status === MemberStatus.NOT_ACTIVE)
+    );
+
+    if (eligibleMembers.length === 0) {
+      return { success: false, message: "No active, inconsistent, or not active members available to assign for visitation." };
     }
 
     const visitCounts = new Map<string, number>();
-    targetMembers.forEach((m) => visitCounts.set(m.id, 0));
+    eligibleMembers.forEach((m) => visitCounts.set(m.id, 0));
 
     existingSessions.forEach((s) => {
       if (
@@ -1041,22 +1110,9 @@ export const generateOutreachSchedule = async (targetMembers: any[], dates: stri
           .map((x) => x.m);
       };
 
-      const membersOnly = targetMembers.filter((m) => m.type === "Member");
-      const fnfsOnly = targetMembers.filter((m) => m.type === "FNF");
-      const visitorsOnly = targetMembers.filter(
-        (m) => m.type === "Visitor" || m.type === "Not Member"
-      );
-
-      const sortedMembers = shuffleAndSort(membersOnly);
-      const sortedFnfs = shuffleAndSort(fnfsOnly);
-      const sortedVisitors = shuffleAndSort(visitorsOnly);
-
-      const selectedIds: string[] = [];
-
-      // Strict rule: 2 Members, 1 FNF, 1 First Timer (Visitor)
-      selectedIds.push(...sortedMembers.slice(0, 2).map((m) => m.id));
-      selectedIds.push(...sortedFnfs.slice(0, 1).map((m) => m.id));
-      selectedIds.push(...sortedVisitors.slice(0, 1).map((m) => m.id));
+      const sortedMembers = shuffleAndSort(eligibleMembers);
+      const selectedMembers = sortedMembers.slice(0, 4);
+      const selectedIds: string[] = selectedMembers.map((m) => m.id);
 
       selectedIds.forEach((id) => {
         visitCounts.set(id, (visitCounts.get(id) || 0) + 1);
@@ -1071,7 +1127,7 @@ export const generateOutreachSchedule = async (targetMembers: any[], dates: stri
         visitedMemberIds: [],
         teacherId: teacherId || undefined,
         completedBy: teacherId || undefined,
-        branchId: targetMembers[0]?.assignedChurch || "ALL",
+        branchId: eligibleMembers[0]?.branchId || eligibleMembers[0]?.assignedChurch || "ALL",
       });
     }
 
@@ -1084,7 +1140,7 @@ export const generateOutreachSchedule = async (targetMembers: any[], dates: stri
     return {
       success: true,
       data: updatedSessions,
-      message: "Generated visitation schedule (2 members, 1 FNF, 1 First Timer per date)!",
+      message: "Generated visitation schedule successfully!",
     };
   } catch (err) {
     console.error(err);
@@ -1099,12 +1155,21 @@ export const generatePrayerSchedule = async (prayerWeek: Date, targetMembers: Me
 
     const newSlots: PrayerSlot[] = [];
 
-    if (targetMembers.length === 0) {
-      return { success: false, message: "No members available to generate schedule." };
+    // Strictly filter to active, inconsistent, and not active members only (no FNFs or First Timers/Visitors)
+    const eligibleMembers = targetMembers.filter(
+      (m) =>
+        m.type === MemberType.MEMBER &&
+        (m.status === MemberStatus.ACTIVE ||
+          m.status === MemberStatus.INCONSISTENT ||
+          m.status === MemberStatus.NOT_ACTIVE)
+    );
+
+    if (eligibleMembers.length === 0) {
+      return { success: false, message: "No active, inconsistent, or not active members available to generate prayer schedule." };
     }
 
     const prayerCounts = new Map<string, number>();
-    targetMembers.forEach((m) => prayerCounts.set(m.id, 0));
+    eligibleMembers.forEach((m) => prayerCounts.set(m.id, 0));
 
     existingSchedule.forEach((s) => {
       if (s.isCompleted) {
@@ -1129,22 +1194,9 @@ export const generatePrayerSchedule = async (prayerWeek: Date, targetMembers: Me
           .map((x) => x.m);
       };
 
-      const membersOnly = targetMembers.filter((m) => m.type === "Member");
-      const fnfsOnly = targetMembers.filter((m) => m.type === "FNF");
-      const visitorsOnly = targetMembers.filter(
-        (m) => m.type === "Visitor" || m.type === "Not Member"
-      );
-
-      const sortedMembers = shuffleAndSort(membersOnly);
-      const sortedFnfs = shuffleAndSort(fnfsOnly);
-      const sortedVisitors = shuffleAndSort(visitorsOnly);
-
-      const selectedIds: string[] = [];
-
-      // Strict rule: 2 Members, 1 FNF, 1 First Timer (Visitor)
-      selectedIds.push(...sortedMembers.slice(0, 2).map((m) => m.id));
-      selectedIds.push(...sortedFnfs.slice(0, 1).map((m) => m.id));
-      selectedIds.push(...sortedVisitors.slice(0, 1).map((m) => m.id));
+      const sortedMembers = shuffleAndSort(eligibleMembers);
+      const selectedMembers = sortedMembers.slice(0, 4);
+      const selectedIds: string[] = selectedMembers.map((m) => m.id);
 
       selectedIds.forEach((id) => {
         prayerCounts.set(id, (prayerCounts.get(id) || 0) + 1);
@@ -1158,7 +1210,7 @@ export const generatePrayerSchedule = async (prayerWeek: Date, targetMembers: Me
         assignedMemberIds: selectedIds,
         durationMins: 0,
         teacherId: teacherId || undefined,
-        branchId: targetMembers[0]?.branchId || targetMembers[0]?.assignedChurch || "ALL",
+        branchId: eligibleMembers[0]?.branchId || eligibleMembers[0]?.assignedChurch || "ALL",
       });
     }
 
@@ -1172,7 +1224,7 @@ export const generatePrayerSchedule = async (prayerWeek: Date, targetMembers: Me
     return {
       success: true,
       data: updatedSchedule,
-      message: "Generated weekly prayer schedule (2 members, 1 FNF, 1 First Timer daily)!",
+      message: "Generated weekly prayer schedule successfully!",
     };
   } catch (err) {
     console.error(err);

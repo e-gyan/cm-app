@@ -1,7 +1,7 @@
 # Children's Ministry Directorate (CMD) Platform
 
-[![Version](https://img.shields.io/badge/version-1.7.10-indigo.svg)](src/version.ts)
-[![Release](https://img.shields.io/badge/release-Instant%20DB%20Auto--Save%20%26%20Multi--Component%20Sync-emerald.svg)](src/version.ts)
+[![Version](https://img.shields.io/badge/version-1.7.11-indigo.svg)](src/version.ts)
+[![Release](https://img.shields.io/badge/release-Branch%20Shepherd%20Filters%20%26%20Pastoral%20Sync-emerald.svg)](src/version.ts)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)](tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-cyan.svg)](package.json)
 

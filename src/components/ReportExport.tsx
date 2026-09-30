@@ -1538,7 +1538,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                   <Users size={20} className="text-indigo-200" />
                 </span>
                 <h3 className="text-xl font-bold">
-                  Equal Shepherd & Member Division
+                  Equal Shepherd &nd Member Division
                 </h3>
               </div>
               <p className="text-indigo-200 text-xs md:text-sm">

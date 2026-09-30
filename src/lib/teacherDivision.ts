@@ -21,11 +21,11 @@ export interface ChurchDivisionResult {
 }
 
 export const CHURCH_NAMES: Record<string, string> = {
-  UJ: "Upper Junior (UJ)",
-  LJ: "Lower Junior (LJ)",
-  K: "Kingdom (K)",
-  I: "Infants (I)",
-  N: "Nursery (N)",
+  UJ: "UJ",
+  LJ: "LJ",
+  K: "K",
+  I: "I",
+  N: "N",
 };
 
 export const isBranchHead = (m: Member): boolean => {
@@ -49,6 +49,16 @@ export const isStaffOrTeacher = (m: Member): boolean => {
     m.type === MemberType.VOLUNTEER;
   const isRoleTeacher = m.role && m.role !== "NONE";
   return Boolean(isTypeTeacher || isRoleTeacher);
+};
+
+export const isFnfOrVisitor = (m: Member): boolean => {
+  const typeStr = (m.type as unknown as string) || "";
+  return (
+    m.type === MemberType.FNF ||
+    m.type === MemberType.VISITOR ||
+    typeStr === "FNF" ||
+    typeStr === "Visitor"
+  );
 };
 
 // Persistent teacher hook helper
@@ -227,7 +237,8 @@ export const autoAllocateChildrenForChurch = (
       matchBranch &&
       m.status !== MemberStatus.ARCHIVED &&
       m.status !== MemberStatus.TRANSFERRED &&
-      !isStaffOrTeacher(m)
+      !isStaffOrTeacher(m) &&
+      !isFnfOrVisitor(m)
     );
   }).sort((a, b) => a.name.localeCompare(b.name));
 
@@ -276,6 +287,14 @@ export const autoAllocateChildrenForChurch = (
   });
 
   const updatedMembers = allMembers.map((m) => {
+    // Unassign FNFs and Visitors if they currently have an assigned shepherd
+    if (isFnfOrVisitor(m) && m.assignedTeacherId) {
+      const up = { ...m };
+      delete up.assignedTeacherId;
+      up.assignedTeacherId = undefined;
+      setHookedTeacherId(up, undefined);
+      return up;
+    }
     if (childToShepherdMap.has(m.id)) {
       const assignedTeacherId = childToShepherdMap.get(m.id);
       setHookedTeacherId(m, assignedTeacherId!);
@@ -304,7 +323,8 @@ export const calculateChurchDivisions = (
         matchBranch &&
         m.status !== MemberStatus.ARCHIVED &&
         m.status !== MemberStatus.TRANSFERRED &&
-        !isStaffOrTeacher(m)
+        !isStaffOrTeacher(m) &&
+        !isFnfOrVisitor(m)
       );
     }).sort((a, b) => a.name.localeCompare(b.name));
 
@@ -353,29 +373,11 @@ export const calculateChurchDivisions = (
         if (existingTeacherId) {
           const targetAsg = teacherMap.get(existingTeacherId)!;
           cluster.forEach((m) => {
-            setHookedTeacherId(m, existingTeacherId!);
             targetAsg.members.push(m);
           });
         } else {
-          unassignedClusters.push(cluster);
+          unassignedMembers.push(...cluster);
         }
-      });
-
-      // 3. For unassigned clusters, sort largest clusters first for optimal balanced distribution
-      unassignedClusters.sort((a, b) => b.length - a.length);
-
-      unassignedClusters.forEach((cluster) => {
-        // Find teacher with lowest member count
-        assignments.sort(
-          (a, b) =>
-            a.members.length - b.members.length ||
-            a.teacher.name.localeCompare(b.teacher.name)
-        );
-        const targetAsg = assignments[0];
-        cluster.forEach((m) => {
-          setHookedTeacherId(m, targetAsg.teacher.id);
-          targetAsg.members.push(m);
-        });
       });
 
       // Sort each teacher's assigned members alphabetically for clean display and sync count

@@ -233,73 +233,73 @@ const DemographicsChart = ({
       .style("font-size", "12px")
       .style("box-shadow", "0 4px 6px -1px rgb(0 0 0 / 0.1)");
 
-const AGE_COLORS_BY_CHURCH: Record<string, Record<string, string>> = {
-  I: {
-    "0 yrs": "#ec4899",
-    "1 yr": "#a855f7",
-    "2 yrs": "#6366f1",
-    "Outliers (3+)": "#f97316",
-    "Unknown": "#94a3b8",
-  },
-  N: {
-    "0 yrs": "#ec4899",
-    "1 yr": "#a855f7",
-    "2 yrs": "#6366f1",
-    "Outliers (3+)": "#f97316",
-    "Unknown": "#94a3b8",
-  },
-  K: {
-    "< 3": "#06b6d4",
-    "3 yrs": "#3b82f6",
-    "4 yrs": "#8b5cf6",
-    "5 yrs": "#ec4899",
-    "Outliers (6+)": "#f97316",
-    "Unknown": "#94a3b8",
-  },
-  LJ: {
-    "< 6": "#06b6d4",
-    "6 yrs": "#10b981",
-    "7 yrs": "#3b82f6",
-    "8 yrs": "#8b5cf6",
-    "Outliers (9+)": "#f97316",
-    "Unknown": "#94a3b8",
-  },
-  UJ: {
-    "< 9": "#06b6d4",
-    "9 yrs": "#10b981",
-    "10 yrs": "#3b82f6",
-    "11 yrs": "#6366f1",
-    "12 yrs": "#a855f7",
-    "Outliers (13+)": "#f97316",
-    "Unknown": "#94a3b8",
-  },
-  All: {
-    "I (0-2)": "#ec4899",
-    "K (3-5)": "#06b6d4",
-    "LJ (6-8)": "#10b981",
-    "UJ (9-12)": "#6366f1",
-    "Teens (13+)": "#f97316",
-    "Unknown": "#94a3b8",
-  },
-};
+    const AGE_COLORS_BY_CHURCH: Record<string, Record<string, string>> = {
+      I: {
+        "0 yrs": "#ec4899",
+        "1 yr": "#a855f7",
+        "2 yrs": "#6366f1",
+        "Outliers (3+)": "#f97316",
+        "Unknown": "#94a3b8",
+      },
+      N: {
+        "0 yrs": "#ec4899",
+        "1 yr": "#a855f7",
+        "2 yrs": "#6366f1",
+        "Outliers (3+)": "#f97316",
+        "Unknown": "#94a3b8",
+      },
+      K: {
+        "< 3": "#06b6d4",
+        "3 yrs": "#3b82f6",
+        "4 yrs": "#8b5cf6",
+        "5 yrs": "#ec4899",
+        "Outliers (6+)": "#f97316",
+        "Unknown": "#94a3b8",
+      },
+      LJ: {
+        "< 6": "#06b6d4",
+        "6 yrs": "#10b981",
+        "7 yrs": "#3b82f6",
+        "8 yrs": "#8b5cf6",
+        "Outliers (9+)": "#f97316",
+        "Unknown": "#94a3b8",
+      },
+      UJ: {
+        "< 9": "#06b6d4",
+        "9 yrs": "#10b981",
+        "10 yrs": "#3b82f6",
+        "11 yrs": "#6366f1",
+        "12 yrs": "#a855f7",
+        "Outliers (13+)": "#f97316",
+        "Unknown": "#94a3b8",
+      },
+      All: {
+        "I (0-2)": "#ec4899",
+        "K (3-5)": "#06b6d4",
+        "LJ (6-8)": "#10b981",
+        "UJ (9-12)": "#6366f1",
+        "Teens (13+)": "#f97316",
+        "Unknown": "#94a3b8",
+      },
+    };
 
-const DEFAULT_AGE_PALETTE = [
-  "#6366f1",
-  "#06b6d4",
-  "#10b981",
-  "#f59e0b",
-  "#ec4899",
-  "#8b5cf6",
-  "#3b82f6",
-  "#f97316",
-  "#94a3b8",
-];
+    const DEFAULT_AGE_PALETTE = [
+      "#6366f1",
+      "#06b6d4",
+      "#10b981",
+      "#f59e0b",
+      "#ec4899",
+      "#8b5cf6",
+      "#3b82f6",
+      "#f97316",
+      "#94a3b8",
+    ];
 
-const getAgeGroupColor = (group: string, church: string, index: number): string => {
-  const churchMap = AGE_COLORS_BY_CHURCH[church] || AGE_COLORS_BY_CHURCH.All;
-  if (churchMap && churchMap[group]) return churchMap[group];
-  return DEFAULT_AGE_PALETTE[index % DEFAULT_AGE_PALETTE.length];
-};
+    const getAgeGroupColor = (group: string, church: string, index: number): string => {
+      const churchMap = AGE_COLORS_BY_CHURCH[church] || AGE_COLORS_BY_CHURCH.All;
+      if (churchMap && churchMap[group]) return churchMap[group];
+      return DEFAULT_AGE_PALETTE[index % DEFAULT_AGE_PALETTE.length];
+    };
 
     svg
       .selectAll("mybar")
@@ -659,7 +659,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
 
   const branchGrowthData = useMemo(() => {
     if (!hasManagementView) return [];
-    
+
     const months = [];
     const now = new Date();
     for (let i = 11; i >= 0; i--) {
@@ -678,7 +678,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       const d = new Date(r.date);
       const recordMonth = d.getMonth();
       const recordYear = d.getFullYear();
-      
+
       const monthObj = months.find(m => m.month === recordMonth && m.year === recordYear);
       if (monthObj) {
         if (availableChurches.includes(r.churchId)) {
@@ -713,8 +713,8 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
         : currentUser.assignedChurch &&
           currentUser.assignedChurch !== "All" &&
           currentUser.assignedChurch !== "CM"
-        ? currentUser.assignedChurch
-        : "UJ";
+          ? currentUser.assignedChurch
+          : "UJ";
 
     const churchDiv =
       divisions[churchKey] || divisions["UJ"] || Object.values(divisions)[0];
@@ -870,37 +870,100 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
 
   // --- EXPORT LOGIC (Grouped) ---
   const handleExport = (church: Church) => {
-    // Get all active people for this church, sorted by name
-    const allActive = data.members
-      .filter(
-        (m) => m.assignedChurch === church && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status),
-      )
+    // Get all people for this church, sorted by name, matching active branch scope
+    const churchPeople = data.members
+      .filter((m) => {
+        const matchesChurch = church === "All" || church === "CM" ? true : m.assignedChurch === church;
+        const matchesBranch = matchesScope(m, activeBranchId, data.settings?.organization);
+        const isValidStatus = [
+          MemberStatus.ACTIVE,
+          MemberStatus.INCONSISTENT,
+          MemberStatus.NOT_ACTIVE,
+        ].includes(m.status);
+        return matchesChurch && matchesBranch && isValidStatus;
+      })
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    // Separate into Groups
-    const members = allActive.filter((m) => m.type === MemberType.MEMBER);
-    const fnf = allActive.filter((m) => m.type === MemberType.FNF);
+    // Group Members by Status
+    const isMember = (m: Member) =>
+      (m.type as unknown as string) === "Member" || m.type === MemberType.MEMBER;
 
-    if (members.length === 0 && fnf.length === 0) {
-      alert(`No active members or FNF found for ${church}.`);
+    const activeMembers = churchPeople.filter(
+      (m) => isMember(m) && m.status === MemberStatus.ACTIVE
+    );
+    const inconsistentMembers = churchPeople.filter(
+      (m) => isMember(m) && m.status === MemberStatus.INCONSISTENT
+    );
+    const inactiveMembers = churchPeople.filter(
+      (m) => isMember(m) && m.status === MemberStatus.NOT_ACTIVE
+    );
+
+    // First Timers (Visitors)
+    const firstTimers = churchPeople.filter(
+      (m) => m.type === MemberType.VISITOR || (m.type as string) === "Visitor"
+    );
+
+    // Friends & Family (FNF)
+    const fnf = churchPeople.filter((m) => m.type === MemberType.FNF || (m.type as string) === "FNF");
+
+    const totalCount =
+      activeMembers.length +
+      inconsistentMembers.length +
+      inactiveMembers.length +
+      firstTimers.length +
+      fnf.length;
+
+    if (totalCount === 0) {
+      alert(`No members, first timers, or FNF found for ${church}.`);
       return;
     }
 
-    let text = `*${church} CHURCH MEMBERS LIST*\n\n`;
+    const churchTitle = church === "All" || church === "CM" ? "All Churches" : church;
+    let text = `*${churchTitle} CHURCH MEMBERS LIST*\n\n`;
 
-    if (members.length > 0) {
-      text += `*MEMBERS (${members.length})*\n`;
-      members.forEach((m, i) => {
+    // 1. ACTIVE MEMBERS
+    if (activeMembers.length > 0) {
+      text += `*ACTIVE MEMBERS (${activeMembers.length})*\n`;
+      activeMembers.forEach((m, i) => {
         text += `${i + 1}. ${m.name}\n`;
       });
       text += `\n`;
     }
 
+    // 2. INCONSISTENT MEMBERS
+    if (inconsistentMembers.length > 0) {
+      text += `*INCONSISTENT MEMBERS (${inconsistentMembers.length})*\n`;
+      inconsistentMembers.forEach((m, i) => {
+        text += `${i + 1}. ${m.name}\n`;
+      });
+      text += `\n`;
+    }
+
+    // 3. NOT ACTIVE MEMBERS
+    if (inactiveMembers.length > 0) {
+      text += `*NOT ACTIVE MEMBERS (${inactiveMembers.length})*\n`;
+      inactiveMembers.forEach((m, i) => {
+        text += `${i + 1}. ${m.name}\n`;
+      });
+      text += `\n`;
+    }
+
+    // 4. FIRST TIMERS
+    if (firstTimers.length > 0) {
+      text += `*FIRST TIMERS (${firstTimers.length})*\n`;
+      firstTimers.forEach((m, i) => {
+        text += `${i + 1}. ${m.name}\n`;
+      });
+      text += `\n`;
+    }
+
+    // 5. FRIENDS & FAMILY (FNF)
     if (fnf.length > 0) {
       text += `*FNF (${fnf.length})*\n`;
       fnf.forEach((m, i) => {
         text += `${i + 1}. ${m.name}\n`;
       });
+      text += `\n`;
     }
 
     const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
@@ -913,11 +976,11 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
     const sortedDates = [...new Set(sundayRecords.map(a => a.date))]
       .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
       .filter(d => new Date(d) <= today);
-    
+
     const recent4Dates = sortedDates.slice(0, 4);
     if (recent4Dates.length === 0) return null;
 
-    const relevantAttendance = sundayRecords.filter(a => 
+    const relevantAttendance = sundayRecords.filter(a =>
       effectiveChurch === "All" ? true : a.churchId === effectiveChurch
     );
 
@@ -1089,7 +1152,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
 
       {/* PREDICTION WIDGET */}
       {predictionModel && (
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-3xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden"
@@ -1456,24 +1519,24 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                 <AreaChart data={branchGrowthData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorUJ" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="colorLJ" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#ec4899" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#ec4899" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#ec4899" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#ec4899" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="colorK" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="colorI" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="colorN" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -1612,7 +1675,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                 Intelligence
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Targeted visitation & prayer metrics for assigned children
+                Targeted visitation and prayer metrics for assigned children
               </p>
             </div>
 
@@ -1735,118 +1798,118 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
 
       {/* SECTION C: FINANCIAL INTELLIGENCE */}
       {hasManagementView && (
-      <div className="space-y-4">
-        <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2 px-1">
-          <Wallet size={20} className="text-emerald-600" /> Financial
-          Intelligence
-        </h3>
+        <div className="space-y-4">
+          <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2 px-1">
+            <Wallet size={20} className="text-emerald-600" /> Financial
+            Intelligence
+          </h3>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="space-y-4 lg:col-span-1">
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
-                  <TrendingUp size={20} />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="space-y-4 lg:col-span-1">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+                    <TrendingUp size={20} />
+                  </div>
+                  <span className="text-xs font-bold text-slate-400 uppercase">
+                    Total Income
+                  </span>
                 </div>
-                <span className="text-xs font-bold text-slate-400 uppercase">
-                  Total Income
-                </span>
+                <div className="text-3xl font-extrabold text-slate-800">
+                  GH₵ {financialIntel.totalIncome.toLocaleString()}
+                </div>
               </div>
-              <div className="text-3xl font-extrabold text-slate-800">
-                GH₵ {financialIntel.totalIncome.toLocaleString()}
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 bg-rose-50 text-rose-600 rounded-xl">
+                    <TrendingDown size={20} />
+                  </div>
+                  <span className="text-xs font-bold text-slate-400 uppercase">
+                    Total Expense
+                  </span>
+                </div>
+                <div className="text-3xl font-extrabold text-slate-800">
+                  GH₵ {financialIntel.totalExpense.toLocaleString()}
+                </div>
+              </div>
+              <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white p-6 rounded-3xl shadow-lg">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 bg-white/10 text-white rounded-xl">
+                    <Wallet size={20} />
+                  </div>
+                  <span className="text-xs font-bold text-slate-400 uppercase">
+                    Net Balance
+                  </span>
+                </div>
+                <div className="text-3xl font-extrabold">
+                  GH₵ {financialIntel.balance.toLocaleString()}
+                </div>
               </div>
             </div>
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-rose-50 text-rose-600 rounded-xl">
-                  <TrendingDown size={20} />
-                </div>
-                <span className="text-xs font-bold text-slate-400 uppercase">
-                  Total Expense
-                </span>
-              </div>
-              <div className="text-3xl font-extrabold text-slate-800">
-                GH₵ {financialIntel.totalExpense.toLocaleString()}
-              </div>
-            </div>
-            <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white p-6 rounded-3xl shadow-lg">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-white/10 text-white rounded-xl">
-                  <Wallet size={20} />
-                </div>
-                <span className="text-xs font-bold text-slate-400 uppercase">
-                  Net Balance
-                </span>
-              </div>
-              <div className="text-3xl font-extrabold">
-                GH₵ {financialIntel.balance.toLocaleString()}
-              </div>
-            </div>
-          </div>
 
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-2 flex flex-col">
-            <div className="mb-6 flex justify-between items-center">
-              <h3 className="font-bold text-slate-800">Financial Trend</h3>
-            </div>
-            <div className="flex-1 min-h-[250px] overflow-x-auto hide-scrollbar">
-              {financialIntel.chartData.length > 0 ? (
-                <div className="min-w-[500px] h-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={financialIntel.chartData}
-                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        vertical={false}
-                        stroke="#f1f5f9"
-                      />
-                      <XAxis
-                        dataKey="date"
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fill: "#94a3b8", fontSize: 10 }}
-                        dy={10}
-                      />
-                      <YAxis
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fill: "#94a3b8", fontSize: 10 }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          borderRadius: "12px",
-                          border: "none",
-                          boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1)",
-                        }}
-                        cursor={{ fill: "#f8fafc" }}
-                      />
-                      <Bar
-                        dataKey="income"
-                        name="Income"
-                        fill="#10b981"
-                        radius={[4, 4, 0, 0]}
-                        barSize={20}
-                      />
-                      <Bar
-                        dataKey="expense"
-                        name="Expense"
-                        fill="#f43f5e"
-                        radius={[4, 4, 0, 0]}
-                        barSize={20}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <div className="h-full flex items-center justify-center text-slate-400 text-sm">
-                  No financial data for this period
-                </div>
-              )}
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-2 flex flex-col">
+              <div className="mb-6 flex justify-between items-center">
+                <h3 className="font-bold text-slate-800">Financial Trend</h3>
+              </div>
+              <div className="flex-1 min-h-[250px] overflow-x-auto hide-scrollbar">
+                {financialIntel.chartData.length > 0 ? (
+                  <div className="min-w-[500px] h-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={financialIntel.chartData}
+                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          vertical={false}
+                          stroke="#f1f5f9"
+                        />
+                        <XAxis
+                          dataKey="date"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#94a3b8", fontSize: 10 }}
+                          dy={10}
+                        />
+                        <YAxis
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#94a3b8", fontSize: 10 }}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            borderRadius: "12px",
+                            border: "none",
+                            boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1)",
+                          }}
+                          cursor={{ fill: "#f8fafc" }}
+                        />
+                        <Bar
+                          dataKey="income"
+                          name="Income"
+                          fill="#10b981"
+                          radius={[4, 4, 0, 0]}
+                          barSize={20}
+                        />
+                        <Bar
+                          dataKey="expense"
+                          name="Expense"
+                          fill="#f43f5e"
+                          radius={[4, 4, 0, 0]}
+                          barSize={20}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-slate-400 text-sm">
+                    No financial data for this period
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
       )}
       {/* SECTION D: MEMBER EXPORT */}
@@ -1858,7 +1921,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
               Export
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              Export active member lists directly to WhatsApp.
+              Export members grouped by status (Active, Inconsistent, Inactive), First Timers &amp; FNF directly to WhatsApp.
             </p>
           </div>
         </div>

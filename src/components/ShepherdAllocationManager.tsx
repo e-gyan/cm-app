@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { AppData, Member, MemberStatus, Church } from "../types";
+import { AppData, Member, MemberStatus, Church, Role } from "../types";
 import { saveMembers } from "../services/storageService";
 import {
   getEligibleShepherdsForChurch,
@@ -10,6 +10,7 @@ import {
   setHookedTeacherId,
   CHURCH_NAMES,
   isStaffOrTeacher,
+  isFnfOrVisitor,
   isExplicitlySolo,
   isExplicitlyLinkedFamily,
 } from "../lib/teacherDivision";
@@ -38,6 +39,8 @@ import {
   HeartHandshake,
   Link2,
   RefreshCw,
+  ShieldCheck,
+  MapPin,
 } from "lucide-react";
 import { MemberAvatar } from "./MemberAvatar";
 
@@ -65,16 +68,71 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
   currentUser,
   activeBranchId,
 }) => {
-  const availableChurches = useMemo(() => {
+  const isSuperAdmin =
+    currentUser.role === Role.SUPER_ADMIN ||
+    currentUser.role === "SUPER_ADMIN" ||
+    currentUser.name?.toLowerCase().trim() === "emmanuel gyan";
+  const isAdmin = isSuperAdmin || currentUser.role === Role.ADMIN || currentUser.role === "ADMIN";
+  const isBranchCoordinator =
+    currentUser.role === Role.BRANCH_COORDINATOR || currentUser.role === "BRANCH_COORDINATOR";
+  const isLeadership =
+    isAdmin ||
+    isBranchCoordinator ||
+    currentUser.role === Role.DIRECTORATE_HEAD ||
+    currentUser.role === "DIRECTORATE_HEAD" ||
+    currentUser.role === Role.ZONAL_HEAD ||
+    currentUser.role === "ZONAL_HEAD";
+
+  // Check the church the shepherd belongs to
+  const userMember = data.members.find((m) => m.id === currentUser.id) || currentUser;
+  const shepherdChurch =
+    userMember.assignedChurch &&
+    userMember.assignedChurch !== "All" &&
+    userMember.assignedChurch !== "CM"
+      ? userMember.assignedChurch
+      : undefined;
+
+  // Shepherds/teachers who are not full leadership are strictly locked to their assigned church
+  const isShepherdScoped = !isLeadership && !!shepherdChurch;
+
+  const allSystemChurches = useMemo(() => {
     return data.settings?.churches || ["UJ", "LJ", "K", "I"];
   }, [data.settings?.churches]);
 
+  const availableChurches = useMemo(() => {
+    if (isShepherdScoped && shepherdChurch) {
+      return [shepherdChurch];
+    }
+    return allSystemChurches;
+  }, [isShepherdScoped, shepherdChurch, allSystemChurches]);
+
   const [selectedChurch, setSelectedChurch] = useState<string>(() => {
+    if (isShepherdScoped && shepherdChurch) {
+      return shepherdChurch;
+    }
     return availableChurches[0] || "UJ";
   });
 
+  // Keep selectedChurch strictly locked to shepherd's church
+  useEffect(() => {
+    if (isShepherdScoped && shepherdChurch && selectedChurch !== shepherdChurch) {
+      setSelectedChurch(shepherdChurch);
+    }
+  }, [isShepherdScoped, shepherdChurch, selectedChurch]);
+
   const [viewMode, setViewMode] = useState<"GRID" | "SIDE_BY_SIDE">("GRID");
-  const [branchFilter, setBranchFilter] = useState<string>(activeBranchId || "ALL");
+  const [branchFilter, setBranchFilter] = useState<string>(() => {
+    if (isShepherdScoped && userMember.branchId) {
+      return userMember.branchId;
+    }
+    return activeBranchId || "ALL";
+  });
+
+  useEffect(() => {
+    if (isShepherdScoped && userMember.branchId && branchFilter !== userMember.branchId) {
+      setBranchFilter(userMember.branchId);
+    }
+  }, [isShepherdScoped, userMember.branchId, branchFilter]);
   const [searchQuery, setSearchQuery] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -125,7 +183,7 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
     }
   }, [eligibleShepherds, leftShepherdId, rightShepherdId]);
 
-  // Pure children in the selected church
+  // Pure children in the selected church (Regular members only - excluding Staff, FNFs and First Timers)
   const churchChildren = useMemo(() => {
     return workingMembers.filter((m) => {
       const matchChurch = m.assignedChurch === selectedChurch;
@@ -136,7 +194,8 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
         matchBranch &&
         m.status !== MemberStatus.ARCHIVED &&
         m.status !== MemberStatus.TRANSFERRED &&
-        !isStaffOrTeacher(m)
+        !isStaffOrTeacher(m) &&
+        !isFnfOrVisitor(m)
       );
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [selectedChurch, workingMembers, branchFilter]);
@@ -199,6 +258,27 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
     }
   };
 
+  // Auto-clean: unassign any FNFs and First Timers (Visitors) who currently have assigned shepherds
+  useEffect(() => {
+    const fnfsOrVisitorsWithShepherd = workingMembers.filter(
+      (m) => isFnfOrVisitor(m) && !!m.assignedTeacherId
+    );
+
+    if (fnfsOrVisitorsWithShepherd.length > 0) {
+      const cleaned = workingMembers.map((m) => {
+        if (isFnfOrVisitor(m) && m.assignedTeacherId) {
+          const up = { ...m };
+          delete up.assignedTeacherId;
+          up.assignedTeacherId = undefined;
+          setHookedTeacherId(up, undefined);
+          return up;
+        }
+        return m;
+      });
+      persistChanges(cleaned);
+    }
+  }, [workingMembers]);
+
   // Record movement & update working copy with instant DB persistence
   const executeMove = async (
     child: Member,
@@ -216,8 +296,15 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
 
     const updated = workingMembers.map((m) => {
       if (clusterIds.has(m.id)) {
-        const up = { ...m, assignedTeacherId: newShepherdId || undefined };
-        setHookedTeacherId(up, newShepherdId || undefined);
+        const up = { ...m };
+        if (newShepherdId) {
+          up.assignedTeacherId = newShepherdId;
+          setHookedTeacherId(up, newShepherdId);
+        } else {
+          delete up.assignedTeacherId;
+          up.assignedTeacherId = undefined;
+          setHookedTeacherId(up, undefined);
+        }
         return up;
       }
       return m;
@@ -249,8 +336,15 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
 
     const updated = workingMembers.map((m) => {
       if (idsSet.has(m.id)) {
-        const up = { ...m, assignedTeacherId: fromShepherdId || undefined };
-        setHookedTeacherId(up, fromShepherdId || undefined);
+        const up = { ...m };
+        if (fromShepherdId) {
+          up.assignedTeacherId = fromShepherdId;
+          setHookedTeacherId(up, fromShepherdId);
+        } else {
+          delete up.assignedTeacherId;
+          up.assignedTeacherId = undefined;
+          setHookedTeacherId(up, undefined);
+        }
         return up;
       }
       return m;
@@ -271,8 +365,15 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
 
     const updated = workingMembers.map((m) => {
       if (m.assignedTeacherId === sourceShepherdId && m.assignedChurch === selectedChurch) {
-        const up = { ...m, assignedTeacherId: targetShepherdId || undefined };
-        setHookedTeacherId(up, targetShepherdId || undefined);
+        const up = { ...m };
+        if (targetShepherdId) {
+          up.assignedTeacherId = targetShepherdId;
+          setHookedTeacherId(up, targetShepherdId);
+        } else {
+          delete up.assignedTeacherId;
+          up.assignedTeacherId = undefined;
+          setHookedTeacherId(up, undefined);
+        }
         return up;
       }
       return m;
@@ -315,8 +416,8 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
       childA.householdId && !childA.householdId.startsWith("SOLO")
         ? childA.householdId
         : target.householdId && !target.householdId.startsWith("SOLO")
-        ? target.householdId
-        : `FAM-${Date.now()}`;
+          ? target.householdId
+          : `FAM-${Date.now()}`;
 
     const familyName = customName?.trim() || childA.householdName || target.householdName || undefined;
 
@@ -430,8 +531,11 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
     }
     const updated = workingMembers.map((m) => {
       if (m.assignedChurch === selectedChurch && !isStaffOrTeacher(m)) {
-        setHookedTeacherId(m, undefined);
-        return { ...m, assignedTeacherId: undefined };
+        const up = { ...m };
+        delete up.assignedTeacherId;
+        up.assignedTeacherId = undefined;
+        setHookedTeacherId(up, undefined);
+        return up;
       }
       return m;
     });
@@ -463,12 +567,19 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
       {/* Top Header & Global Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
         <div>
-          <h3 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+          <h3 className="text-xl font-extrabold text-slate-900 flex items-center gap-2 flex-wrap">
             <Users className="text-indigo-600" size={24} />
-            Shepherd Allocation Manager
+            <span>Shepherd Allocation Manager</span>
+            {isShepherdScoped && (
+              <span className="text-xs font-black text-purple-700 bg-purple-100 px-2.5 py-1 rounded-xl border border-purple-200 shadow-2xs">
+                {CHURCH_NAMES[selectedChurch] || selectedChurch} Church
+              </span>
+            )}
           </h3>
           <p className="text-xs text-slate-500 font-medium mt-1">
-            Organize and transfer children between shepherds with live capacity feedback. Changes auto-save to cloud DB and reflect everywhere.
+            {isShepherdScoped
+              ? `Viewing children and shepherds assigned to ${CHURCH_NAMES[selectedChurch] || selectedChurch} Church department.`
+              : "Organize and transfer children between shepherds with live capacity feedback. Changes auto-save and reflect everywhere."}
           </p>
         </div>
 
@@ -477,17 +588,17 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
           {isSavingToDb ? (
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-xs font-bold animate-pulse">
               <RefreshCw size={13} className="animate-spin text-amber-600" />
-              <span>Saving to Database...</span>
+              <span>Saving...</span>
             </div>
           ) : lastSavedTime || saveSuccess ? (
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-bold shadow-2xs">
               <CheckCircle2 size={14} className="text-emerald-600" />
-              <span>Auto-Saved & Live {lastSavedTime ? `(${lastSavedTime})` : ""}</span>
+              <span>Auto-Saved {lastSavedTime ? `(${lastSavedTime})` : ""}</span>
             </div>
           ) : (
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-500 rounded-xl text-xs font-medium">
               <CheckCircle2 size={13} className="text-slate-400" />
-              <span>Cloud DB Synced</span>
+              <span>Synced</span>
             </div>
           )}
 
@@ -498,7 +609,7 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
             className="px-3.5 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs active:scale-95 disabled:opacity-50"
             title="Automatically distribute all children equally while keeping siblings together"
           >
-            <Sparkles size={15} className="text-indigo-600" /> Auto-Allocate & Equalize
+            <Sparkles size={15} className="text-indigo-600" /> Auto-Allocate
           </button>
 
           <button
@@ -509,7 +620,7 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
             title="Force refresh & sync current allocations with cloud database"
           >
             <RefreshCw size={14} className={isSavingToDb ? "animate-spin text-indigo-600" : "text-slate-500"} />
-            <span>Sync Now</span>
+            <span>Sync</span>
           </button>
         </div>
       </div>
@@ -533,25 +644,30 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                 key={church}
                 type="button"
                 onClick={() => {
+                  if (isShepherdScoped) return;
                   setSelectedChurch(church);
                   setSearchQuery("");
                 }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-2 ${
-                  isSelected
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
-                }`}
+                disabled={isShepherdScoped}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-2 ${isSelected
+                  ? "bg-white text-indigo-700 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+                  } ${isShepherdScoped ? "cursor-default" : ""}`}
               >
-                <span>{CHURCH_NAMES[church] || `${church} Church`}</span>
+                <span>{CHURCH_NAMES[church] || church}</span>
                 <span
-                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-black ${
-                    isSelected
-                      ? "bg-indigo-100 text-indigo-800"
-                      : "bg-slate-200 text-slate-600"
-                  }`}
+                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-black ${isSelected
+                    ? "bg-indigo-100 text-indigo-800"
+                    : "bg-slate-200 text-slate-600"
+                    }`}
                 >
                   {count}
                 </span>
+                {isShepherdScoped && (
+                  <span className="text-[10px] font-extrabold text-purple-700 bg-purple-100/90 px-1.5 py-0.5 rounded-md border border-purple-200 shadow-2xs">
+                    Your Church
+                  </span>
+                )}
               </button>
             );
           })}
@@ -563,11 +679,10 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
             <button
               type="button"
               onClick={() => setViewMode("GRID")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                viewMode === "GRID"
-                  ? "bg-white text-indigo-700 shadow-xs"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === "GRID"
+                ? "bg-white text-indigo-700 shadow-xs"
+                : "text-slate-500 hover:text-slate-700"
+                }`}
             >
               <Grid size={13} />
               <span>All Shepherds</span>
@@ -575,11 +690,10 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
             <button
               type="button"
               onClick={() => setViewMode("SIDE_BY_SIDE")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                viewMode === "SIDE_BY_SIDE"
-                  ? "bg-indigo-600 text-white shadow-xs"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === "SIDE_BY_SIDE"
+                ? "bg-indigo-600 text-white shadow-xs"
+                : "text-slate-500 hover:text-slate-700"
+                }`}
             >
               <Columns size={13} />
               <span>Transfer Mode (Side-by-Side)</span>
@@ -641,7 +755,7 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
             Total Children
           </span>
           <div className="text-xl font-black text-slate-800">{totalChildren}</div>
-          <p className="text-[10px] text-slate-500 font-medium">In {selectedChurch} Church</p>
+          <p className="text-[10px] text-slate-500 font-medium">In {selectedChurch}</p>
         </div>
 
         <div className="space-y-0.5">
@@ -649,7 +763,7 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
             Eligible Shepherds
           </span>
           <div className="text-xl font-black text-indigo-700">{totalShepherds}</div>
-          <p className="text-[10px] text-slate-500 font-medium">Active pastoral staff</p>
+          <p className="text-[10px] text-slate-500 font-medium">Active</p>
         </div>
 
         <div className="space-y-0.5">
@@ -667,9 +781,8 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
             Unassigned
           </span>
           <div
-            className={`text-xl font-black ${
-              unassignedChildren.length > 0 ? "text-amber-600" : "text-emerald-600"
-            }`}
+            className={`text-xl font-black ${unassignedChildren.length > 0 ? "text-amber-600" : "text-emerald-600"
+              }`}
           >
             {unassignedChildren.length}
           </div>
@@ -692,7 +805,7 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                   Unassigned Children ({unassignedChildren.length})
                 </h4>
                 <p className="text-xs text-amber-700">
-                  These children have not yet been placed with a shepherd in {selectedChurch} Church.
+                  These children have not yet been placed with a shepherd in {selectedChurch}.
                 </p>
               </div>
             </div>
@@ -717,10 +830,10 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                   className="bg-white p-2.5 rounded-xl border border-amber-200/60 shadow-2xs flex items-center justify-between gap-2"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs font-bold text-slate-800 truncate">
+                    <div className="text-xs font-bold text-slate-800 break-normal whitespace-normal leading-snug">
                       {child.name}
                     </div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5 flex-wrap">
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-1 flex-wrap">
                       {isExplicitlySolo(child) ? (
                         <button
                           type="button"
@@ -794,10 +907,10 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
             <div>
               <h4 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
                 <ArrowRightLeft className="text-indigo-600" size={18} />
-                Direct Transfer Mode (See Moving In Real Time)
+                Direct Transfer Mode
               </h4>
               <p className="text-xs text-slate-500">
-                Pick a source shepherd and a target shepherd. Click the transfer arrow on any child or household to watch them move across!
+                Pick a source shepherd and a target shepherd. Click the transfer arrow on any child or family.
               </p>
             </div>
 
@@ -815,13 +928,12 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase text-slate-400">Shepherd A (Left)</span>
                   <span
-                    className={`text-xs font-extrabold px-2.5 py-0.5 rounded-full ${
-                      (leftChildren.length || 0) > targetPerShepherd + 1
-                        ? "bg-amber-100 text-amber-800"
-                        : (leftChildren.length || 0) < Math.max(1, targetPerShepherd - 1)
+                    className={`text-xs font-extrabold px-2.5 py-0.5 rounded-full ${(leftChildren.length || 0) > targetPerShepherd + 1
+                      ? "bg-amber-100 text-amber-800"
+                      : (leftChildren.length || 0) < Math.max(1, targetPerShepherd - 1)
                         ? "bg-blue-100 text-blue-800"
                         : "bg-emerald-100 text-emerald-800"
-                    }`}
+                      }`}
                   >
                     {leftChildren.length} children
                   </span>
@@ -854,22 +966,20 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                     return (
                       <div
                         key={child.id}
-                        className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
-                          isJustMoved
-                            ? "bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200"
-                            : "bg-slate-50/80 hover:bg-slate-100 border-slate-200/80"
-                        }`}
+                        className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${isJustMoved
+                          ? "bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200"
+                          : "bg-slate-50/80 hover:bg-slate-100 border-slate-200/80"
+                          }`}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                            <span className="truncate">{child.name}</span>
+                          <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                            <span className="break-normal whitespace-normal leading-snug">{child.name}</span>
                             {child.gender && (
                               <span
-                                className={`text-[9px] font-bold px-1 rounded ${
-                                  child.gender === "MALE"
-                                    ? "bg-blue-100 text-blue-700"
-                                    : "bg-pink-100 text-pink-700"
-                                }`}
+                                className={`text-[9px] font-bold px-1 rounded ${child.gender === "MALE"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-pink-100 text-pink-700"
+                                  }`}
                               >
                                 {child.gender.charAt(0)}
                               </span>
@@ -924,8 +1034,18 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                           </div>
                         </div>
 
-                        {/* Move Buttons */}
+                        {/* Move & Unassign Buttons */}
                         <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => executeMove(child, null, false)}
+                            className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-900 border border-amber-200/90 hover:border-amber-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all shadow-2xs active:scale-95"
+                            title={`Unassign ${child.name} and return to Unassigned Tray`}
+                          >
+                            <UserX size={11} className="text-amber-600" />
+                            <span>Unassign</span>
+                          </button>
+
                           {siblings.length > 0 && (
                             <button
                               type="button"
@@ -964,13 +1084,12 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase text-slate-400">Shepherd B (Right)</span>
                   <span
-                    className={`text-xs font-extrabold px-2.5 py-0.5 rounded-full ${
-                      (rightChildren.length || 0) > targetPerShepherd + 1
-                        ? "bg-amber-100 text-amber-800"
-                        : (rightChildren.length || 0) < Math.max(1, targetPerShepherd - 1)
+                    className={`text-xs font-extrabold px-2.5 py-0.5 rounded-full ${(rightChildren.length || 0) > targetPerShepherd + 1
+                      ? "bg-amber-100 text-amber-800"
+                      : (rightChildren.length || 0) < Math.max(1, targetPerShepherd - 1)
                         ? "bg-blue-100 text-blue-800"
                         : "bg-emerald-100 text-emerald-800"
-                    }`}
+                      }`}
                   >
                     {rightChildren.length} children
                   </span>
@@ -1003,13 +1122,12 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                     return (
                       <div
                         key={child.id}
-                        className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
-                          isJustMoved
-                            ? "bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200"
-                            : "bg-slate-50/80 hover:bg-slate-100 border-slate-200/80"
-                        }`}
+                        className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${isJustMoved
+                          ? "bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200"
+                          : "bg-slate-50/80 hover:bg-slate-100 border-slate-200/80"
+                          }`}
                       >
-                        {/* Move Back to Left Buttons */}
+                        {/* Move Back to Left & Unassign Buttons */}
                         <div className="flex items-center gap-1.5 shrink-0">
                           <button
                             type="button"
@@ -1034,23 +1152,32 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                               <span>Family</span>
                             </button>
                           )}
+
+                          <button
+                            type="button"
+                            onClick={() => executeMove(child, null, false)}
+                            className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-900 border border-amber-200/90 hover:border-amber-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all shadow-2xs active:scale-95"
+                            title={`Unassign ${child.name} and return to Unassigned Tray`}
+                          >
+                            <UserX size={11} className="text-amber-600" />
+                            <span>Unassign</span>
+                          </button>
                         </div>
 
                         <div className="min-w-0 flex-1 text-right">
-                          <div className="text-xs font-bold text-slate-800 flex items-center justify-end gap-1.5">
+                          <div className="text-xs font-bold text-slate-800 flex items-center justify-end gap-1.5 flex-wrap">
                             {isJustMoved && (
                               <span className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded-full">
                                 Just Moved
                               </span>
                             )}
-                            <span className="truncate">{child.name}</span>
+                            <span className="break-normal whitespace-normal leading-snug">{child.name}</span>
                             {child.gender && (
                               <span
-                                className={`text-[9px] font-bold px-1 rounded ${
-                                  child.gender === "MALE"
-                                    ? "bg-blue-100 text-blue-700"
-                                    : "bg-pink-100 text-pink-700"
-                                }`}
+                                className={`text-[9px] font-bold px-1 rounded ${child.gender === "MALE"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-pink-100 text-pink-700"
+                                  }`}
                               >
                                 {child.gender.charAt(0)}
                               </span>
@@ -1117,7 +1244,7 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
               <UserX size={36} className="text-slate-300 mx-auto mb-3" />
               <h4 className="text-base font-bold text-slate-700">No Shepherds Available</h4>
               <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                There are no active eligible shepherds assigned to {selectedChurch} Church. Add or assign shepherds in People Hub.
+                There are no active eligible shepherds assigned to {selectedChurch}. Add or assign shepherds in People Hub.
               </p>
             </div>
           ) : (
@@ -1135,44 +1262,60 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                 const badgeBg = isBalanced
                   ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                   : isOver
-                  ? "bg-amber-50 text-amber-700 border-amber-200"
-                  : "bg-blue-50 text-blue-700 border-blue-200";
+                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                    : "bg-blue-50 text-blue-700 border-blue-200";
 
                 return (
                   <div
                     key={shepherd.id}
                     className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-shadow flex flex-col overflow-hidden"
                   >
-                    {/* Shepherd Header */}
-                    <div className="p-4 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between gap-3">
+                    {/* Shepherd Header (Clean Light Styling, No Heavy Background) */}
+                    <div className="p-4 bg-white border-b border-slate-100 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
-                        <MemberAvatar member={shepherd} size="sm" className="shrink-0" />
+                        <div className="relative shrink-0">
+                          <MemberAvatar member={shepherd} size="md" className="ring-2 ring-purple-100" />
+                          <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-purple-600 border-2 border-white flex items-center justify-center text-white shadow-2xs">
+                            <ShieldCheck size={10} />
+                          </div>
+                        </div>
+
                         <div className="min-w-0">
-                          <h4 className="font-extrabold text-sm text-slate-800 truncate">
+                          <h4 className="font-extrabold text-sm text-slate-900 leading-snug break-normal whitespace-normal">
                             {shepherd.name}
                           </h4>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">
-                              Shepherd
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            {/* Distinctive Purple Shepherd Badge */}
+                            <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 bg-purple-100/90 border border-purple-200/90 px-2 py-0.5 rounded-full shadow-2xs flex items-center gap-1">
+                              <ShieldCheck size={10} className="text-purple-600" />
+                              <span>Shepherd</span>
                             </span>
+
+                            {/* Branch Badge */}
                             {shepherd.branchId && (
-                              <span className="text-[10px] text-slate-400 font-medium truncate">
-                                {shepherd.branchId}
+                              <span className="text-[10px] text-slate-600 font-bold bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <MapPin size={9} className="text-slate-400" />
+                                <span>
+                                  {data.settings?.organization?.zones?.flatMap((z) => z.branches || []).find((b) => b.id === shepherd.branchId)?.name || shepherd.branchId}
+                                </span>
                               </span>
                             )}
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`text-xs font-extrabold px-2.5 py-1 rounded-xl border flex items-center gap-1 shadow-2xs ${badgeBg}`}
-                          title={`Capacity: ${totalCount} of ~${targetPerShepherd}`}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Capacity Status Pill */}
+                        <div
+                          className={`text-xs font-black px-2.5 py-1 rounded-xl flex items-center gap-1.5 border shadow-2xs ${badgeBg}`}
+                          title={`Capacity: ${totalCount} of ~${targetPerShepherd} target children`}
                         >
                           <Users size={12} />
                           <span>{totalCount}</span>
-                        </span>
+                          <span className="text-[10px] opacity-75 font-bold">/ ~{targetPerShepherd}</span>
+                        </div>
 
+                        {/* Bulk Actions Dropdown */}
                         <select
                           value=""
                           onChange={(e) => {
@@ -1185,7 +1328,7 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                               moveAllChildrenFromShepherd(shepherd.id, targetId);
                             }
                           }}
-                          className="text-xs bg-white border border-slate-200 text-slate-500 rounded-lg p-1 hover:border-slate-300 focus:outline-none cursor-pointer"
+                          className="text-xs bg-white border border-slate-200 text-slate-700 font-bold rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-200 hover:border-slate-300 cursor-pointer transition-all shadow-2xs"
                           title="Bulk Shepherd Actions"
                         >
                           <option value="">Bulk...</option>
@@ -1220,22 +1363,20 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                             return (
                               <div
                                 key={child.id}
-                                className={`p-2 rounded-xl border transition-colors flex items-center justify-between gap-2 ${
-                                  isJustMoved
-                                    ? "bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200"
-                                    : "bg-slate-50/90 hover:bg-slate-100 border-slate-200/60"
-                                }`}
+                                className={`p-2 rounded-xl border transition-colors flex items-center justify-between gap-2 ${isJustMoved
+                                  ? "bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200"
+                                  : "bg-slate-50/90 hover:bg-slate-100 border-slate-200/60"
+                                  }`}
                               >
                                 <div className="min-w-0 flex-1">
-                                  <div className="text-xs font-bold text-slate-800 truncate flex items-center gap-1.5">
-                                    <span className="truncate">{child.name}</span>
+                                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                                    <span className="break-normal whitespace-normal leading-snug">{child.name}</span>
                                     {child.gender && (
                                       <span
-                                        className={`text-[9px] font-bold px-1 rounded ${
-                                          child.gender === "MALE"
-                                            ? "bg-blue-100 text-blue-700"
-                                            : "bg-pink-100 text-pink-700"
-                                        }`}
+                                        className={`text-[9px] font-bold px-1 rounded ${child.gender === "MALE"
+                                          ? "bg-blue-100 text-blue-700"
+                                          : "bg-pink-100 text-pink-700"
+                                          }`}
                                       >
                                         {child.gender.charAt(0)}
                                       </span>
@@ -1247,7 +1388,7 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                                     )}
                                   </div>
 
-                                  <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5 flex-wrap">
+                                  <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-1 flex-wrap">
                                     {isExplicitlySolo(child) ? (
                                       <button
                                         type="button"
@@ -1298,19 +1439,30 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                                   </div>
                                 </div>
 
-                                {/* Reassign / Move Button opening designated modal */}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setMovingChild(child);
-                                    setMoveWithHousehold(true);
-                                  }}
-                                  className="px-2.5 py-1 bg-white hover:bg-indigo-50 text-indigo-700 border border-slate-200 hover:border-indigo-300 rounded-lg text-xs font-bold transition-all shadow-2xs flex items-center gap-1 shrink-0 active:scale-95"
-                                  title="Transfer to another shepherd"
-                                >
-                                  <span>Transfer</span>
-                                  <ArrowRightLeft size={11} />
-                                </button>
+                                {/* Reassign & Unassign Buttons */}
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => executeMove(child, null, false)}
+                                    className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-900 border border-amber-200/90 hover:border-amber-300 rounded-lg text-[11px] font-bold transition-all shadow-2xs flex items-center gap-1 active:scale-95"
+                                    title={`Unassign ${child.name} and move to Unassigned Tray`}
+                                  >
+                                    <UserX size={12} className="text-amber-600" />
+                                    <span>Unassign</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setMovingChild(child);
+                                      setMoveWithHousehold(true);
+                                    }}
+                                    className="px-2.5 py-1 bg-white hover:bg-indigo-50 text-indigo-700 border border-slate-200 hover:border-indigo-300 rounded-lg text-[11px] font-bold transition-all shadow-2xs flex items-center gap-1 active:scale-95"
+                                    title="Transfer to another shepherd"
+                                  >
+                                    <span>Transfer</span>
+                                    <ArrowRightLeft size={11} />
+                                  </button>
+                                </div>
                               </div>
                             );
                           })}
@@ -1322,13 +1474,12 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                     <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 font-medium flex items-center justify-between">
                       <span>Count: {totalCount} / ~{targetPerShepherd}</span>
                       <span
-                        className={`font-bold ${
-                          isBalanced
-                            ? "text-emerald-600"
-                            : isOver
+                        className={`font-bold ${isBalanced
+                          ? "text-emerald-600"
+                          : isOver
                             ? "text-amber-600"
                             : "text-blue-600"
-                        }`}
+                          }`}
                       >
                         {isBalanced ? "Balanced" : isOver ? "Over Quota" : "Under Quota"}
                       </span>
@@ -1386,7 +1537,7 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                     </div>
                     <div className="text-right">
                       <span className="text-slate-400 font-bold block text-[10px] uppercase">Church Department</span>
-                      <span className="font-extrabold text-indigo-700">{selectedChurch} Church</span>
+                      <span className="font-extrabold text-indigo-700">{selectedChurch}</span>
                     </div>
                   </div>
 
@@ -1428,10 +1579,41 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
               );
             })()}
 
+            {/* Primary Action: Always-Visible Move to Unassigned Card */}
+            <button
+              type="button"
+              onClick={() => executeMove(movingChild, null, moveWithHousehold)}
+              className="w-full p-3.5 bg-gradient-to-r from-amber-50 to-orange-50/70 hover:from-amber-100/90 hover:to-orange-100/90 border-2 border-amber-300 hover:border-amber-400 rounded-2xl text-left transition-all flex items-center justify-between gap-3 group shadow-xs active:scale-[0.99]"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                  <UserX size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-extrabold text-amber-950 group-hover:text-amber-900">
+                      Move to Unassigned Tray
+                    </span>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-200/80 px-2 py-0.5 rounded-full border border-amber-300">
+                      Unassign
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-800/80 mt-0.5 truncate">
+                    {moveWithHousehold && getHouseholdSiblings(movingChild).length > 0
+                      ? `Unassign ${movingChild.name} & family (${getHouseholdSiblings(movingChild).length + 1} children)`
+                      : `Remove shepherd assignment for ${movingChild.name}`}
+                  </p>
+                </div>
+              </div>
+              <span className="text-xs font-bold text-amber-800 bg-white/90 px-3 py-1.5 rounded-xl border border-amber-300 shadow-2xs group-hover:bg-amber-600 group-hover:text-white transition-colors shrink-0">
+                Unassign Now &rarr;
+              </span>
+            </button>
+
             {/* Destination Shepherds List */}
             <div className="space-y-2">
               <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider">
-                Select Destination Shepherd:
+                Or Select Destination Shepherd:
               </label>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
@@ -1473,15 +1655,15 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              {movingChild.assignedTeacherId && (
-                <button
-                  type="button"
-                  onClick={() => executeMove(movingChild, null, moveWithHousehold)}
-                  className="px-3 py-2 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-xl transition-colors"
-                >
-                  Move to Unassigned
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => executeMove(movingChild, null, moveWithHousehold)}
+                className="px-3.5 py-2 text-xs font-extrabold text-amber-800 bg-amber-100/90 hover:bg-amber-200 border border-amber-300 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs active:scale-95"
+                title="Unassign and return child to Unassigned Tray"
+              >
+                <UserX size={14} className="text-amber-700" />
+                <span>Move to Unassigned</span>
+              </button>
 
               <button
                 type="button"
@@ -1540,15 +1722,14 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                 <div className="space-y-4">
                   {/* Status Card */}
                   <div
-                    className={`p-4 rounded-2xl border ${
-                      isSolo
-                        ? "bg-slate-50 border-slate-200"
-                        : isLinked
+                    className={`p-4 rounded-2xl border ${isSolo
+                      ? "bg-slate-50 border-slate-200"
+                      : isLinked
                         ? "bg-purple-50/70 border-purple-200"
                         : siblings.length > 0
-                        ? "bg-indigo-50/70 border-indigo-200"
-                        : "bg-slate-50/80 border-slate-200"
-                    }`}
+                          ? "bg-indigo-50/70 border-indigo-200"
+                          : "bg-slate-50/80 border-slate-200"
+                      }`}
                   >
                     <div className="flex items-center gap-3">
                       <MemberAvatar member={currentChildInWorking} size="md" />
@@ -1769,7 +1950,7 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
           onClick={handleClearAllInChurch}
           className="text-xs font-bold text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-xl transition-colors"
         >
-          Reset All in {selectedChurch} Church
+          Reset All in {selectedChurch}
         </button>
       </div>
     </div>

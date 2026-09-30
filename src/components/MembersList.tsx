@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   AppData,
   Member,
@@ -116,6 +116,17 @@ const MembersList: React.FC<MembersListProps> = ({
     "A-Z" | "ATTENDANCE_HIGH" | "ATTENDANCE_LOW"
   >(() => (sessionStorage.getItem("members_sortOrder") as any) || "A-Z");
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedShepherdFilter, setSelectedShepherdFilter] = useState<string>("ALL");
+
+  const availableShepherdsInBranch = useMemo(() => {
+    return (data.members || []).filter(
+      (m) =>
+        matchesScope(m, activeBranchId, data.settings?.organization) &&
+        isStaffOrTeacher(m) &&
+        m.status !== MemberStatus.ARCHIVED &&
+        m.status !== MemberStatus.TRANSFERRED
+    );
+  }, [data.members, activeBranchId, data.settings?.organization]);
 
   // Persist state changes
   React.useEffect(() => {
@@ -168,9 +179,9 @@ const MembersList: React.FC<MembersListProps> = ({
   const [isBulkGenderModalOpen, setIsBulkGenderModalOpen] = useState(false);
   const [bulkGenderValue, setBulkGenderValue] = useState<"MALE" | "FEMALE" | "">("");
   const [isBulkGendering, setIsBulkGendering] = useState(false);
-  
+
   // TOAST NOTIFICATION
-  const [toastMessage, setToastMessage] = useState<{title: string, message: string} | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ title: string, message: string } | null>(null);
 
   // PHOTO STUDIO STATE
   const [isPhotoStudioOpen, setIsPhotoStudioOpen] = useState(false);
@@ -201,10 +212,10 @@ const MembersList: React.FC<MembersListProps> = ({
   const handleSavePhotoStudio = async (dataUrl: string) => {
     try {
       const targetId = editingId || `temp-${Date.now()}`;
-      
+
       // 1. Immediately apply the 256x256 WebP portrait to form state (0ms latency)
       setFormData((prev) => ({ ...prev, photoUrl: dataUrl }));
-      
+
       // 2. If editing an existing member, persist immediately so the change is locked in
       if (editingId) {
         updateMember(editingId, { photoUrl: dataUrl })
@@ -545,14 +556,14 @@ const MembersList: React.FC<MembersListProps> = ({
         isArchiving
           ? "Archived"
           : targetChurch === "UJ"
-          ? "Upper Junior (UJ)"
-          : targetChurch === "LJ"
-          ? "Lower Junior (LJ)"
-          : targetChurch === "K"
-          ? "Kindergarten (K)"
-          : targetChurch === "I"
-          ? "Infants (I)"
-          : targetChurch
+            ? "Upper Junior (UJ)"
+            : targetChurch === "LJ"
+              ? "Lower Junior (LJ)"
+              : targetChurch === "K"
+                ? "Kindergarten (K)"
+                : targetChurch === "I"
+                  ? "Infants (I)"
+                  : targetChurch
       );
     }
     if (branchChanged && targetBranch) {
@@ -567,10 +578,10 @@ const MembersList: React.FC<MembersListProps> = ({
     onUpdate();
   };
   const restoreMember = async (member: Member) => {
-    updateMember(member.id, {  ...member, status: MemberStatus.ACTIVE  }).catch(console.error);
+    updateMember(member.id, { ...member, status: MemberStatus.ACTIVE }).catch(console.error);
     onUpdate();
   };
-  
+
   const handleVacationSave = async () => {
     if (vacationMember) {
       const target = vacationMember;
@@ -662,13 +673,13 @@ const MembersList: React.FC<MembersListProps> = ({
 
     const birth = new Date(birthDateStr);
     const today = new Date();
-    
+
     const targetBirthday = new Date(birth);
     targetBirthday.setFullYear(birth.getFullYear() + targetAge);
-    
+
     const prevBirthday = new Date(birth);
     prevBirthday.setFullYear(birth.getFullYear() + prevAge);
-    
+
     let age = today.getFullYear() - birth.getFullYear();
     const m = today.getMonth() - birth.getMonth();
     if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
@@ -687,7 +698,7 @@ const MembersList: React.FC<MembersListProps> = ({
 
     const diffMs = targetBirthday.getTime() - today.getTime();
     const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    
+
     let remainingText = "";
     if (diffDays <= 30) {
       remainingText = `${diffDays} days`;
@@ -714,11 +725,11 @@ const MembersList: React.FC<MembersListProps> = ({
       };
     }
 
-    return { 
-      label: "NO", 
-      colorClass: "bg-blue-50 text-blue-600 border-blue-100", 
+    return {
+      label: "NO",
+      colorClass: "bg-blue-50 text-blue-600 border-blue-100",
       remainingText,
-      progress 
+      progress
     };
   };
 
@@ -792,7 +803,7 @@ const MembersList: React.FC<MembersListProps> = ({
     let startDate = new Date(member.joinedDate);
     startDate.setHours(0, 0, 0, 0);
 
-    
+
     const churchAttendance = data.attendance.filter((r) => {
       const recordDate = new Date(r.date);
       recordDate.setHours(0, 0, 0, 0);
@@ -834,7 +845,7 @@ const MembersList: React.FC<MembersListProps> = ({
     const churchAttendance = data.attendance.filter((r) => {
       const recordDate = new Date(r.date);
       recordDate.setHours(0, 0, 0, 0);
-      
+
       // Check if on vacation during this record
       let isVacation = false;
       if (member.vacationStartDate && member.vacationEndDate) {
@@ -1043,10 +1054,11 @@ const MembersList: React.FC<MembersListProps> = ({
                     <th className="px-6 py-4">Role</th>
                     <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4">Birth Date</th>
-                    {isTeacherSection && isAdmin ? (
-                      <th className="px-6 py-4">System Access</th>
-                    ) : (
+                    {!isTeacherSection && (
                       <th className="px-6 py-4">{getCheckColumnName()}</th>
+                    )}
+                    {isTeacherSection && isAdmin && (
+                      <th className="px-6 py-4">System Access</th>
                     )}
                     {!isTeacherSection && (
                       <th className="px-6 py-4">Attendance</th>
@@ -1179,28 +1191,30 @@ const MembersList: React.FC<MembersListProps> = ({
                           </span>
                         </td>
 
-                        {isTeacherSection && isAdmin ? (
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              {member.role !== "NONE" &&
-                              member.isAccessActive ? (
-                                <span className="flex items-center gap-1 text-xs bg-green-50 text-green-700 px-2 py-1 rounded border border-green-100 font-medium">
-                                  <Key size={12} />{" "}
-                                  {member.role === "SUPER_ADMIN" ? "Super Admin" : 
-                                   member.role === "ZONAL_HEAD" ? "Zonal Head" : 
-                                   member.role === "BRANCH_COORDINATOR" ? "Branch Coord" : 
-                                   member.role === "CMD_COORDINATOR" ? "CMD Coord" : 
-                                   member.role === "EXTERNAL" ? "External" : 
-                                   member.role === "ADMIN" ? "Admin" : 
-                                   "Shepherd"}
-                                </span>
-                              ) : (
-                                <span className="flex items-center gap-1 text-xs bg-gray-50 text-gray-400 px-2 py-1 rounded border border-gray-100">
-                                  <Lock size={12} /> No Access
-                                </span>
-                              )}
-                            </div>
-                          </td>
+                        {isTeacherSection ? (
+                          isAdmin ? (
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                {member.role !== "NONE" &&
+                                  member.isAccessActive ? (
+                                  <span className="flex items-center gap-1 text-xs bg-green-50 text-green-700 px-2 py-1 rounded border border-green-100 font-medium">
+                                    <Key size={12} />{" "}
+                                    {member.role === "SUPER_ADMIN" ? "Super Admin" :
+                                      member.role === "ZONAL_HEAD" ? "Zonal Head" :
+                                        member.role === "BRANCH_COORDINATOR" ? "Branch Coord" :
+                                          member.role === "CMD_COORDINATOR" ? "CMD Coord" :
+                                            member.role === "EXTERNAL" ? "External" :
+                                              member.role === "ADMIN" ? "Admin" :
+                                                "Shepherd"}
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-xs bg-gray-50 text-gray-400 px-2 py-1 rounded border border-gray-100">
+                                    <Lock size={12} /> No Access
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          ) : null
                         ) : (
                           <td className="px-6 py-4">
                             <div className="flex flex-col gap-2 min-w-[120px]">
@@ -1219,7 +1233,7 @@ const MembersList: React.FC<MembersListProps> = ({
                                     </span>
                                   </div>
                                   <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                                    <div 
+                                    <div
                                       className={`h-full rounded-full transition-all duration-500 ${promoStatus.progress >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
                                       style={{ width: `${Math.min(100, promoStatus.progress)}%` }}
                                     ></div>
@@ -1282,24 +1296,25 @@ const MembersList: React.FC<MembersListProps> = ({
                                   </button>
                                 </>
                               ) : (
-<>
-<button onClick={() => { setVacationMember(member);
-                              setVacationStart(member.vacationStartDate || "");
-                              setVacationEnd(member.vacationEndDate || "");
-                            }}
-                            className="p-2 text-indigo-400 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors shadow-sm"
-                            title="Manage Leave/Vacation"
-                          >
-                            <Calendar size={18} />
-                          </button>
-                          <button onClick={() => archiveMember(member)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                  title="Archive"
-                                >
-                                  <Archive size={16} />
-</button>
-</>
-)}
-</div>
+                                <>
+                                  <button onClick={() => {
+                                    setVacationMember(member);
+                                    setVacationStart(member.vacationStartDate || "");
+                                    setVacationEnd(member.vacationEndDate || "");
+                                  }}
+                                    className="p-2 text-indigo-400 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors shadow-sm"
+                                    title="Manage Leave/Vacation"
+                                  >
+                                    <Calendar size={18} />
+                                  </button>
+                                  <button onClick={() => archiveMember(member)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Archive"
+                                  >
+                                    <Archive size={16} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -1405,7 +1420,7 @@ const MembersList: React.FC<MembersListProps> = ({
                               </span>
                             )}
                           </div>
-                          
+
                           {!isTeacherSection && member.birthDate && (
                             <div className="mt-4 bg-slate-50/80 border border-slate-100 rounded-xl p-3">
                               <div className="flex justify-between items-end mb-2">
@@ -1415,7 +1430,7 @@ const MembersList: React.FC<MembersListProps> = ({
                                 </span>
                               </div>
                               <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                                <div 
+                                <div
                                   className={`h-full rounded-full transition-all duration-500 ${promoStatus.progress >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
                                   style={{ width: `${Math.min(100, promoStatus.progress)}%` }}
                                 ></div>
@@ -1474,13 +1489,26 @@ const MembersList: React.FC<MembersListProps> = ({
                               </button>
                             </>
                           ) : (
-                            <button
-                              onClick={() => archiveMember(member)}
-                              className="p-2 text-red-400 bg-red-50 rounded-xl hover:bg-red-100 transition-colors shadow-2xs"
-                              title="Archive"
-                            >
-                              <Archive size={17} />
-                            </button>
+                            <>
+                              <button
+                                onClick={() => {
+                                  setVacationMember(member);
+                                  setVacationStart(member.vacationStartDate || "");
+                                  setVacationEnd(member.vacationEndDate || "");
+                                }}
+                                className="p-2 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors shadow-2xs"
+                                title="Manage Leave/Vacation"
+                              >
+                                <Calendar size={17} />
+                              </button>
+                              <button
+                                onClick={() => archiveMember(member)}
+                                className="p-2 text-red-400 bg-red-50 rounded-xl hover:bg-red-100 transition-colors shadow-2xs"
+                                title="Archive"
+                              >
+                                <Archive size={17} />
+                              </button>
+                            </>
                           )}
                         </div>
                       )}
@@ -1547,6 +1575,13 @@ const MembersList: React.FC<MembersListProps> = ({
       baseList = baseList.filter((m) => teacherTypes.includes(m.type));
     } else {
       baseList = baseList.filter((m) => !teacherTypes.includes(m.type));
+      if (selectedShepherdFilter !== "ALL") {
+        if (selectedShepherdFilter === "UNASSIGNED") {
+          baseList = baseList.filter((m) => !m.assignedTeacherId);
+        } else {
+          baseList = baseList.filter((m) => m.assignedTeacherId === selectedShepherdFilter);
+        }
+      }
     }
 
     // Filter by Church: if activeChurch is CM or All (Leadership), show everything unless filtered, otherwise filter by assignment
@@ -1569,7 +1604,7 @@ const MembersList: React.FC<MembersListProps> = ({
       baseList = baseList.filter(m => {
         const matchesName = m.name?.toLowerCase().includes(term);
         const matchesAgeGroup = m.assignedChurch?.toLowerCase().includes(term);
-        
+
         // Calculate age
         let ageStr = "";
         if (m.birthDate) {
@@ -1580,7 +1615,7 @@ const MembersList: React.FC<MembersListProps> = ({
           if (md < 0 || (md === 0 && today.getDate() < birth.getDate())) age--;
           ageStr = age.toString();
         }
-        
+
         return matchesName || matchesAgeGroup || (ageStr && ageStr.includes(term));
       });
     }
@@ -2029,10 +2064,10 @@ const MembersList: React.FC<MembersListProps> = ({
                 onChange={(e) => {
                   const newBranchId = e.target.value;
                   let newZoneId = formData.zoneId;
-                  
+
                   // Auto-update zone if not admin, or if zone isn't selected
                   if (!isAdmin || !newZoneId) {
-                    const matchedZone = data.settings.organization?.zones?.find(z => 
+                    const matchedZone = data.settings.organization?.zones?.find(z =>
                       z.branches?.some(b => (b.id || b.name) === newBranchId)
                     );
                     if (matchedZone) {
@@ -2050,8 +2085,8 @@ const MembersList: React.FC<MembersListProps> = ({
                 <option value="">Select Branch...</option>
                 {(isAdmin && formData.zoneId
                   ? data.settings.organization?.zones?.find(
-                      (z) => (z.id || z.name) === formData.zoneId
-                    )?.branches || []
+                    (z) => (z.id || z.name) === formData.zoneId
+                  )?.branches || []
                   : data.settings.organization?.zones?.flatMap((z) => z.branches || []) || []
                 ).map((b) => (
                   <option key={b.id || b.name} value={b.id || b.name}>
@@ -2297,7 +2332,7 @@ const MembersList: React.FC<MembersListProps> = ({
           <input
             type="text"
             className="w-full pl-12 pr-4 py-2 bg-transparent border-none text-sm focus:ring-0 placeholder:text-gray-400 font-medium text-gray-800"
-            placeholder="Search by name, age, or class..."
+            placeholder="Search by name, age, ..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -2321,7 +2356,7 @@ const MembersList: React.FC<MembersListProps> = ({
                   }}
                   className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${churchFilter === c ? "bg-white text-indigo-600 shadow-sm ring-1 ring-black/5" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
                 >
-                  {c === "CM" ? "CM Directorate" : c === "All" ? "All Churches" : `${c} Church`}
+                  {c === "CM" ? "CM Directorate" : c === "All" ? "All" : c}
                 </button>
               ))}
             </div>
@@ -2342,7 +2377,7 @@ const MembersList: React.FC<MembersListProps> = ({
                 <option value="All">All Churches</option>
                 {[...availableChurches, "CM"].map((c) => (
                   <option key={c} value={c}>
-                    {c === "CM" ? "CM Directorate" : `${c} Church`}
+                    {c === "CM" ? "CM Directorate" : c}
                   </option>
                 ))}
               </select>
@@ -2418,6 +2453,44 @@ const MembersList: React.FC<MembersListProps> = ({
             </select>
           </div>
         </div>
+
+        {/* Shepherd Filter (when viewing children / members) */}
+        {hubTab === "MEMBERS" && (
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+              <UserCheck size={18} className="text-purple-600" /> Shepherd Filter
+            </h3>
+
+            <div className="w-full sm:w-auto relative">
+              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500">
+                <ChevronDown size={16} />
+              </div>
+              <select
+                value={selectedShepherdFilter}
+                onChange={(e) => {
+                  setSelectedShepherdFilter(e.target.value);
+                  setSelectedIds(new Set());
+                }}
+                className="w-full sm:w-64 appearance-none bg-purple-50 border border-purple-200 text-purple-900 text-sm font-bold rounded-xl p-3 sm:py-2 focus:ring-2 focus:ring-purple-500 focus:outline-none cursor-pointer"
+              >
+                <option value="ALL">All Shepherds (All Children)</option>
+                <option value="UNASSIGNED">Unassigned Children Only</option>
+                {availableShepherdsInBranch.map((shepherd) => {
+                  const count = data.members.filter(
+                    (m) =>
+                      m.assignedTeacherId === shepherd.id &&
+                      matchesScope(m, activeBranchId, data.settings?.organization)
+                  ).length;
+                  return (
+                    <option key={shepherd.id} value={shepherd.id}>
+                      {shepherd.name} ({count} children)
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+        )}
       </div>
 
       {selectedIds.size > 0 && canManage && (
@@ -2821,10 +2894,10 @@ const MembersList: React.FC<MembersListProps> = ({
                                   </div>
                                   {record.churchId !==
                                     member.assignedChurch && (
-                                    <div className="text-[10px] text-indigo-400 font-bold uppercase mt-0.5">
-                                      {record.churchId} Church
-                                    </div>
-                                  )}
+                                      <div className="text-[10px] text-indigo-400 font-bold uppercase mt-0.5">
+                                        {record.churchId} Church
+                                      </div>
+                                    )}
                                 </div>
                               </div>
 
@@ -2853,7 +2926,7 @@ const MembersList: React.FC<MembersListProps> = ({
         </div>
       )}
 
-      
+
       {vacationMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
@@ -3232,10 +3305,10 @@ const MembersList: React.FC<MembersListProps> = ({
                     onChange={(e) => {
                       const newBranchId = e.target.value;
                       let newZoneId = bulkAssignData.zoneId;
-                      
+
                       // Auto-update zone if not selected
                       if (!newZoneId) {
-                        const matchedZone = data.settings.organization?.zones?.find(z => 
+                        const matchedZone = data.settings.organization?.zones?.find(z =>
                           z.branches?.some(b => (b.id || b.name) === newBranchId)
                         );
                         if (matchedZone) {
@@ -3253,8 +3326,8 @@ const MembersList: React.FC<MembersListProps> = ({
                     <option value="">Select Branch...</option>
                     {(bulkAssignData.zoneId
                       ? data.settings.organization?.zones?.find(
-                          (z) => (z.id || z.name) === bulkAssignData.zoneId
-                        )?.branches || []
+                        (z) => (z.id || z.name) === bulkAssignData.zoneId
+                      )?.branches || []
                       : data.settings.organization?.zones?.flatMap((z) => z.branches || []) || []
                     ).map((b) => (
                       <option key={b.id || b.name} value={b.id || b.name}>

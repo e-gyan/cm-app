@@ -341,11 +341,29 @@ const AdminDashboard: React.FC<{
         { name: "Unassigned", value: unassigned }
       ];
 
+      // Pastoral shepherd coverage accounting for this department
+      const churchKids = data.members.filter(
+        (m) =>
+          m.assignedChurch === church &&
+          matchesScope(m, activeBranchId, data.settings?.organization) &&
+          [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) &&
+          m.type !== MemberType.TEACHER &&
+          !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+          (!m.role || m.role === "NONE")
+      );
+      const assignedKidsCount = churchKids.filter((m) => !!m.assignedTeacherId).length;
+      const unassignedKidsCount = churchKids.length - assignedKidsCount;
+      const shepherdCoverage = churchKids.length > 0 ? Math.round((assignedKidsCount / churchKids.length) * 100) : 0;
+
       return {
         church,
         population,
         memberPop,
         teacherPop,
+        totalKidsCount: churchKids.length,
+        assignedKidsCount,
+        unassignedKidsCount,
+        shepherdCoverage,
         avg,
         retention,
         lastAttendance,
@@ -981,7 +999,7 @@ const AdminDashboard: React.FC<{
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-slate-800">
-                    {stat.church} Church
+                    {stat.church}
                   </h3>
                   <p className="text-sm text-slate-500 font-medium">
                     {stat.population} Active Members
@@ -1185,7 +1203,7 @@ const ChurchDashboard: React.FC<{
       let divisionTarget = 0;
 
       if (isTeacherUser) {
-        const divisions = calculateChurchDivisions(data.members, [activeChurch]);
+        const divisions = calculateChurchDivisions(data.members, [activeChurch], activeBranchId);
         const myDiv = divisions[activeChurch];
         if (myDiv) {
           const myAssignment = myDiv.assignments.find(a => a.teacher.id === currentUser.id);
@@ -1298,10 +1316,27 @@ const ChurchDashboard: React.FC<{
       const target = data.targets?.[activeChurch] || 0;
       const retention = population > 0 ? Math.round((avg / population) * 100) : 0;
 
+      // Pastoral shepherd coverage accounting for this active church
+      const churchKids = membersInChurch.filter(
+        (m) =>
+          m.type !== MemberType.TEACHER &&
+          !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+          (!m.role || m.role === "NONE")
+      );
+      const assignedKidsCount = churchKids.filter((m) => !!m.assignedTeacherId).length;
+      const unassignedKidsCount = churchKids.length - assignedKidsCount;
+      const shepherdCoverage = churchKids.length > 0 ? Math.round((assignedKidsCount / churchKids.length) * 100) : 0;
+      const avgKidsPerShepherd = teacherPop > 0 ? (assignedKidsCount / teacherPop).toFixed(1) : "0";
+
       return {
         totalMembers: population,
         memberPop,
         teacherPop,
+        churchKidsCount: churchKids.length,
+        assignedKidsCount,
+        unassignedKidsCount,
+        shepherdCoverage,
+        avgKidsPerShepherd,
         avgAttendance: avg,
         lastAttendance: lastAtt,
         lastMemberAttendance,
@@ -1718,7 +1753,7 @@ const ChurchDashboard: React.FC<{
               </div>
 
               <div className="lg:col-span-2">
-                <p className="text-xs font-bold text-slate-500 uppercase mb-3">Live Status Breakdown</p>
+                <p className="text-xs font-bold text-slate-500 uppercase mb-3">Status Breakdown</p>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                   <div className="flex justify-between items-center text-sm bg-slate-50 p-1.5 rounded-lg">
                     <span className="text-slate-600 font-medium">Active</span>
@@ -1737,7 +1772,7 @@ const ChurchDashboard: React.FC<{
                     <span className="font-bold text-teal-600">{statusBreakdown.fnf}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm bg-slate-50 p-1.5 rounded-lg col-span-2 mt-1 border border-indigo-100">
-                    <span className="text-indigo-600 font-medium">First Timers (Visitors)</span>
+                    <span className="text-indigo-600 font-medium">First Timers</span>
                     <span className="font-black text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded">{statusBreakdown.firstTimers}</span>
                   </div>
                 </div>
@@ -1794,8 +1829,8 @@ const ChurchDashboard: React.FC<{
           </motion.div>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
-          {/* Existing Stats Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-6">
+          {/* Stats Cards */}
           <StatCard
             title="Total Membership"
             value={stats.totalMembers}
@@ -1813,7 +1848,7 @@ const ChurchDashboard: React.FC<{
             title="Retention Rate"
             value={`${stats.retention}%`}
             icon={<Percent size={24} />}
-            colorClass="bg-purple-600"
+            colorClass="bg-sky-600"
             subtitle="Avg / Active"
           />
           <StatCard

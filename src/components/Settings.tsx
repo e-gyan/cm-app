@@ -42,6 +42,10 @@ import {
   Unlock,
   Edit2,
   X,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Menu,
+  ChevronLeft,
 } from "lucide-react";
 import { themeColorPalettes, applyTheme } from "../lib/theme";
 import { APP_FEATURES_REGISTRY, DEFAULT_SETTINGS } from "../constants";
@@ -76,6 +80,15 @@ const Settings: React.FC<SettingsProps> = ({
   useEffect(() => {
     sessionStorage.setItem("settings_activeTab", activeTab);
   }, [activeTab]);
+
+  const [isSettingsMenuCollapsed, setIsSettingsMenuCollapsed] = useState<boolean>(() => {
+    return sessionStorage.getItem("settings_menu_collapsed") === "true";
+  });
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    sessionStorage.setItem("settings_menu_collapsed", String(isSettingsMenuCollapsed));
+  }, [isSettingsMenuCollapsed]);
 
   // Local state for editing
   const [localSettings, setLocalSettings] = useState<AppSettings>(
@@ -509,52 +522,172 @@ const Settings: React.FC<SettingsProps> = ({
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                {/* Sidebar */}
-        <div className="md:col-span-1 space-y-2">
+      {/* Mobile Collapsible Navigation Selector */}
+      <div className="md:hidden bg-white p-3.5 rounded-2xl border border-slate-100 shadow-sm space-y-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            {(() => {
+              const activeObj = visibleSettingsTabs.find((t) => t.id === activeTab);
+              const ActiveIcon = activeObj?.icon || SettingsIcon;
+              return (
+                <>
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                    <ActiveIcon size={16} />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Setting Category</span>
+                    <span className="text-sm font-black text-slate-800">{activeObj?.label}</span>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl text-xs font-bold transition-all border border-slate-200"
+          >
+            <span>{isMobileMenuOpen ? "Close Menu" : "Sections"}</span>
+            <ChevronDown size={14} className={`transition-transform duration-200 ${isMobileMenuOpen ? "rotate-180" : ""}`} />
+          </button>
+        </div>
+
+        {/* Quick Horizontal Scroll Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
           {visibleSettingsTabs.map((tab) => {
             const Icon = tab.icon;
+            const isSel = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
+                  isSel
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <Icon size={13} /> {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Mobile Accordion Dropdown */}
+        {isMobileMenuOpen && (
+          <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-1.5 animate-in slide-in-from-top-2 duration-200">
+            {visibleSettingsTabs.map((tab) => {
+              const Icon = tab.icon;
+              const isSel = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all ${
+                    isSel
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "bg-slate-50 text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Icon size={15} />
+                    <span>{tab.label}</span>
+                  </div>
+                  {isSel && <Check size={14} />}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+        {/* Desktop Sidebar (Collapsible) */}
+        <div className={`hidden md:block transition-all duration-300 ${isSettingsMenuCollapsed ? "md:col-span-1" : "md:col-span-3"} space-y-2`}>
+          {/* Header with Collapse / Expand Toggle */}
+          <div className="flex items-center justify-between px-2 mb-2">
+            {!isSettingsMenuCollapsed && (
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Settings Menu
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsSettingsMenuCollapsed(!isSettingsMenuCollapsed)}
+              title={isSettingsMenuCollapsed ? "Expand Settings Menu" : "Collapse Settings Menu"}
+              className={`p-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all ${isSettingsMenuCollapsed ? "mx-auto w-full flex justify-center" : ""}`}
+            >
+              {isSettingsMenuCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            </button>
+          </div>
+
+          {visibleSettingsTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isSel = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 ${
-                  activeTab === tab.id
+                title={tab.label}
+                className={`w-full text-left rounded-xl text-sm font-bold transition-all flex items-center ${
+                  isSettingsMenuCollapsed
+                    ? "justify-center p-3"
+                    : "px-4 py-3 gap-3"
+                } ${
+                  isSel
                     ? "bg-indigo-600 text-white shadow-md scale-[1.02]"
                     : "bg-white text-slate-500 hover:bg-slate-50 hover:scale-[1.01]"
                 }`}
               >
-                <Icon size={16} /> {tab.label}
+                <Icon size={18} className="shrink-0" />
+                {!isSettingsMenuCollapsed && <span className="truncate">{tab.label}</span>}
               </button>
             );
           })}
 
           {/* System Version & Release Notes Card */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-2.5 mt-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Tag size={13} className="text-indigo-600" /> Platform Version
-              </span>
-              <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-black">
-                v{APP_VERSION}
-              </span>
+          {!isSettingsMenuCollapsed ? (
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-2.5 mt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Tag size={13} className="text-indigo-600" /> Platform Version
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-black">
+                  v{APP_VERSION}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 font-medium leading-tight">
+                {APP_RELEASE_NAME}
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsChangelogOpen(true)}
+                className="w-full py-2 px-3 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl text-xs font-bold transition-all border border-slate-200/60 flex items-center justify-center gap-1.5 active:scale-95"
+              >
+                <Tag size={12} className="text-indigo-500" />
+                View Release Notes
+              </button>
             </div>
-            <p className="text-[11px] text-slate-400 font-medium leading-tight">
-              {APP_RELEASE_NAME}
-            </p>
+          ) : (
             <button
               type="button"
               onClick={() => setIsChangelogOpen(true)}
-              className="w-full py-2 px-3 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl text-xs font-bold transition-all border border-slate-200/60 flex items-center justify-center gap-1.5 active:scale-95"
+              title={`v${APP_VERSION} - View Release Notes`}
+              className="w-full p-3 bg-white text-slate-500 hover:text-indigo-600 rounded-xl flex items-center justify-center border border-slate-100 hover:bg-indigo-50 transition-all shadow-sm"
             >
-              <Tag size={12} className="text-indigo-500" />
-              View Release Notes
+              <Tag size={16} />
             </button>
-          </div>
+          )}
         </div>
 
         {/* Content Area */}
-        <div className="md:col-span-3 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 min-h-[400px]">
+        <div className={`col-span-1 ${isSettingsMenuCollapsed ? "md:col-span-11" : "md:col-span-9"} bg-white p-6 rounded-3xl shadow-sm border border-slate-100 min-h-[400px] transition-all duration-300`}>
           {/* GENERAL TAB */}
           {activeTab === "GENERAL"&& (
             <div className="space-y-6">
