@@ -7,6 +7,8 @@ import {
   Church,
   ServiceType,
   isFnfMember,
+  isVisitorMember,
+  isFnfCombined,
 } from "../types";
 import { getSundaysInYear } from "../constants";
 import {
@@ -27,6 +29,9 @@ import {
   UserCheck,
   UserX,
   Loader2,
+  Undo2,
+  AlertCircle,
+  Plus,
 } from "lucide-react";
 import { motion } from "motion/react";
 import {
@@ -790,17 +795,19 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         : (currentUser?.branchId || "");
       const targetZoneId = currentUser?.zoneId || "";
 
+      const shouldCombine = isFnfCombined(data.settings);
       const newMembers: Member[] = parsedFirstTimerNames.map((cleanName) => ({
         id: crypto.randomUUID(),
         name: cleanName,
-        type: MemberType.FNF, // Unified FNF category
+        type: shouldCombine ? MemberType.FNF : MemberType.VISITOR,
         assignedChurch: targetChurch,
         passcode: "",
         status: MemberStatus.ACTIVE,
         gender: determineGenderByName(cleanName),
         branchId: targetBranchId,
         zoneId: targetZoneId,
-        assignedTeacherId: undefined, // FNFs remain unassigned
+        assignedTeacherId: undefined, // FNFs/Visitors remain unassigned
+        joinedDate: new Date().toISOString(),
         addedAt: Date.now()
       }));
 
@@ -871,9 +878,23 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         matchesScope(m, activeBranchId, data.settings?.organization) &&
         isStaffOrTeacher(m) &&
         m.status !== MemberStatus.ARCHIVED &&
-        m.status !== MemberStatus.TRANSFERRED
+        m.status !== MemberStatus.TRANSFERRED &&
+        (targetChurches.includes(m.assignedChurch as Church) ||
+          m.assignedChurch === effectiveChurch ||
+          effectiveChurch === "All" ||
+          effectiveChurch === "CM")
     );
-  }, [data.members, activeBranchId, data.settings?.organization]);
+  }, [data.members, activeBranchId, data.settings?.organization, targetChurches, effectiveChurch]);
+
+  useEffect(() => {
+    if (
+      selectedShepherdFilter !== "ALL" &&
+      selectedShepherdFilter !== "UNASSIGNED" &&
+      !availableShepherdsForAttendance.some((s) => s.id === selectedShepherdFilter)
+    ) {
+      setSelectedShepherdFilter("ALL");
+    }
+  }, [availableShepherdsForAttendance, selectedShepherdFilter]);
 
   const filteredMembers = membersToList.filter((m) => {
     const matchesSearch = m.name
@@ -881,7 +902,11 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       .includes(searchTerm.toLowerCase());
     const matchesType =
       filterType === "All" ||
-      (filterType === MemberType.FNF ? isFnfMember(m) : m.type === filterType);
+      (filterType === MemberType.FNF
+        ? isFnfMember(m, data.settings)
+        : filterType === MemberType.VISITOR
+        ? isVisitorMember(m, data.settings)
+        : m.type === filterType);
 
     const matchesShepherd =
       attendanceMode !== "MEMBERS" ||
@@ -1319,17 +1344,23 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               </button>
               {(attendanceMode === "STAFF"
                 ? [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER]
+                : isFnfCombined(data.settings)
+                ? [
+                    MemberType.MEMBER,
+                    MemberType.FNF,
+                  ]
                 : [
-                  MemberType.MEMBER,
-                  MemberType.FNF,
-                ]
+                    MemberType.MEMBER,
+                    MemberType.FNF,
+                    MemberType.VISITOR,
+                  ]
               ).map((type) => (
                 <button
                   key={type}
                   onClick={() => setFilterType(type)}
                   className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterType === type ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
                 >
-                  {type === MemberType.FNF ? "FNF" : type === MemberType.TEACHER ? "Shepherd" : type}
+                  {type === MemberType.FNF ? "FNF" : type === MemberType.VISITOR ? "First Timers" : type === MemberType.TEACHER ? "Shepherd" : type}
                 </button>
               ))}
 
@@ -1342,7 +1373,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                     onChange={(e) => setSelectedShepherdFilter(e.target.value)}
                     className="bg-transparent text-purple-900 font-bold focus:outline-none cursor-pointer pr-1 text-xs"
                   >
-                    <option value="ALL">All Shepherds</option>
+                    <option value="ALL">
+                      All Shepherds {effectiveChurch && effectiveChurch !== "All" && effectiveChurch !== "CM" ? `(${effectiveChurch})` : ""}
+                    </option>
                     <option value="UNASSIGNED">Unassigned Only</option>
                     {availableShepherdsForAttendance.map((shepherd) => {
                       const count = membersToList.filter((m) => m.assignedTeacherId === shepherd.id).length;
@@ -1391,7 +1424,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               Add FNF(s)
             </h3>
             <p className="text-xs text-slate-500 mb-3">
-              Add one or multiple FNFs (Friends & Family) to directory and mark them present for this {isWednesdayCell ? "Wednesday" : "Sunday"} ({formatDateDDMMYYYY(selectedDate)}). Type or paste names separated by new lines or commas.
+              Add one or multiple FNFs to directory and mark them present for this {isWednesdayCell ? "Wednesday" : "Sunday"} ({formatDateDDMMYYYY(selectedDate)}). Type or paste names separated by new lines or commas.
             </p>
 
             {newMemberNames.map((name, index) => (
@@ -1487,7 +1520,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-slate-500 font-medium">Role Category:</span>
                 <span className="font-bold text-teal-700 bg-teal-100/90 px-2 py-0.5 rounded-lg">
-                  FNF (Friends & Family)
+                  FNF
                 </span>
               </div>
             </div>
@@ -1526,16 +1559,102 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
         )}
 
         {filteredMembers.length === 0 && (
-          <div className="p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200 my-4">
+          <div className="p-8 sm:p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200 my-4 animate-in fade-in duration-300">
             <div className="w-14 h-14 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
-              <UserPlus size={28} />
+              {searchTerm.trim() ? (
+                <Search size={28} className="text-indigo-500" />
+              ) : (
+                <UserPlus size={28} className="text-slate-400" />
+              )}
             </div>
             <h3 className="text-base font-bold text-slate-800">
-              No {attendanceMode === "STAFF" ? "Shepherds" : "Members"} Found for {getScopeDisplayLabel(activeBranchId, data.settings?.organization)}
+              {searchTerm.trim()
+                ? `No Names Match "${searchTerm}"`
+                : selectedShepherdFilter !== "ALL"
+                ? `No Children Found for Shepherd`
+                : filterType !== "All"
+                ? `No ${filterType === MemberType.FNF ? "FNFs" : filterType === MemberType.VISITOR ? "First Timers" : filterType} in Roster`
+                : `No ${attendanceMode === "STAFF" ? "Shepherds" : "Members"} Found for ${effectiveChurch}`}
             </h3>
             <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto font-medium">
-              No active profiles match this church and branch scope. Switch scope or click "+ FNF" to record a friend/family visitor.
+              {searchTerm.trim() ? (
+                <>No member names match your search term in {effectiveChurch}. Try clearing your search.</>
+              ) : selectedShepherdFilter !== "ALL" ? (
+                <>
+                  {(() => {
+                    const sh = availableShepherdsForAttendance.find(
+                      (s) => s.id === selectedShepherdFilter
+                    );
+                    return sh
+                      ? `No children are currently allocated to Shepherd ${sh.name} for ${effectiveChurch}.`
+                      : `No children match this shepherd filter in ${effectiveChurch}.`;
+                  })()}
+                </>
+              ) : filterType !== "All" ? (
+                <>No profiles match the filter type "{filterType === MemberType.FNF ? "FNF" : filterType === MemberType.VISITOR ? "First Timer" : filterType}".</>
+              ) : (
+                <>No active profiles match this church and branch scope. Switch scope or click "+ First Timer" / "+ FNF" to record a new attendee.</>
+              )}
             </p>
+
+            {/* Filter Pills */}
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-4 max-w-md mx-auto">
+              {searchTerm.trim() && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  <span>Search: "{searchTerm}"</span>
+                  <button onClick={() => setSearchTerm("")} className="hover:text-indigo-900 rounded-full p-0.5">
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+              {selectedShepherdFilter !== "ALL" && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-100">
+                  <span>
+                    Shepherd:{" "}
+                    {selectedShepherdFilter === "UNASSIGNED"
+                      ? "Unassigned"
+                      : availableShepherdsForAttendance.find((s) => s.id === selectedShepherdFilter)?.name || "Selected"}
+                  </span>
+                  <button onClick={() => setSelectedShepherdFilter("ALL")} className="hover:text-purple-900 rounded-full p-0.5">
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+              {filterType !== "All" && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-100">
+                  <span>Type: {filterType === MemberType.FNF ? "FNF" : filterType === MemberType.VISITOR ? "First Timer" : filterType}</span>
+                  <button onClick={() => setFilterType("All")} className="hover:text-amber-900 rounded-full p-0.5">
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-5">
+              {(searchTerm.trim() || selectedShepherdFilter !== "ALL" || filterType !== "All") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setSelectedShepherdFilter("ALL");
+                    setFilterType("All");
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5"
+                >
+                  <Undo2 size={13} />
+                  Reset Roster Filters
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsAddingFNF(true)}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors flex items-center gap-1.5"
+              >
+                <UserPlus size={13} />
+                + Add FNF / First Timer
+              </button>
+            </div>
           </div>
         )}
 
@@ -1605,7 +1724,9 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                         <p
                           className={`text-xs font-medium uppercase tracking-wider ${isPresent ? "opacity-80" : "text-slate-400"}`}
                         >
-                          {isFnfMember(member)
+                          {isVisitorMember(member, data.settings)
+                            ? "First Timer"
+                            : isFnfMember(member, data.settings)
                             ? "FNF"
                             : (member.type as any) === "Teacher" || (member.type as any) === MemberType.TEACHER || attendanceMode === "STAFF"
                               ? "Shepherd"
@@ -1621,32 +1742,67 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                         {/* Assigned Shepherd Badge */}
                         {attendanceMode === "MEMBERS" && (
                           (() => {
-                            const shepherd = member.assignedTeacherId
-                              ? data.members.find((m) => m.id === member.assignedTeacherId)
-                              : null;
-                            if (shepherd) {
+                            if (!member.assignedTeacherId) {
                               return (
                                 <span
-                                  className={`text-[10px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1 ${isPresent
-                                      ? "bg-white/25 text-current border border-white/30"
-                                      : "bg-purple-50 text-purple-700 border border-purple-200"
+                                  className={`text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1 ${isPresent
+                                      ? "bg-white/15 text-current opacity-75"
+                                      : "bg-slate-50 text-slate-400 border border-slate-200"
                                     }`}
-                                  title={`Assigned Shepherd: ${shepherd.name}`}
                                 >
-                                  <UserCheck size={9} className="shrink-0" />
-                                  <span>Shepherd: {shepherd.name.split(" ")[0]}</span>
+                                  <UserX size={9} className="shrink-0" />
+                                  <span>Unassigned</span>
                                 </span>
                               );
                             }
+
+                            const shepherd = data.members.find((m) => m.id === member.assignedTeacherId);
+                            if (shepherd) {
+                              const isInactive = shepherd.status === MemberStatus.ARCHIVED || shepherd.status === MemberStatus.TRANSFERRED;
+                              if (isInactive) {
+                                return (
+                                  <span
+                                    className={`text-[10px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1 ${isPresent
+                                        ? "bg-amber-400/30 text-current border border-amber-300"
+                                        : "bg-amber-50 text-amber-700 border border-amber-200"
+                                      }`}
+                                    title={`Assigned shepherd ${shepherd.name} is currently ${shepherd.status.toLowerCase()}.`}
+                                  >
+                                    <AlertCircle size={9} className="shrink-0" />
+                                    <span>Inactive Shepherd</span>
+                                  </span>
+                                );
+                              }
+
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedShepherdFilter(shepherd.id);
+                                  }}
+                                  className={`text-[10px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1 transition-transform active:scale-95 cursor-pointer ${isPresent
+                                      ? "bg-white/25 text-current border border-white/30 hover:bg-white/35"
+                                      : "bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100"
+                                    }`}
+                                  title={`Assigned Shepherd: ${shepherd.name}. Click to view cohort.`}
+                                >
+                                  <UserCheck size={9} className="shrink-0" />
+                                  <span>Shepherd: {shepherd.name.split(" ")[0]}</span>
+                                </button>
+                              );
+                            }
+
                             return (
                               <span
-                                className={`text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1 ${isPresent
-                                    ? "bg-white/15 text-current opacity-75"
-                                    : "bg-slate-50 text-slate-400 border border-slate-200"
+                                className={`text-[10px] px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-1 ${isPresent
+                                    ? "bg-amber-400/30 text-current border border-amber-300"
+                                    : "bg-amber-50 text-amber-700 border border-amber-200"
                                   }`}
+                                title="Assigned shepherd was removed or not found."
                               >
-                                <UserX size={9} className="shrink-0" />
-                                <span>Unassigned</span>
+                                <AlertCircle size={9} className="shrink-0" />
+                                <span>Unlinked Shepherd</span>
                               </span>
                             );
                           })()

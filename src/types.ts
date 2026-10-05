@@ -8,8 +8,22 @@ export enum MemberType {
   NOT_MEMBER = "Not Member"
 }
 
-export const isFnfMember = (m: { type: MemberType | string }): boolean => {
-  return m.type === MemberType.FNF || m.type === "FNF" || m.type === MemberType.VISITOR || m.type === "Visitor";
+export const isFnfCombined = (settings?: AppSettings): boolean => {
+  return settings?.combineFnfAndFirstTimers !== false;
+};
+
+export const isFnfMember = (m: { type: MemberType | string }, settings?: AppSettings): boolean => {
+  if (isFnfCombined(settings)) {
+    return m.type === MemberType.FNF || m.type === "FNF" || m.type === MemberType.VISITOR || m.type === "Visitor";
+  }
+  return m.type === MemberType.FNF || m.type === "FNF";
+};
+
+export const isVisitorMember = (m: { type: MemberType | string }, settings?: AppSettings): boolean => {
+  if (isFnfCombined(settings)) {
+    return false;
+  }
+  return m.type === MemberType.VISITOR || m.type === "Visitor";
 };
 
 export enum MemberStatus {
@@ -73,6 +87,7 @@ export interface Member {
   branchId?: string;
   zoneId?: string;
   type: MemberType;
+  previousType?: MemberType;
   status: MemberStatus;
   gender?: string;
   parentPhone?: string;
@@ -144,6 +159,10 @@ export interface AppSettings {
   features?: any;
   permissions?: Record<string, string[]>;
   themeColors?: any;
+  combineFnfAndFirstTimers?: boolean;
+  attendanceCountMode?: "SUNDAY_ONLY" | "SUNDAY_AND_WEDNESDAY" | "ALL_DAYS";
+  attendanceDays?: string[];
+  showSundayAttendanceCountOnChildRecord?: boolean;
 }
 
 export interface AttendanceRecord {

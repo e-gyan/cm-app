@@ -2246,6 +2246,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               <CollapsibleContactSection
                 title="Active Members"
                 members={activeMembers}
+                allMembers={data.members}
                 color="indigo"
                 icon={User}
                 defaultOpen={true}
@@ -2259,6 +2260,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               <CollapsibleContactSection
                 title="Inconsistent Members"
                 members={inconsistentMembers}
+                allMembers={data.members}
                 color="rose"
                 icon={AlertCircle}
                 defaultOpen={memberCategoryFilter === "INCONSISTENT"}
@@ -2272,6 +2274,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               <CollapsibleContactSection
                 title="Not Active Members"
                 members={notActiveMembers}
+                allMembers={data.members}
                 color="amber"
                 icon={Clock}
                 defaultOpen={memberCategoryFilter === "NOT_ACTIVE"}
@@ -2283,8 +2286,9 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
             {(memberCategoryFilter === "ALL" || memberCategoryFilter === "FNF" || (memberCategoryFilter as string) === "VISITOR") && (
               <CollapsibleContactSection
-                title="Friends & Family (FNFs)"
+                title="FNFs"
                 members={fnfMembers}
+                allMembers={data.members}
                 color="emerald"
                 icon={Heart}
                 defaultOpen={memberCategoryFilter === "FNF" || (memberCategoryFilter as string) === "VISITOR"}
@@ -2986,7 +2990,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
                 color="indigo"
               />
               <CollapsibleProgressSection
-                title="Friends & Family (FNFs)"
+                title="FNFs"
                 members={connectList.filter((m) => isFnfMember(m))}
                 data={data}
                 icon={User}
@@ -4027,6 +4031,7 @@ const CollapsibleProgressSection = ({
 interface CollapsibleContactSectionProps {
   title: string;
   members: Member[];
+  allMembers?: Member[];
   icon: React.ElementType;
   color: string;
   defaultOpen?: boolean;
@@ -4040,6 +4045,7 @@ interface CollapsibleContactSectionProps {
 const CollapsibleContactSection = ({
   title,
   members,
+  allMembers,
   icon: Icon,
   color,
   defaultOpen = false,
@@ -4085,8 +4091,10 @@ const CollapsibleContactSection = ({
       {isOpen && (
         <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50/50">
           {members.length === 0 ? (
-            <div className="col-span-full p-4 text-center text-xs text-slate-400 font-medium">
-              No contacts found in this category.
+            <div className="col-span-full p-6 text-center text-xs text-slate-400 font-medium bg-white rounded-2xl border border-dashed border-slate-200">
+              <CheckCircle2 size={24} className="mx-auto text-emerald-500 mb-1.5 opacity-80" />
+              <p className="font-semibold text-slate-700">No {title.toLowerCase()} in this scope</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">All contacts under this category are up to date or none recorded.</p>
             </div>
           ) : (
             members.map((member: Member) => {
@@ -4154,6 +4162,17 @@ const CollapsibleContactSection = ({
                       {address && (
                         <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
                           <MapPin size={10} /> {address.substring(0, 26)}...
+                        </div>
+                      )}
+                      {member.assignedTeacherId && allMembers && (
+                        <div className="text-[10px] text-indigo-600 font-semibold mt-1 flex items-center gap-1">
+                          <UserCheck size={10} />
+                          <span>
+                            Shepherd: {(() => {
+                              const sh = allMembers.find((m) => m.id === member.assignedTeacherId);
+                              return sh ? sh.name : "Unlinked";
+                            })()}
+                          </span>
                         </div>
                       )}
                     </div>

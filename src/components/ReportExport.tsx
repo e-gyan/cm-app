@@ -7,6 +7,8 @@ import {
   MemberStatus,
   ServiceType,
   isFnfMember,
+  isVisitorMember,
+  isFnfCombined,
 } from "../types";
 import { getPrecedingWednesday } from "../lib/dateUtils";
 import {
@@ -441,16 +443,21 @@ const ReportExport: React.FC<ReportExportProps> = ({
     const countK = getChurchMembersCount("K");
     const countL = getChurchMembersCount("LJ");
     const countU = getChurchMembersCount("UJ");
+    const countN = getChurchMembersCount("N");
 
-
+    let firstTimers = 0;
     let fnf = 0;
     presentMembersList.forEach((m) => {
       if (!isPastor(m) && !isShepherd(m)) {
-        if (isFnfMember(m)) fnf++;
+        if (isVisitorMember(m, data.settings)) {
+          firstTimers++;
+        } else if (isFnfMember(m, data.settings)) {
+          fnf++;
+        }
       }
     });
 
-    const totalAttendance = pastors + shepherds + countI + countK + countL + countU + fnf;
+    const totalAttendance = pastors + shepherds + countI + countK + countL + countU + countN + firstTimers + fnf;
 
     return {
       pastors,
@@ -459,10 +466,12 @@ const ReportExport: React.FC<ReportExportProps> = ({
       countK,
       countL,
       countU,
+      countN,
+      firstTimers,
       fnf,
       totalAttendance,
     };
-  }, [data.attendance, data.members, selectedDate, activeBranchId, branchObj.id, data.settings?.organization]);
+  }, [data.attendance, data.members, selectedDate, activeBranchId, branchObj.id, data.settings]);
 
   const [activeTab, setActiveTab] = useState<
     "WHATSAPP" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL"
@@ -587,12 +596,12 @@ const ReportExport: React.FC<ReportExportProps> = ({
       });
       const avg = last5.length ? Math.round(totalAtt / last5.length) : 0;
 
-      // Current Population (Active + FNF)
+      // Current Population (Active + FNF + First Timers if separated)
       const population = data.members.filter(
         (m) =>
           m.assignedChurch === church &&
           [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) &&
-          (m.type === MemberType.MEMBER || m.type === MemberType.FNF),
+          (m.type === MemberType.MEMBER || isFnfMember(m, data.settings) || isVisitorMember(m, data.settings)),
       ).length;
 
       return {
@@ -896,6 +905,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
       const zones = data.settings.organization?.zones || [];
       let grandAttendance = 0;
+      let grandFirstTimers = 0;
       let grandFNFs = 0;
       let grandTeachers = 0;
       let grandVisits = 0;
@@ -908,6 +918,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
         let zoneJoy = 0;
         let zoneEnlargement = 0;
         let zoneSpecial = 0;
+        let zoneFirstTimers = 0;
         let zoneFNFs = 0;
         let zoneTeachers = 0;
         const branchSummaries: string[] = [];
@@ -926,7 +937,8 @@ const ReportExport: React.FC<ReportExportProps> = ({
               rec.presentMemberIds.forEach((id) => {
                 const m = data.members.find((mem) => mem.id === id);
                 if (m) {
-                  if (isFnfMember(m)) zoneFNFs++;
+                  if (isVisitorMember(m, data.settings)) zoneFirstTimers++;
+                  else if (isFnfMember(m, data.settings)) zoneFNFs++;
                   if (
                     ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
                     m.type === MemberType.TEACHER ||
@@ -963,11 +975,16 @@ const ReportExport: React.FC<ReportExportProps> = ({
           report += `• Total Attendance: ${zoneAttendance}\n`;
           report += `• Services: Joy (${zoneJoy}) | Enlargement (${zoneEnlargement})` + (zoneSpecial > 0 ? ` | Special (${zoneSpecial})` : "") + `\n`;
           report += `• Branches: ${branchSummaries.join(" | ") || "No branches"}\n`;
-          report += `• FNFs: ${zoneFNFs} | Shepherds: ${zoneTeachers}\n`;
+          if (!isFnfCombined(data.settings)) {
+            report += `• First Timers: ${zoneFirstTimers} | FNFs: ${zoneFNFs} | Shepherds: ${zoneTeachers}\n`;
+          } else {
+            report += `• FNFs: ${zoneFNFs} | Shepherds: ${zoneTeachers}\n`;
+          }
 
         }
 
         grandAttendance += zoneAttendance;
+        grandFirstTimers += zoneFirstTimers;
         grandFNFs += zoneFNFs;
         grandTeachers += zoneTeachers;
         grandVisits += zoneOutreach.visits;
@@ -978,7 +995,12 @@ const ReportExport: React.FC<ReportExportProps> = ({
       report += `============================\n`;
       report += `*DIRECTORATE GRAND TOTALS*\n`;
       report += `• Total Platform Attendance: ${grandAttendance}\n`;
-      report += `• Total FNFs: ${grandFNFs}\n`;
+      if (!isFnfCombined(data.settings)) {
+        report += `• Total First Timers: ${grandFirstTimers}\n`;
+        report += `• Total FNFs: ${grandFNFs}\n`;
+      } else {
+        report += `• Total FNFs: ${grandFNFs}\n`;
+      }
       report += `• Total Active Shepherds: ${grandTeachers}\n`;
 
 
@@ -1036,7 +1058,8 @@ const ReportExport: React.FC<ReportExportProps> = ({
             rec.presentMemberIds.forEach((id) => {
               const m = data.members.find((mem) => mem.id === id);
               if (m) {
-                if (isFnfMember(m)) branchFT++;
+                if (isVisitorMember(m, data.settings)) branchFT++;
+                else if (isFnfMember(m, data.settings)) branchFT++;
                 if (
                   ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
                   m.type === MemberType.TEACHER ||
@@ -1154,7 +1177,12 @@ const ReportExport: React.FC<ReportExportProps> = ({
       if (serviceAttendance.countN > 0) {
         r += `N CHURCH - ${serviceAttendance.countN}\n`;
       }
-      r += `FNFS - ${serviceAttendance.fnf}\n\n`;
+      if (!isFnfCombined(data.settings)) {
+        r += `FIRST TIMERS - ${serviceAttendance.firstTimers}\n`;
+        r += `FNFS - ${serviceAttendance.fnf}\n\n`;
+      } else {
+        r += `FNFS - ${serviceAttendance.fnf}\n\n`;
+      }
 
       r += `TOTAL ATTENDANCE : ${serviceAttendance.totalAttendance}\n\n`;
 
@@ -1288,13 +1316,19 @@ const ReportExport: React.FC<ReportExportProps> = ({
         report += `==============================\n`;
 
         const members = cMembers.filter((m) => m.type === MemberType.MEMBER);
-        const fnfs = cMembers.filter((m) => isFnfMember(m));
+        const firstTimers = cMembers.filter((m) => isVisitorMember(m, data.settings));
+        const fnfs = cMembers.filter((m) => isFnfMember(m, data.settings));
         const notMembers = cMembers.filter((m) => m.type === MemberType.NOT_MEMBER);
 
         if (members.length > 0) report += renderListWithServices(members, "MEMBERS", cRec);
         else report += `*MEMBERS (0)*\n_None_\n\n`;
 
-        if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNFS", cRec);
+        if (!isFnfCombined(data.settings)) {
+          if (firstTimers.length > 0) report += renderListWithServices(firstTimers, "FIRST TIMERS", cRec);
+          if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNFS", cRec);
+        } else {
+          if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNFS", cRec);
+        }
         if (notMembers.length > 0) report += renderListWithServices(notMembers, "NOT A MEMBER", cRec);
 
         if (cTeachers.length > 0) {
@@ -1362,13 +1396,19 @@ const ReportExport: React.FC<ReportExportProps> = ({
       }
 
       const members = allChildren.filter((m) => m.type === MemberType.MEMBER);
-      const fnfs = allChildren.filter((m) => isFnfMember(m));
+      const firstTimers = allChildren.filter((m) => isVisitorMember(m, data.settings));
+      const fnfs = allChildren.filter((m) => isFnfMember(m, data.settings));
       const notMembers = allChildren.filter((m) => m.type === MemberType.NOT_MEMBER);
 
       if (members.length > 0) report += renderListWithServices(members, "MEMBERS", record);
       else report += `*MEMBERS (0)*\n_None_\n\n`;
 
-      if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNFS", record);
+      if (!isFnfCombined(data.settings)) {
+        if (firstTimers.length > 0) report += renderListWithServices(firstTimers, "FIRST TIMERS", record);
+        if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNFS", record);
+      } else {
+        if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNFS", record);
+      }
       if (notMembers.length > 0) report += renderListWithServices(notMembers, "NOT A MEMBER", record);
 
       if (teachers.length > 0) {
@@ -2578,13 +2618,19 @@ function AnnualViewTab({ selectedDate, data, activeChurch, CHURCH_NAMES }: any) 
               };
 
               const members = allChildren.filter((m: any) => m.type === "Member");
-              const fnfs = allChildren.filter((m: any) => isFnfMember(m));
+              const firstTimers = allChildren.filter((m: any) => isVisitorMember(m, data.settings));
+              const fnfs = allChildren.filter((m: any) => isFnfMember(m, data.settings));
               const notMembers = allChildren.filter((m: any) => m.type === "Not Member");
 
               if (members.length > 0) report += renderList(members, "MEMBERS");
               else report += `*MEMBERS (0)*\n_None_\n\n`;
 
-              if (fnfs.length > 0) report += renderList(fnfs, "FNFS");
+              if (!isFnfCombined(data.settings)) {
+                if (firstTimers.length > 0) report += renderList(firstTimers, "FIRST TIMERS");
+                if (fnfs.length > 0) report += renderList(fnfs, "FNFS");
+              } else {
+                if (fnfs.length > 0) report += renderList(fnfs, "FNFS");
+              }
               if (notMembers.length > 0) report += renderList(notMembers, "NOT A MEMBER");
 
               if (teachers.length > 0) {

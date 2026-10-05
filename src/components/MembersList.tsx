@@ -7,8 +7,12 @@ import {
   type Church,
   type Role,
   PromotionRecord,
+  AttendanceRecord,
   isFnfMember,
+  isVisitorMember,
+  isFnfCombined,
 } from "../types";
+import { isSundayAttendance, isCellAttendance } from "../lib/dateUtils";
 import {
   User,
   Users,
@@ -18,6 +22,7 @@ import {
   Save,
   GraduationCap,
   Undo2,
+  Home,
   HelpCircle,
   AlertCircle,
   Activity,
@@ -114,20 +119,39 @@ const MembersList: React.FC<MembersListProps> = ({
       (sessionStorage.getItem("members_churchFilter") as Church | "All") || "All",
   );
   const [sortOrder, setSortOrder] = useState<
-    "A-Z" | "ATTENDANCE_HIGH" | "ATTENDANCE_LOW"
+    "A-Z" | "Z-A" | "ATTENDANCE_HIGH" | "ATTENDANCE_LOW" | "RECENTLY_ADDED" | "AGE_YOUNGEST" | "AGE_OLDEST"
   >(() => (sessionStorage.getItem("members_sortOrder") as any) || "A-Z");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedShepherdFilter, setSelectedShepherdFilter] = useState<string>("ALL");
 
-  const availableShepherdsInBranch = useMemo(() => {
+  const currentChurchScope =
+    churchFilter !== "All"
+      ? churchFilter
+      : activeChurch !== "CM" && activeChurch !== "All"
+      ? activeChurch
+      : null;
+
+  const availableShepherdsForChurch = useMemo(() => {
     return (data.members || []).filter(
       (m) =>
         matchesScope(m, activeBranchId, data.settings?.organization) &&
         isStaffOrTeacher(m) &&
         m.status !== MemberStatus.ARCHIVED &&
-        m.status !== MemberStatus.TRANSFERRED
+        m.status !== MemberStatus.TRANSFERRED &&
+        (!currentChurchScope || m.assignedChurch === currentChurchScope)
     );
-  }, [data.members, activeBranchId, data.settings?.organization]);
+  }, [data.members, activeBranchId, data.settings?.organization, currentChurchScope]);
+
+  // Auto-reset shepherd filter if active selection is outside current church scope
+  React.useEffect(() => {
+    if (
+      selectedShepherdFilter !== "ALL" &&
+      selectedShepherdFilter !== "UNASSIGNED" &&
+      !availableShepherdsForChurch.some((s) => s.id === selectedShepherdFilter)
+    ) {
+      setSelectedShepherdFilter("ALL");
+    }
+  }, [availableShepherdsForChurch, selectedShepherdFilter]);
 
   // Persist state changes
   React.useEffect(() => {
@@ -801,11 +825,22 @@ const MembersList: React.FC<MembersListProps> = ({
   };
 
   const getMemberAttendanceCount = (member: Member) => {
-    let startDate = new Date(member.joinedDate);
+    let rawDate = member.lastActivationDate || member.joinedDate || (member.addedAt ? new Date(member.addedAt).toISOString() : undefined);
+    let startDate = rawDate ? new Date(rawDate) : new Date();
+    if (isNaN(startDate.getTime())) {
+      startDate = new Date();
+    }
     startDate.setHours(0, 0, 0, 0);
 
+    const isIncludedSession = (r: AttendanceRecord) => {
+      const mode = data.settings?.attendanceCountMode || "SUNDAY_ONLY";
+      if (mode === "ALL_DAYS") return true;
+      if (mode === "SUNDAY_AND_WEDNESDAY") return isSundayAttendance(r) || isCellAttendance(r);
+      return isSundayAttendance(r);
+    };
 
     const churchAttendance = data.attendance.filter((r) => {
+      if (!isIncludedSession(r)) return false;
       const recordDate = new Date(r.date);
       recordDate.setHours(0, 0, 0, 0);
 
@@ -821,14 +856,12 @@ const MembersList: React.FC<MembersListProps> = ({
       }
 
       const isPresent = r.presentMemberIds.includes(member.id);
-      // Include if it's the current church AND on or after the calculated start date AND not on vacation (UNLESS they were present)
       return (
         r.churchId === member.assignedChurch &&
         recordDate.getTime() >= startDate.getTime() &&
         (!isVacation || isPresent)
       );
     });
-
 
     return churchAttendance.filter((r) =>
       r.presentMemberIds.includes(member.id),
@@ -837,13 +870,24 @@ const MembersList: React.FC<MembersListProps> = ({
 
   const renderAttendanceBadge = (member: Member) => {
     // Determine the start date for attendance calculation
-    // Priority: Last Activation Date > Joined Date
-    let startDate = new Date(member.joinedDate);
-
+    // Priority: Last Activation Date > Joined Date > addedAt
+    let rawDate = member.lastActivationDate || member.joinedDate || (member.addedAt ? new Date(member.addedAt).toISOString() : undefined);
+    let startDate = rawDate ? new Date(rawDate) : new Date();
+    if (isNaN(startDate.getTime())) {
+      startDate = new Date();
+    }
     // Normalize to midnight to ensure inclusive comparison regardless of time
     startDate.setHours(0, 0, 0, 0);
 
+    const isIncludedSession = (r: AttendanceRecord) => {
+      const mode = data.settings?.attendanceCountMode || "SUNDAY_ONLY";
+      if (mode === "ALL_DAYS") return true;
+      if (mode === "SUNDAY_AND_WEDNESDAY") return isSundayAttendance(r) || isCellAttendance(r);
+      return isSundayAttendance(r);
+    };
+
     const churchAttendance = data.attendance.filter((r) => {
+      if (!isIncludedSession(r)) return false;
       const recordDate = new Date(r.date);
       recordDate.setHours(0, 0, 0, 0);
 
@@ -866,6 +910,11 @@ const MembersList: React.FC<MembersListProps> = ({
         (!isVacation || isPresent)
       );
     });
+
+    // Specifically calculate Sunday count for this child
+    const sundayRecords = churchAttendance.filter(r => isSundayAttendance(r));
+    const sundayAttended = sundayRecords.filter(r => r.presentMemberIds.includes(member.id)).length;
+    const totalSundays = sundayRecords.length;
 
     const totalSessions = churchAttendance.length;
     const attendedSessions = churchAttendance.filter((r) =>
@@ -875,6 +924,29 @@ const MembersList: React.FC<MembersListProps> = ({
       totalSessions > 0
         ? Math.round((attendedSessions / totalSessions) * 100)
         : 0;
+
+    // Newly added child with 0 sessions recorded since joining
+    if (totalSessions === 0) {
+      return (
+        <div
+          className="w-full max-w-[145px] cursor-pointer group flex items-center gap-2"
+          onClick={() => setHistoryMemberId(member.id)}
+          title="New Member: No attendance sessions recorded yet since joining"
+        >
+          <div className="flex-1">
+            <div className="flex items-center justify-between mb-1 px-2 py-1 rounded-md border bg-sky-50 border-sky-200 text-sky-700 group-hover:shadow-sm transition-all">
+              <span className="text-[11px] font-bold">New Member</span>
+              <span className="text-[10px] font-medium opacity-80 flex items-center gap-1">
+                0 sessions
+              </span>
+            </div>
+            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
+              <div className="h-full rounded-full bg-sky-400" style={{ width: "100%" }}></div>
+            </div>
+          </div>
+        </div>
+      );
+    }
 
     // Calculate consecutive streaks
     const sortedAttendance = [...churchAttendance].sort(
@@ -900,7 +972,7 @@ const MembersList: React.FC<MembersListProps> = ({
         alertMsg = "At Risk: 1 absence away from Deactivation";
         alertColor = "text-orange-500 bg-orange-100 border-orange-200";
       } else if (
-        member.type === MemberType.FNF &&
+        isFnfMember(member, data.settings) &&
         consecutiveAttendances >= 6
       ) {
         alertMsg = "Promotion ready: 1 visit away from Full Member";
@@ -908,7 +980,7 @@ const MembersList: React.FC<MembersListProps> = ({
       }
     } else if (member.status === MemberStatus.NOT_ACTIVE || member.status === MemberStatus.INCONSISTENT) {
       if (
-        isFnfMember(member) &&
+        isFnfMember(member, data.settings) &&
         consecutiveAttendances >= 2
       ) {
         alertMsg = "1 visit away from Active FNF";
@@ -953,9 +1025,11 @@ const MembersList: React.FC<MembersListProps> = ({
       };
     }
 
+    const showSundayCount = data.settings?.showSundayAttendanceCountOnChildRecord !== false;
+
     return (
       <div
-        className="w-full max-w-[140px] cursor-pointer group flex items-center gap-2"
+        className="w-full max-w-[150px] cursor-pointer group flex items-center gap-2"
         onClick={() => setHistoryMemberId(member.id)}
       >
         <div className="flex-1">
@@ -963,8 +1037,8 @@ const MembersList: React.FC<MembersListProps> = ({
             className={`flex items-center justify-between mb-1 px-2 py-1 rounded-md border ${styles.bg} ${styles.border} group-hover:shadow-sm transition-all`}
             title={
               alertMsg
-                ? `${alertMsg} (${attendanceRate}% overall)`
-                : `${attendanceRate}% overall attendance`
+                ? `${alertMsg} (${attendanceRate}% overall • ${sundayAttended}/${totalSundays} Sundays)`
+                : `${attendanceRate}% overall attendance • ${sundayAttended}/${totalSundays} Sundays attended`
             }
           >
             <span
@@ -977,12 +1051,19 @@ const MembersList: React.FC<MembersListProps> = ({
               )}
               {attendanceRate}%
             </span>
-            <span
-              className={`text-[10px] font-medium ${styles.text} opacity-80 flex items-center gap-1`}
-            >
-              <Activity size={10} />
-              {attendedSessions}/{totalSessions}
-            </span>
+            <div className="flex flex-col items-end">
+              <span
+                className={`text-[10px] font-medium ${styles.text} opacity-80 flex items-center gap-0.5`}
+              >
+                <Activity size={10} />
+                {attendedSessions}/{totalSessions}
+              </span>
+              {showSundayCount && (
+                <span className="text-[9px] font-bold text-slate-500">
+                  Sun: {sundayAttended}/{totalSundays}
+                </span>
+              )}
+            </div>
           </div>
           <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
             <div
@@ -1113,26 +1194,84 @@ const MembersList: React.FC<MembersListProps> = ({
                                 </div>
                               )}
                               {!isTeacherSection && (
-                                <div className="mt-1 flex items-center gap-1.5">
+                                <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                                   {(() => {
-                                    const shepherd = member.assignedTeacherId
-                                      ? data.members.find((m) => m.id === member.assignedTeacherId)
-                                      : null;
-                                    if (shepherd) {
+                                    if (!member.assignedTeacherId) {
                                       return (
-                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded" title={`Assigned Shepherd: ${shepherd.name}`}>
-                                          <UserCheck size={9} />
-                                          <span>Shepherd: {shepherd.name}</span>
-                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => openEditModal(member)}
+                                          className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 border border-slate-200 px-1.5 py-0.5 rounded transition-colors"
+                                          title="Unassigned child. Click to assign a shepherd."
+                                        >
+                                          <UserX size={9} />
+                                          <span>Unassigned</span>
+                                        </button>
                                       );
                                     }
+
+                                    const shepherd = data.members.find((m) => m.id === member.assignedTeacherId);
+                                    if (shepherd) {
+                                      const isInactive = shepherd.status === MemberStatus.ARCHIVED || shepherd.status === MemberStatus.TRANSFERRED;
+                                      if (isInactive) {
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => openEditModal(member)}
+                                            className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded transition-colors"
+                                            title={`Assigned to ${shepherd.name}, who is currently ${shepherd.status.toLowerCase()}. Click to reassign.`}
+                                          >
+                                            <AlertCircle size={9} />
+                                            <span>Former: {shepherd.name} (Inactive)</span>
+                                          </button>
+                                        );
+                                      }
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedShepherdFilter(shepherd.id)}
+                                          className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                                          title={`Assigned Shepherd: ${shepherd.name}. Click to view cohort.`}
+                                        >
+                                          <UserCheck size={9} />
+                                          <span>Shepherd: {shepherd.name}</span>
+                                        </button>
+                                      );
+                                    }
+
                                     return (
-                                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
-                                        <UserX size={9} />
-                                        <span>No Shepherd</span>
-                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => openEditModal(member)}
+                                        className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded transition-colors"
+                                        title="Assigned shepherd was removed or not found. Click to reassign."
+                                      >
+                                        <AlertCircle size={9} />
+                                        <span>Unlinked Shepherd (Reassign)</span>
+                                      </button>
                                     );
                                   })()}
+
+                                  {member.householdName && (
+                                    <span
+                                      className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded"
+                                      title={`Household / Family: ${member.householdName}`}
+                                    >
+                                      <Home size={9} />
+                                      <span>{member.householdName}</span>
+                                    </span>
+                                  )}
+
+                                  {member.parentPhone && (
+                                    <a
+                                      href={`tel:${member.parentPhone}`}
+                                      className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 border border-slate-200 px-1.5 py-0.5 rounded transition-colors"
+                                      title={`Parent Phone: ${member.parentPhone}`}
+                                    >
+                                      <Phone size={8} />
+                                      <span>{member.parentPhone}</span>
+                                    </a>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -1173,7 +1312,7 @@ const MembersList: React.FC<MembersListProps> = ({
                           >
                             {isTeacherSection
                               ? ((member.type as string) === "Teacher" || member.type === MemberType.TEACHER ? "Shepherd" : member.type)
-                              : (isFnfMember(member) ? "FNF" : (member.type as string) === "Teacher" ? "Shepherd" : member.type)}
+                              : (isVisitorMember(member, data.settings) ? "First Timer" : isFnfMember(member, data.settings) ? "FNF" : (member.type as string) === "Teacher" ? "Shepherd" : member.type)}
                           </span>
                         </td>
 
@@ -1345,11 +1484,15 @@ const MembersList: React.FC<MembersListProps> = ({
                                 {member.gender.charAt(0)}
                               </span>
                             )}
-                            {isFnfMember(member) && (
+                            {isVisitorMember(member, data.settings) ? (
+                              <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200 flex items-center gap-1">
+                                <UserCheck size={10} /> First Timer
+                              </span>
+                            ) : isFnfMember(member, data.settings) ? (
                               <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
                                 <UserPlus size={10} /> FNF
                               </span>
-                            )}
+                            ) : null}
                             {bdayWeek && (
                               <span className="flex items-center gap-1 text-[10px] uppercase font-bold text-pink-600 bg-pink-50 px-2 py-0.5 rounded-full border border-pink-100 animate-pulse">
                                 <PartyPopper size={10} /> Bday Week
@@ -1396,23 +1539,76 @@ const MembersList: React.FC<MembersListProps> = ({
                               </span>
                             )}
                             {!isTeacherSection && (
-                              (() => {
-                                const shepherd = member.assignedTeacherId
-                                  ? data.members.find((m) => m.id === member.assignedTeacherId)
-                                  : null;
-                                if (shepherd) {
+                              <div className="flex flex-wrap items-center gap-1.5 w-full mt-1">
+                                {(() => {
+                                  if (!member.assignedTeacherId) {
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => openEditModal(member)}
+                                        className="text-xs px-2 py-1 rounded-md bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 text-slate-400 border border-slate-200 font-medium flex items-center gap-1 transition-colors"
+                                        title="Unassigned child. Click to assign a shepherd."
+                                      >
+                                        <UserX size={11} /> Unassigned
+                                      </button>
+                                    );
+                                  }
+
+                                  const shepherd = data.members.find((m) => m.id === member.assignedTeacherId);
+                                  if (shepherd) {
+                                    const isInactive = shepherd.status === MemberStatus.ARCHIVED || shepherd.status === MemberStatus.TRANSFERRED;
+                                    if (isInactive) {
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => openEditModal(member)}
+                                          className="text-xs px-2 py-1 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-bold flex items-center gap-1 transition-colors"
+                                          title={`Assigned to ${shepherd.name} (${shepherd.status.toLowerCase()}). Click to reassign.`}
+                                        >
+                                          <AlertCircle size={11} /> Former: {shepherd.name} (Inactive)
+                                        </button>
+                                      );
+                                    }
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedShepherdFilter(shepherd.id)}
+                                        className="text-xs px-2 py-1 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                                        title={`Assigned Shepherd: ${shepherd.name}. Click to view cohort.`}
+                                      >
+                                        <UserCheck size={11} /> Shepherd: {shepherd.name}
+                                      </button>
+                                    );
+                                  }
+
                                   return (
-                                    <span className="text-xs px-2 py-1 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 font-bold flex items-center gap-1">
-                                      <UserCheck size={11} /> Shepherd: {shepherd.name}
-                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditModal(member)}
+                                      className="text-xs px-2 py-1 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-bold flex items-center gap-1 transition-colors"
+                                      title="Assigned shepherd was removed or not found. Click to reassign."
+                                    >
+                                      <AlertCircle size={11} /> Unlinked Shepherd
+                                    </button>
                                   );
-                                }
-                                return (
-                                  <span className="text-xs px-2 py-1 rounded-md bg-slate-50 text-slate-400 border border-slate-200 font-medium flex items-center gap-1">
-                                    <UserX size={11} /> No Shepherd
+                                })()}
+
+                                {member.householdName && (
+                                  <span className="text-xs px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-100 font-medium flex items-center gap-1">
+                                    <Home size={10} /> {member.householdName}
                                   </span>
-                                );
-                              })()
+                                )}
+
+                                {member.parentPhone && (
+                                  <a
+                                    href={`tel:${member.parentPhone}`}
+                                    className="text-xs px-2 py-1 rounded-md bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200 font-medium flex items-center gap-1 transition-colors"
+                                    title={`Parent Contact: ${member.parentPhone}`}
+                                  >
+                                    <Phone size={10} /> {member.parentPhone}
+                                  </a>
+                                )}
+                              </div>
                             )}
                             {isTeacherSection && member.isAccessActive && (
                               <span className="text-xs px-2 py-1 rounded-md bg-green-50 text-green-700 border border-green-100 flex items-center gap-1 font-medium">
@@ -1545,9 +1741,30 @@ const MembersList: React.FC<MembersListProps> = ({
       );
     }
 
+    // Sort list according to active sort order
     if (sortOrder === "A-Z") {
-      baseList.sort((a, b) => a.name.localeCompare(b.name));
-    } else {
+      baseList.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    } else if (sortOrder === "Z-A") {
+      baseList.sort((a, b) => (b.name || "").localeCompare(a.name || ""));
+    } else if (sortOrder === "RECENTLY_ADDED") {
+      baseList.sort((a, b) => {
+        const timeA = a.addedAt || (a.joinedDate ? new Date(a.joinedDate).getTime() : 0);
+        const timeB = b.addedAt || (b.joinedDate ? new Date(b.joinedDate).getTime() : 0);
+        return timeB - timeA;
+      });
+    } else if (sortOrder === "AGE_YOUNGEST") {
+      baseList.sort((a, b) => {
+        const timeA = a.birthDate ? new Date(a.birthDate).getTime() : 0;
+        const timeB = b.birthDate ? new Date(b.birthDate).getTime() : 0;
+        return timeB - timeA;
+      });
+    } else if (sortOrder === "AGE_OLDEST") {
+      baseList.sort((a, b) => {
+        const timeA = a.birthDate ? new Date(a.birthDate).getTime() : Number.MAX_SAFE_INTEGER;
+        const timeB = b.birthDate ? new Date(b.birthDate).getTime() : Number.MAX_SAFE_INTEGER;
+        return timeA - timeB;
+      });
+    } else if (sortOrder === "ATTENDANCE_HIGH" || sortOrder === "ATTENDANCE_LOW") {
       // Pre-calculate attendance to avoid redundant iteration
       const attendanceMap = new Map<string, number>();
       baseList.forEach((m) =>
@@ -1598,12 +1815,27 @@ const MembersList: React.FC<MembersListProps> = ({
       }
     }
 
-    // Apply fuzzy search
+    // Apply comprehensive fuzzy search matching all record attributes
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase().trim();
-      baseList = baseList.filter(m => {
+      const shepherdMap = new Map<string, string>();
+      data.members.forEach((m) => {
+        if (isStaffOrTeacher(m)) {
+          shepherdMap.set(m.id, (m.name || "").toLowerCase());
+        }
+      });
+
+      baseList = baseList.filter((m) => {
         const matchesName = m.name?.toLowerCase().includes(term);
-        const matchesAgeGroup = m.assignedChurch?.toLowerCase().includes(term);
+        const matchesChurch = m.assignedChurch?.toLowerCase().includes(term);
+        const matchesBranch = m.branchId?.toLowerCase().includes(term);
+        const matchesPhone =
+          m.phone?.toLowerCase().includes(term) ||
+          m.parentPhone?.toLowerCase().includes(term);
+        const matchesAddress = m.address?.toLowerCase().includes(term);
+        const matchesHousehold = m.householdName?.toLowerCase().includes(term);
+        const shepherdName = m.assignedTeacherId ? shepherdMap.get(m.assignedTeacherId) : "";
+        const matchesShepherd = shepherdName?.includes(term);
 
         // Calculate age
         let ageStr = "";
@@ -1616,14 +1848,177 @@ const MembersList: React.FC<MembersListProps> = ({
           ageStr = age.toString();
         }
 
-        return matchesName || matchesAgeGroup || (ageStr && ageStr.includes(term));
+        return (
+          matchesName ||
+          matchesChurch ||
+          matchesBranch ||
+          matchesPhone ||
+          matchesAddress ||
+          matchesHousehold ||
+          matchesShepherd ||
+          (ageStr && ageStr.includes(term))
+        );
       });
+    }
+
+    const renderEmptyState = (categoryTitle?: string) => {
+      const isShepherdFiltered = selectedShepherdFilter !== "ALL";
+      const shepherdObj = isShepherdFiltered
+        ? availableShepherdsForChurch.find((s) => s.id === selectedShepherdFilter)
+        : null;
+      const shepherdDisplayName = shepherdObj
+        ? shepherdObj.name
+        : selectedShepherdFilter === "UNASSIGNED"
+        ? "Unassigned"
+        : "Selected Shepherd";
+
+      return (
+        <div className="p-8 sm:p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200 shadow-xs my-4 animate-in fade-in duration-300">
+          <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-slate-100 shadow-inner">
+            {searchTerm.trim() ? (
+              <Search size={28} className="text-indigo-500" />
+            ) : (
+              <Users size={28} className="text-slate-400" />
+            )}
+          </div>
+
+          <h3 className="text-base sm:text-lg font-bold text-slate-800">
+            {categoryTitle ? `No ${categoryTitle} Found` : "No Members Match Your Criteria"}
+          </h3>
+
+          <p className="text-xs sm:text-sm text-slate-500 mt-1.5 max-w-lg mx-auto font-medium leading-relaxed">
+            {searchTerm.trim() ? (
+              <>
+                No records match <span className="font-semibold text-slate-700">"{searchTerm}"</span> across name, contact, address, household, or assigned shepherd.
+              </>
+            ) : isShepherdFiltered ? (
+              <>
+                No children are currently assigned to <span className="font-semibold text-slate-700">{shepherdDisplayName}</span> in {currentChurchScope || "the current church scope"}.
+              </>
+            ) : categoryTitle ? (
+              <>There are currently no active records under {categoryTitle} in this scope.</>
+            ) : (
+              <>No profiles match the combination of your current church, branch, and category filters.</>
+            )}
+          </p>
+
+          {/* Active Filter Pills for quick clearing */}
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-4 max-w-xl mx-auto">
+            {searchTerm.trim() && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                <span>Search: "{searchTerm}"</span>
+                <button
+                  onClick={() => setSearchTerm("")}
+                  className="hover:text-indigo-900 rounded-full p-0.5"
+                  title="Clear search"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+
+            {isShepherdFiltered && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-100">
+                <span>Shepherd: {shepherdDisplayName}</span>
+                <button
+                  onClick={() => setSelectedShepherdFilter("ALL")}
+                  className="hover:text-purple-900 rounded-full p-0.5"
+                  title="Reset shepherd filter"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+
+            {churchFilter !== "All" && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                <span>Church: {churchFilter}</span>
+                <button
+                  onClick={() => setChurchFilter("All")}
+                  className="hover:text-blue-900 rounded-full p-0.5"
+                  title="Reset church filter"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+
+            {filter !== "CM" && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-100">
+                <span>Category: {filter === MemberType.FNF ? "FNFs" : filter === MemberType.VISITOR ? "First Timers" : filter}</span>
+                <button
+                  onClick={() => setFilter("CM")}
+                  className="hover:text-amber-900 rounded-full p-0.5"
+                  title="Reset category filter"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
+            {(searchTerm.trim() || isShepherdFiltered || churchFilter !== "All" || filter !== "CM") && (
+              <button
+                onClick={() => {
+                  setSearchTerm("");
+                  setSelectedShepherdFilter("ALL");
+                  setChurchFilter("All");
+                  setFilter("CM");
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5 shadow-2xs"
+              >
+                <Undo2 size={14} />
+                Reset All Filters
+              </button>
+            )}
+
+            {isShepherdFiltered && selectedShepherdFilter !== "UNASSIGNED" && (
+              <button
+                onClick={() => setSelectedShepherdFilter("UNASSIGNED")}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors flex items-center gap-1.5 shadow-2xs"
+              >
+                <UserX size={14} />
+                View Unassigned Children
+              </button>
+            )}
+
+            {canManage && (
+              <button
+                onClick={() => {
+                  setEditingId(null);
+                  setFormData({
+                    name: "",
+                    type: hubTab === "TEACHERS" ? MemberType.TEACHER : MemberType.MEMBER,
+                    assignedChurch: (currentChurchScope || "UJ") as Church,
+                    status: MemberStatus.ACTIVE,
+                    assignedTeacherId: isShepherdFiltered && selectedShepherdFilter !== "UNASSIGNED" ? selectedShepherdFilter : undefined,
+                  });
+                  setIsCreateModalOpen(true);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all flex items-center gap-1.5"
+              >
+                <Plus size={14} />
+                Add {hubTab === "TEACHERS" ? "Shepherd" : "Member"}
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    if (baseList.length === 0) {
+      return renderEmptyState();
     }
 
     if (filter === "ARCHIVED") {
       const archivedMembers = baseList.filter(
         (m) => m.status === MemberStatus.ARCHIVED,
       );
+      if (archivedMembers.length === 0) {
+        return renderEmptyState("Archived Members");
+      }
       return renderMemberTableSection({
         title: "Archived",
         members: archivedMembers,
@@ -1638,6 +2033,9 @@ const MembersList: React.FC<MembersListProps> = ({
       const missingGender = baseList.filter(
         (m) => m.status !== MemberStatus.ARCHIVED && !m.gender,
       );
+      if (missingGender.length === 0) {
+        return renderEmptyState("Missing Gender Profiles");
+      }
       return renderMemberTableSection({
         title: "Missing Gender",
         members: missingGender,
@@ -1652,6 +2050,9 @@ const MembersList: React.FC<MembersListProps> = ({
       const unassignedBranch = baseList.filter(
         (m) => m.status !== MemberStatus.ARCHIVED && (!m.branchId || !m.zoneId),
       );
+      if (unassignedBranch.length === 0) {
+        return renderEmptyState("Unassigned Branch Profiles");
+      }
       return renderMemberTableSection({
         title: "Unassigned Branch",
         members: unassignedBranch,
@@ -1666,17 +2067,27 @@ const MembersList: React.FC<MembersListProps> = ({
       (m) => m.status !== MemberStatus.ARCHIVED,
     );
     if (filter !== "CM") {
-      membersToShow = membersToShow.filter((m) =>
-        filter === MemberType.FNF ? isFnfMember(m) : m.type === filter
-      );
+      membersToShow = membersToShow.filter((m) => {
+        if (filter === MemberType.FNF) return isFnfMember(m, data.settings);
+        if (filter === MemberType.VISITOR) return isVisitorMember(m, data.settings);
+        return m.type === filter;
+      });
+      const title = filter === MemberType.FNF ? "FNFs" : filter === MemberType.VISITOR ? "First Timers" : `${filter}s`;
+      if (membersToShow.length === 0) {
+        return renderEmptyState(title);
+      }
       return renderMemberTableSection({
-        title: filter === MemberType.FNF ? "Friends & Family (FNFs)" : `${filter}s`,
+        title,
         members: membersToShow,
         icon: Users,
         colorClass: "text-indigo-600",
         badgeClass: "bg-indigo-100 text-indigo-700",
         isTeacherSection: hubTab === "TEACHERS",
       });
+    }
+
+    if (membersToShow.length === 0) {
+      return renderEmptyState();
     }
 
     if (hubTab === "TEACHERS") {
@@ -1720,13 +2131,32 @@ const MembersList: React.FC<MembersListProps> = ({
             colorClass: "text-indigo-600",
             badgeClass: "bg-indigo-100 text-indigo-700",
           })}
-          {renderMemberTableSection({
-            title: "Friends & Family (FNFs)",
-            members: membersToShow.filter((m) => isFnfMember(m)),
-            icon: Users,
-            colorClass: "text-amber-600",
-            badgeClass: "bg-amber-100 text-amber-700",
-          })}
+          {isFnfCombined(data.settings) ? (
+            renderMemberTableSection({
+              title: "FNFs",
+              members: membersToShow.filter((m) => isFnfMember(m, data.settings)),
+              icon: Users,
+              colorClass: "text-amber-600",
+              badgeClass: "bg-amber-100 text-amber-700",
+            })
+          ) : (
+            <>
+              {renderMemberTableSection({
+                title: "FNFs",
+                members: membersToShow.filter((m) => isFnfMember(m, data.settings)),
+                icon: Users,
+                colorClass: "text-amber-600",
+                badgeClass: "bg-amber-100 text-amber-700",
+              })}
+              {renderMemberTableSection({
+                title: "First Timers",
+                members: membersToShow.filter((m) => isVisitorMember(m, data.settings)),
+                icon: UserCheck,
+                colorClass: "text-orange-600",
+                badgeClass: "bg-orange-100 text-orange-700",
+              })}
+            </>
+          )}
           {renderMemberTableSection({
             title: "Not A Member",
             members: membersToShow.filter(
@@ -1745,9 +2175,17 @@ const MembersList: React.FC<MembersListProps> = ({
     if (hubTab === "TEACHERS") {
       return [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER];
     } else {
+      if (isFnfCombined(data.settings)) {
+        return [
+          MemberType.MEMBER,
+          MemberType.FNF,
+          MemberType.NOT_MEMBER,
+        ];
+      }
       return [
         MemberType.MEMBER,
         MemberType.FNF,
+        MemberType.VISITOR,
         MemberType.NOT_MEMBER,
       ];
     }
@@ -1921,7 +2359,7 @@ const MembersList: React.FC<MembersListProps> = ({
               >
                 {getCreationRoleOptions().map((t) => (
                   <option key={t} value={t}>
-                    {(t as string) === "Teacher" ? "Shepherd" : t === MemberType.FNF ? "FNF (Friends & Family)" : t}
+                    {(t as string) === "Teacher" ? "Shepherd" : t === MemberType.FNF ? "FNF" : t === MemberType.VISITOR ? "First Timer" : t}
                   </option>
                 ))}
               </select>
@@ -1969,7 +2407,7 @@ const MembersList: React.FC<MembersListProps> = ({
         {hubTab !== "TEACHERS" && formData.type !== MemberType.TEACHER && (
           <div className="pt-2 border-t border-gray-100">
             <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1 flex items-center justify-between">
-              <span>Assigned Shepherd</span>
+              <span>Assigned Shepherd {formData.assignedChurch ? `(${formData.assignedChurch})` : ""}</span>
               {(formData as any).assignedTeacherId && (
                 <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">Assigned</span>
               )}
@@ -1993,11 +2431,12 @@ const MembersList: React.FC<MembersListProps> = ({
                   .filter((m) =>
                     isStaffOrTeacher(m) &&
                     m.status !== MemberStatus.ARCHIVED &&
-                    m.status !== MemberStatus.TRANSFERRED
+                    m.status !== MemberStatus.TRANSFERRED &&
+                    (!formData.assignedChurch || formData.assignedChurch === "All" || formData.assignedChurch === "CM" || m.assignedChurch === formData.assignedChurch || m.assignedChurch === "All")
                   )
                   .map((shepherd) => (
                     <option key={shepherd.id} value={shepherd.id}>
-                      {shepherd.name} ({shepherd.assignedChurch || "All"} {shepherd.branchId ? `· ${shepherd.branchId}` : ""})
+                      {shepherd.name} ({shepherd.assignedChurch || "All"}{shepherd.branchId ? ` · ${shepherd.branchId}` : ""})
                     </option>
                   ))}
               </select>
@@ -2164,6 +2603,29 @@ const MembersList: React.FC<MembersListProps> = ({
               placeholder="House No, Street..."
             />
           </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
+            Household / Family Group
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Home size={18} className="text-gray-400" />
+            </div>
+            <input
+              type="text"
+              className="w-full pl-10 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all font-medium text-gray-800"
+              value={formData.householdName || ""}
+              onChange={(e) =>
+                setFormData({ ...formData, householdName: e.target.value })
+              }
+              placeholder="e.g. Gyan Family, Mensah Household..."
+            />
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1 ml-1">
+            Links siblings together across People Hub and Shepherd Allocations.
+          </p>
         </div>
 
         <div>
@@ -2397,7 +2859,7 @@ const MembersList: React.FC<MembersListProps> = ({
                 }}
                 className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all flex-1 sm:flex-none text-center ${filter === f ? "bg-white text-indigo-600 shadow-sm ring-1 ring-black/5" : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}`}
               >
-                {(f as string) === "CM" ? "All Active" : (f as string) === "MISSING_GENDER" ? "Missing Gender" : (f as string) === "UNASSIGNED_BRANCH" ? "Unassigned Branch" : (f as string) === "ARCHIVED" ? "Archived" : f === MemberType.FNF ? "FNFs" : (f as string) === "Teacher" ? "Shepherd" : f}
+                {(f as string) === "CM" ? "All Active" : (f as string) === "MISSING_GENDER" ? "Missing Gender" : (f as string) === "UNASSIGNED_BRANCH" ? "Unassigned Branch" : (f as string) === "ARCHIVED" ? "Archived" : f === MemberType.VISITOR ? "First Timers" : f === MemberType.FNF ? "FNFs" : (f as string) === "Teacher" ? "Shepherd" : f}
               </button>
             ))}
           </div>
@@ -2418,7 +2880,7 @@ const MembersList: React.FC<MembersListProps> = ({
               <option value="CM">All Active</option>
               {getCreationRoleOptions().map((f) => (
                 <option key={f} value={f}>
-                  {(f as string) === "Teacher" ? "Shepherd" : f === MemberType.FNF ? "FNFs" : f}
+                  {(f as string) === "Teacher" ? "Shepherd" : f === MemberType.VISITOR ? "First Timers" : f === MemberType.FNF ? "FNFs" : f === MemberType.MEMBER ? "Members" : f === MemberType.NOT_MEMBER ? "Not A Member" : f}
                 </option>
               ))}
               <option value="MISSING_GENDER">Missing Gender</option>
@@ -2435,15 +2897,15 @@ const MembersList: React.FC<MembersListProps> = ({
             <select
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value as any)}
-              className="w-full md:w-48 appearance-none bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-bold rounded-xl p-3 md:py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              className="w-full md:w-56 appearance-none bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-bold rounded-xl p-3 md:py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer"
             >
-              <option value="A-Z">Sort: A-Z</option>
-              <option value="ATTENDANCE_HIGH">
-                Sort: Attendance (High-Low)
-              </option>
-              <option value="ATTENDANCE_LOW">
-                Sort: Attendance (Low-High)
-              </option>
+              <option value="A-Z">Sort: Name (A-Z)</option>
+              <option value="Z-A">Sort: Name (Z-A)</option>
+              <option value="ATTENDANCE_HIGH">Sort: Attendance (High-Low)</option>
+              <option value="ATTENDANCE_LOW">Sort: Attendance (Low-High)</option>
+              <option value="RECENTLY_ADDED">Sort: Recently Added</option>
+              <option value="AGE_YOUNGEST">Sort: Age (Youngest-Oldest)</option>
+              <option value="AGE_OLDEST">Sort: Age (Oldest-Youngest)</option>
             </select>
           </div>
         </div>
@@ -2452,7 +2914,8 @@ const MembersList: React.FC<MembersListProps> = ({
         {hubTab === "MEMBERS" && (
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
             <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide flex items-center gap-2">
-              <UserCheck size={18} className="text-purple-600" /> Shepherd Filter
+              <UserCheck size={18} className="text-purple-600" />
+              <span>Shepherd Filter {currentChurchScope ? `(${currentChurchScope})` : ""}</span>
             </h3>
 
             <div className="w-full sm:w-auto relative">
@@ -2465,15 +2928,21 @@ const MembersList: React.FC<MembersListProps> = ({
                   setSelectedShepherdFilter(e.target.value);
                   setSelectedIds(new Set());
                 }}
-                className="w-full sm:w-64 appearance-none bg-purple-50 border border-purple-200 text-purple-900 text-sm font-bold rounded-xl p-3 sm:py-2 focus:ring-2 focus:ring-purple-500 focus:outline-none cursor-pointer"
+                className="w-full sm:w-72 appearance-none bg-purple-50 border border-purple-200 text-purple-900 text-sm font-bold rounded-xl p-3 sm:py-2 focus:ring-2 focus:ring-purple-500 focus:outline-none cursor-pointer"
               >
-                <option value="ALL">All Shepherds (All Children)</option>
-                <option value="UNASSIGNED">Unassigned Children Only</option>
-                {availableShepherdsInBranch.map((shepherd) => {
+                <option value="ALL">
+                  All Shepherds {currentChurchScope ? `in ${currentChurchScope}` : "(All Churches)"}
+                </option>
+                <option value="UNASSIGNED">
+                  Unassigned Children Only {currentChurchScope ? `(${currentChurchScope})` : ""}
+                </option>
+                {availableShepherdsForChurch.map((shepherd) => {
                   const count = data.members.filter(
                     (m) =>
                       m.assignedTeacherId === shepherd.id &&
-                      matchesScope(m, activeBranchId, data.settings?.organization)
+                      matchesScope(m, activeBranchId, data.settings?.organization) &&
+                      (!currentChurchScope || m.assignedChurch === currentChurchScope) &&
+                      m.status !== MemberStatus.ARCHIVED
                   ).length;
                   return (
                     <option key={shepherd.id} value={shepherd.id}>

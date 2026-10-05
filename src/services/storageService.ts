@@ -16,6 +16,7 @@ import {
   AppSettings,
   MemberStatus,
   MemberType,
+  isFnfCombined,
 } from "../types";
 import { DEFAULT_SETTINGS } from "../constants";
 import { verifyPasscode as verifyHash, hashPasscode as createHash } from "./securityService";
@@ -123,8 +124,11 @@ const parseAppDataDoc = (docData: any): AppData => {
       changed = true;
       hasThesaurusMigrations = true;
     }
-    // Automatically merge legacy "Visitor" records into FNF
-    if ((mType as string) === "Visitor" || (mType as any) === MemberType.VISITOR) {
+    // Automatically merge legacy "Visitor" records into FNF only when FNF & First Timers combining is enabled
+    if (isFnfCombined(data.settings) && ((mType as string) === "Visitor" || (mType as any) === MemberType.VISITOR)) {
+      if (!m.previousType) {
+        m.previousType = MemberType.VISITOR;
+      }
       mType = MemberType.FNF;
       changed = true;
       hasVisitorMigrations = true;
@@ -513,12 +517,14 @@ export const saveMembers = async (members: Member[]) => {
 
 export const addMember = async (member: Member) => {
   const current = memoryCache || (await loadData());
+  const shouldCombine = isFnfCombined(current.settings);
+  const isVisitor = (member.type as string) === "Visitor" || (member.type as any) === MemberType.VISITOR;
   const normalizedMember: Member = {
     ...member,
-    type:
-      (member.type as string) === "Visitor" || (member.type as any) === MemberType.VISITOR
-        ? MemberType.FNF
-        : member.type,
+    joinedDate: member.joinedDate || new Date().toISOString(),
+    addedAt: member.addedAt || Date.now(),
+    type: shouldCombine && isVisitor ? MemberType.FNF : member.type,
+    previousType: member.previousType || (shouldCombine && isVisitor ? MemberType.VISITOR : undefined),
   };
   const members = [...current.members, normalizedMember];
   memoryCache = { ...current, members };
@@ -540,13 +546,19 @@ export const addMember = async (member: Member) => {
 export const addMembers = async (newMembersList: Member[]) => {
   if (!newMembersList || newMembersList.length === 0) return;
   const current = memoryCache || (await loadData());
-  const normalizedList: Member[] = newMembersList.map((m) => ({
-    ...m,
-    type:
-      (m.type as string) === "Visitor" || (m.type as any) === MemberType.VISITOR
-        ? MemberType.FNF
-        : m.type,
-  }));
+  const shouldCombine = isFnfCombined(current.settings);
+  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
+  const normalizedList: Member[] = newMembersList.map((m) => {
+    const isVisitor = (m.type as string) === "Visitor" || (m.type as any) === MemberType.VISITOR;
+    return {
+      ...m,
+      joinedDate: m.joinedDate || nowIso,
+      addedAt: m.addedAt || nowMs,
+      type: shouldCombine && isVisitor ? MemberType.FNF : m.type,
+      previousType: m.previousType || (shouldCombine && isVisitor ? MemberType.VISITOR : undefined),
+    };
+  });
   const members = [...current.members, ...normalizedList];
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
@@ -568,7 +580,9 @@ export const updateMember = async (id: string, updates: Partial<Member>) => {
   const members = current.members.map((m) => {
     if (m.id === id) {
       const up = { ...m, ...updates };
-      if ((up.type as string) === "Visitor" || (up.type as any) === MemberType.VISITOR) {
+      const isVisitor = (up.type as string) === "Visitor" || (up.type as any) === MemberType.VISITOR;
+      if (isFnfCombined(current.settings) && isVisitor) {
+        if (!up.previousType) up.previousType = MemberType.VISITOR;
         up.type = MemberType.FNF;
       }
       if (!up.assignedTeacherId || up.assignedTeacherId === "UNASSIGNED") {
@@ -684,9 +698,151 @@ export const deleteAttendanceRecord = async (id: string) => {
   await flushPendingWrites();
 };
 
+export interface RegroupResult {
+  combined: boolean;
+  firstTimersCount: number;
+  fnfCount: number;
+  totalAffected: number;
+}
+
+/**
+ * Intelligently regroups and reassigns children/members between "First Timers" (Visitor) and "FNF" (Friends & Family).
+ * - When separating (combine = false):
+ *   Uses empirical attendance count and historical previous records:
+ *   - Attendance count === 1 session: Assigned to "First Timers" (MemberType.VISITOR).
+ *   - Attendance count >= 2 sessions: Assigned to "FNF" (MemberType.FNF) as returning guests/visitors.
+ *   - Attendance count === 0 sessions: Falls back to previous record (if previousType is FNF -> FNF; else Visitor).
+ * - When combining (combine = true):
+ *   Preserves current category in previousType and merges all into MemberType.FNF.
+ */
+export const regroupFnfAndFirstTimers = async (
+  combine: boolean,
+  customSettings?: AppSettings
+): Promise<RegroupResult> => {
+  const current = memoryCache || (await loadData());
+  const attendanceList = current.attendance || [];
+
+  // Index attendance count for every member
+  const attendanceCounts = new Map<string, number>();
+  attendanceList.forEach((rec) => {
+    if (Array.isArray(rec.presentMemberIds)) {
+      rec.presentMemberIds.forEach((id) => {
+        if (id) {
+          attendanceCounts.set(id, (attendanceCounts.get(id) || 0) + 1);
+        }
+      });
+    }
+  });
+
+  let firstTimersCount = 0;
+  let fnfCount = 0;
+  let totalAffected = 0;
+
+  const updatedMembers: Member[] = current.members.map((m) => {
+    const isCurrentlyVisitor =
+      m.type === MemberType.VISITOR || (m.type as string) === "Visitor";
+    const isCurrentlyFnf =
+      m.type === MemberType.FNF || (m.type as string) === "FNF";
+    const hadVisitorHistory =
+      m.previousType === MemberType.VISITOR || (m.previousType as string) === "Visitor";
+    const hadFnfHistory =
+      m.previousType === MemberType.FNF || (m.previousType as string) === "FNF";
+
+    // Strictly process children/members belonging to the visitor/guest/FNF categories
+    if (!isCurrentlyVisitor && !isCurrentlyFnf && !hadVisitorHistory && !hadFnfHistory) {
+      return m;
+    }
+
+    const count = attendanceCounts.get(m.id) || 0;
+    let newType = m.type;
+    let newPrevType = m.previousType;
+
+    if (combine) {
+      // Combining into unified FNF
+      if (isCurrentlyVisitor) {
+        newPrevType = MemberType.VISITOR;
+      } else if (!newPrevType) {
+        newPrevType = count <= 1 ? MemberType.VISITOR : MemberType.FNF;
+      }
+      newType = MemberType.FNF;
+      fnfCount++;
+      if (m.type !== MemberType.FNF || m.previousType !== newPrevType) {
+        totalAffected++;
+      }
+    } else {
+      // Separating into First Timers (Visitor) and FNFs
+      // Intelligent rule:
+      // 1. If 0 sessions attended: check previous record. If previousType was FNF and not visitor, keep FNF; otherwise First Timer.
+      // 2. If 1 session attended: First Timer (attended once).
+      // 3. If 2 or more sessions attended: FNF (returning guest / regular visitor).
+      if (count === 0 && hadFnfHistory && !hadVisitorHistory) {
+        newType = MemberType.FNF;
+        fnfCount++;
+      } else if (count <= 1) {
+        newType = MemberType.VISITOR;
+        firstTimersCount++;
+      } else {
+        newType = MemberType.FNF;
+        fnfCount++;
+      }
+
+      if (!newPrevType) {
+        newPrevType = m.type;
+      }
+
+      if (m.type !== newType || m.previousType !== newPrevType) {
+        totalAffected++;
+      }
+    }
+
+    return {
+      ...m,
+      type: newType,
+      previousType: newPrevType,
+    };
+  });
+
+  const sanitizedMembers: Member[] = JSON.parse(JSON.stringify(updatedMembers));
+  const updatedSettings: AppSettings = {
+    ...current.settings,
+    ...(customSettings || {}),
+    combineFnfAndFirstTimers: combine,
+  };
+
+  memoryCache = {
+    ...current,
+    members: sanitizedMembers,
+    settings: updatedSettings,
+  };
+  saveLocalCache(memoryCache);
+  notifySubscribers(memoryCache);
+  pendingUpdates = {
+    ...pendingUpdates,
+    members: sanitizedMembers,
+    settings: updatedSettings,
+  };
+  await flushPendingWrites();
+
+  return {
+    combined: combine,
+    firstTimersCount,
+    fnfCount,
+    totalAffected,
+  };
+};
+
 // Settings Operations with immediate Firestore synchronization
 export const updateSettings = async (settings: AppSettings) => {
   const current = memoryCache || (await loadData());
+
+  const oldCombine = current.settings?.combineFnfAndFirstTimers !== false;
+  const newCombine = settings.combineFnfAndFirstTimers !== false;
+
+  if (oldCombine !== newCombine) {
+    await regroupFnfAndFirstTimers(newCombine, settings);
+    return;
+  }
+
   memoryCache = { ...current, settings };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);

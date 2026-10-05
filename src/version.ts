@@ -16,16 +16,82 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.7.17";
-export const APP_RELEASE_NAME = "Unified FNFs (Friends & Family) & Database Migration";
-export const APP_BUILD_DATE = "2026-09-30";
+export const APP_VERSION = "1.7.22";
+export const APP_RELEASE_NAME = "Report & Dashboard Synchronization for Separate First Timers and FNFs";
+export const APP_BUILD_DATE = "2026-10-05";
 
 export const CHANGELOG: ReleaseLog[] = [
+  {
+    version: "1.7.22",
+    date: "2026-10-05",
+    title: "Report & Dashboard Synchronization for Separate First Timers and FNFs",
+    badge: "Current Release",
+    changes: [
+      "Dashboard Status Breakdown & Targets: When switched to Separate First Timers and FNFs in Settings, Dashboard immediately displays distinct counts and badge cards for First Timers and recurring FNFs",
+      "Church Membership & Population Metrics: Corrected church population filters across Multi-Church and Church Dashboards to include First Timers in active metrics when separated, with live reactive cache updates",
+      "Comprehensive Report Formats (Mega Center, Consolidated, Single Church): Reports now generate independent 'FIRST TIMERS' and 'FNFS' rosters and totals when separated, ensuring coordination messages sent to WhatsApp accurately distinguish new visitors from returning guests",
+      "Directorate & Annual Reporting: Directorate grand totals, zonal summaries, and Annual Attendance reports dynamically branch between combined 'FNFs' and separated 'First Timers / FNFs'",
+      "Analytics Hub Intelligence & Prediction Targets: Stacked attendance charts, prediction models, and WhatsApp directory exports now track and predict First Timers and FNFs independently when separated",
+    ],
+  },
+  {
+    version: "1.7.21",
+    date: "2026-10-05",
+    title: "Cross-Component Synchronization, Rich Relationship Linking & Smart Empty States",
+    badge: "Previous Release",
+    changes: [
+      "Smart Empty States with Active Filter Badges: Replaced blank or generic empty views in People Hub and Attendance Taker with intelligent, context-aware empty state panels featuring active search/shepherd/church/category pills and one-click reset buttons",
+      "Interactive Shepherd Cohort Linking: Clicking on any active shepherd badge in People Hub or Attendance Taker immediately filters the view to that shepherd's cohort for rapid inspection",
+      "Dangling Shepherd & Orphan Detection: If an assigned shepherd was archived, transferred, or unlinked, records now prominently display an amber 'Former / Inactive Shepherd' or 'Unlinked Shepherd (Reassign)' action badge rather than showing misleading unassigned text",
+      "Household & Contact Relationship Badges: Members now show their linked household group and parent contact details with direct call links in tables and mobile cards",
+      "Household Group Form Field: Added a dedicated Household / Family Group field in the member registration and edit forms to link siblings seamlessly",
+      "Shepherd Allocations Empty Cohort Actions: When a shepherd has no children assigned yet, provides a direct 1-click button to assign children from the unassigned cohort",
+      "Outreach Hub Relationship Linking: Outreach contact cards now display the child's assigned shepherd and provide reassuring empty state feedback when categories are up to date",
+    ],
+  },
+  {
+    version: "1.7.20",
+    date: "2026-10-05",
+    title: "People Hub Revamp, Shepherd Church Scoping & Label Cleanups",
+    badge: "Current Release",
+    changes: [
+      "Terminology Refinement: Standardized on 'First Timer' (and plural 'First Timers') without using 'Visitor', and standardized dropdown and filter labels on 'FNF' (and 'FNFs') rather than 'Friends & Family'",
+      "People Hub Revamp - Comprehensive Fuzzy Search: Search now matches across member full names, assigned church, branch ID, phone and parent phone numbers, physical address, household names, assigned shepherd names, and calculated ages",
+      "People Hub Revamp - Expanded Multi-Criteria Sorting: Added Name A-Z, Name Z-A, Attendance High-Low, Attendance Low-High, Recently Added (newest joins first), and Age (Youngest-Oldest and Oldest-Youngest)",
+      "Strict Church Scoping for Shepherds: In both People Hub and Attendance Taker, shepherd filter dropdowns now strictly list only shepherds assigned to that specific church, rather than showing shepherds from other churches",
+      "Modal Shepherd Scoping: In member edit and registration modals, assigned shepherd options now strictly filter to the selected child's church",
+    ],
+  },
+  {
+    version: "1.7.19",
+    date: "2026-10-05",
+    title: "Intelligent First Timers & FNFs Auto-Regrouping",
+    badge: "Previous Release",
+    changes: [
+      "Intelligent Switch & Auto-Regrouping: When opting for separate First Timers and FNFs in Settings, children are automatically re-analyzed and reassigned based on empirical attendance count and historical records",
+      "Attendance History Classification: Children with 1 or fewer attendance sessions are dynamically assigned as First Timers (Visitors), while recurring children with 2 or more sessions are assigned to Friends & Family (FNFs)",
+      "Historical Fallback & Preservation: Added previousType to member records to ensure original classifications are preserved across merges and transitions without data loss",
+      "On-Demand Re-Analyze Action: Added 'Re-Analyze & Regroup' action button and informative policy banner in Settings allowing leaders to re-classify children as attendance records accumulate",
+    ],
+  },
+  {
+    version: "1.7.18",
+    date: "2026-10-05",
+    title: "Component & Attendance Config, Sunday Pending Safeguard & Child Record Sunday Count",
+    badge: "Previous Release",
+    changes: [
+      "Component & Attendance Configuration: Added dedicated settings section and tab to configure cross-app component behaviors, toggle combining First Timers & FNFs vs separating them with immediate app-wide reflection",
+      "Annual Attendance Days Policy: Added configurable attendance count modes ('Sundays Only', 'Sundays & Wednesdays', and 'All Logged Sessions') with granular day-of-week inclusion toggles",
+      "Child Record Sunday Attendance Count: Enabled explicit Sunday attendance count display (e.g. 'Sun: X / Y') on child badges and directory profile records",
+      "New Child Attendance Safeguards: Fixed joined date initialization for new members, providing initial registration grace with clean 'New Member (0 sessions)' badge without false absence streaks or deactivation alerts",
+      "Sunday Pending State on Dashboard: Ensured that on Sunday, if a church has not yet taken attendance today, their count displays as 0 with a 'Pending' badge rather than reusing the prior week's count, preventing false drops in accounting and insights",
+    ],
+  },
   {
     version: "1.7.17",
     date: "2026-09-30",
     title: "Unified FNFs (Friends & Family) & Database Migration",
-    badge: "Current Release",
+    badge: "Previous Release",
     changes: [
       "Unified FNF Classification: Merged FNFs and First Timers (Visitors) into a single cohesive category titled 'FNFs' (Friends & Family) across the database and all application components",
       "Automatic Database Migration: Built seamless in-memory and Firestore persistence migration automatically updating legacy Visitor records to MemberType.FNF while preserving historical records",

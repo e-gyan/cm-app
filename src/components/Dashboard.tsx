@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { AppData, MemberType, MemberStatus, type Church, Member, isFnfMember } from "../types";
+import { AppData, MemberType, MemberStatus, type Church, Member, isFnfMember, isVisitorMember, isFnfCombined, AppSettings } from "../types";
 import { calculateChurchDivisions, matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
 import { updateTargets } from "../services/storageService";
 import { isSundayAttendance } from "../lib/dateUtils";
@@ -238,14 +238,15 @@ const AdminDashboard: React.FC<{
 
   const churchStats = useMemo(() => {
     return churches.map((church) => {
-      // New "Membership Goal" Logic: Active Members + FNF
+      // New "Membership Goal" Logic: Active Members + FNF + First Timers (when separated)
       const membersInChurch = data.members.filter(
         (m) =>
           m.assignedChurch === church &&
           matchesScope(m, activeBranchId, data.settings?.organization) &&
           [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) &&
           (m.type === MemberType.MEMBER ||
-            m.type === MemberType.FNF ||
+            isFnfMember(m, data.settings) ||
+            isVisitorMember(m, data.settings) ||
             ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
             m.type === MemberType.TEACHER),
       );
@@ -253,10 +254,16 @@ const AdminDashboard: React.FC<{
       const population = membersInChurch.length;
 
       let memberPop = 0;
+      let fnfPop = 0;
+      let firstTimersPop = 0;
       let teacherPop = 0;
       membersInChurch.forEach(m => {
         if (m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE")) {
           teacherPop++;
+        } else if (isVisitorMember(m, data.settings)) {
+          firstTimersPop++;
+        } else if (isFnfMember(m, data.settings)) {
+          fnfPop++;
         } else {
           memberPop++;
         }
@@ -285,13 +292,37 @@ const AdminDashboard: React.FC<{
         : 0;
       const retention = population ? Math.round((avg / population) * 100) : 0;
 
+      const now = new Date();
+      const isSundayToday = now.getDay() === 0;
+      const currentSunday = new Date(now);
+      currentSunday.setDate(now.getDate() - now.getDay());
+      const currentSundayStr = currentSunday.toISOString().split("T")[0];
+      const todayYear = now.getFullYear();
+      const todayMonth = String(now.getMonth() + 1).padStart(2, "0");
+      const todayDay = String(now.getDate()).padStart(2, "0");
+      const localTodayStr = `${todayYear}-${todayMonth}-${todayDay}`;
+
+      const churchAttendance = sortedAttendance.filter(r => r.churchId === church);
+      const hasTodayRecord = churchAttendance.some(
+        (r) => r.date === currentSundayStr || r.date === localTodayStr
+      );
+      const isPendingToday = isSundayToday && !hasTodayRecord;
+
       let lastAttendance = 0;
       let prevAttendance = 0;
-      let growth = 0;
+      let growth: number | null = 0;
       let lastMemberAttendance = 0;
       let lastTeacherAttendance = 0;
-      if (sortedAttendance.length > 0) {
-        const lastRec = sortedAttendance[sortedAttendance.length - 1];
+
+      if (isPendingToday) {
+        // Today is Sunday, and this church has NOT taken attendance today yet
+        // Show 0 and mark as pending - strictly do NOT use previous Sunday's count!
+        lastAttendance = 0;
+        lastMemberAttendance = 0;
+        lastTeacherAttendance = 0;
+        growth = null; // Pending, exclude from false drop calculation
+      } else if (churchAttendance.length > 0) {
+        const lastRec = churchAttendance[churchAttendance.length - 1];
         lastRec.presentMemberIds.forEach((id) => {
           const m = data.members.find((mem) => mem.id === id);
           if (m) {
@@ -304,8 +335,8 @@ const AdminDashboard: React.FC<{
           }
         });
 
-        if (sortedAttendance.length >= 2) {
-          const prevRec = sortedAttendance[sortedAttendance.length - 2];
+        if (churchAttendance.length >= 2) {
+          const prevRec = churchAttendance[churchAttendance.length - 2];
           prevAttendance = prevRec.presentMemberIds.filter((id) => {
             const m = data.members.find((mem) => mem.id === id);
             return !!m;
@@ -359,6 +390,8 @@ const AdminDashboard: React.FC<{
         church,
         population,
         memberPop,
+        fnfPop,
+        firstTimersPop,
         teacherPop,
         totalKidsCount: churchKids.length,
         assignedKidsCount,
@@ -371,6 +404,7 @@ const AdminDashboard: React.FC<{
         lastTeacherAttendance,
         prevAttendance,
         growth,
+        isPending: isPendingToday,
         target,
         targetAchievement,
         genderData,
@@ -408,6 +442,7 @@ const AdminDashboard: React.FC<{
     let prevTeacherAttendance = 0;
 
     const today = new Date();
+    const isTodaySunday = today.getDay() === 0;
     const currentSunday = new Date(today);
     currentSunday.setDate(today.getDate() - today.getDay());
     const latestDateStr = currentSunday.toISOString().split("T")[0];
@@ -418,23 +453,51 @@ const AdminDashboard: React.FC<{
 
     const scopedAttendance = data.attendance.filter(r => isSundayAttendance(r) && matchesScope(r, activeBranchId, data.settings?.organization, data.members));
     const datesWithRecords = [...new Set(scopedAttendance.map(r => r.date))].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-    const effectiveLatestDate = scopedAttendance.some(r => r.date === latestDateStr) ? latestDateStr : (datesWithRecords[0] || latestDateStr);
-    const effectivePrevDate = scopedAttendance.some(r => r.date === prevDateStr) ? prevDateStr : (datesWithRecords[1] || prevDateStr);
 
-    const hasLatestRecord = scopedAttendance.some(r => r.date === effectiveLatestDate);
+    let hasLatestRecord = false;
+    let effectiveLatestDate = latestDateStr;
+    let effectivePrevDate = prevDateStr;
+
+    if (isTodaySunday) {
+      const hasTodayRecord = scopedAttendance.some(r => r.date === latestDateStr);
+      if (hasTodayRecord) {
+        hasLatestRecord = true;
+        effectiveLatestDate = latestDateStr;
+        effectivePrevDate = scopedAttendance.some(r => r.date === prevDateStr)
+          ? prevDateStr
+          : (datesWithRecords.find(d => d !== latestDateStr) || prevDateStr);
+      } else {
+        // Today is Sunday, but no attendance recorded yet today!
+        // Show 0 and Pending. Strictly do NOT use previous Sunday's count as today's count!
+        hasLatestRecord = false;
+        effectiveLatestDate = latestDateStr;
+        effectivePrevDate = scopedAttendance.some(r => r.date === prevDateStr)
+          ? prevDateStr
+          : (datesWithRecords[0] || prevDateStr);
+      }
+    } else {
+      effectiveLatestDate = scopedAttendance.some(r => r.date === latestDateStr) ? latestDateStr : (datesWithRecords[0] || latestDateStr);
+      effectivePrevDate = scopedAttendance.some(r => r.date === prevDateStr)
+        ? prevDateStr
+        : (datesWithRecords.filter(d => d !== effectiveLatestDate)[0] || prevDateStr);
+      hasLatestRecord = scopedAttendance.some(r => r.date === effectiveLatestDate);
+    }
+
     const hasPrevRecord = scopedAttendance.some(r => r.date === effectivePrevDate);
 
-    const latestRecords = scopedAttendance.filter(r => r.date === effectiveLatestDate);
-    latestRecords.forEach(r => {
-      r.presentMemberIds.forEach(id => {
-        const m = data.members.find(mem => mem.id === id);
-        if (m) {
-          const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
-          if (isTeacher) teacherAttendance++;
-          else memberAttendance++;
-        }
+    if (hasLatestRecord) {
+      const latestRecords = scopedAttendance.filter(r => r.date === effectiveLatestDate);
+      latestRecords.forEach(r => {
+        r.presentMemberIds.forEach(id => {
+          const m = data.members.find(mem => mem.id === id);
+          if (m) {
+            const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
+            if (isTeacher) teacherAttendance++;
+            else memberAttendance++;
+          }
+        });
       });
-    });
+    }
 
     const prevRecords = scopedAttendance.filter(r => r.date === effectivePrevDate);
     prevRecords.forEach(r => {
@@ -512,7 +575,7 @@ const AdminDashboard: React.FC<{
       const fallbackMembers = data.members.filter(
         (m) =>
           matchesScope(m, activeBranchId, data.settings?.organization) &&
-          (m.type === MemberType.MEMBER || isFnfMember(m)) &&
+          (m.type === MemberType.MEMBER || isFnfMember(m, data.settings) || isVisitorMember(m, data.settings)) &&
           ["Active", "Inconsistent", "Not Active"].includes(m.status)
       );
       totalAssignedKids = fallbackMembers.length;
@@ -1005,23 +1068,39 @@ const AdminDashboard: React.FC<{
                     {stat.population} Active Members
                   </p>
                   <p className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">
-                    {stat.memberPop} M • {stat.teacherPop} S
+                    {stat.memberPop} M • {!isFnfCombined(data.settings) ? `${stat.firstTimersPop} FT • ${stat.fnfPop} FNF` : `${stat.fnfPop} FNF`} • {stat.teacherPop} S
                   </p>
                 </div>
               </div>
               <div
-                className={`flex flex-col items-end ${stat.growth >= 0 ? "text-green-600" : "text-rose-600"}`}
+                className={`flex flex-col items-end ${stat.isPending ? "text-amber-600" : (stat.growth !== null && stat.growth >= 0) ? "text-green-600" : "text-rose-600"}`}
               >
                 <div className="text-right">
                   <span className="text-xs text-slate-400 font-bold uppercase block">
                     This Sunday
                   </span>
-                  <span className="text-2xl font-bold">
-                    {stat.lastAttendance}
-                  </span>
-                  <div className="text-[10px] font-medium text-slate-400 uppercase mt-1">
-                    {stat.lastMemberAttendance} M • {stat.lastTeacherAttendance} S
-                  </div>
+                  {stat.isPending ? (
+                    <div>
+                      <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                        <span className="text-2xl font-bold text-slate-400">0</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-700 border border-amber-200 uppercase tracking-wide">
+                          Pending
+                        </span>
+                      </div>
+                      <div className="text-[10px] font-semibold text-amber-600/80 mt-1">
+                        Awaiting check-in
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <span className="text-2xl font-bold">
+                        {stat.lastAttendance}
+                      </span>
+                      <div className="text-[10px] font-medium text-slate-400 uppercase mt-1">
+                        {stat.lastMemberAttendance} M • {stat.lastTeacherAttendance} S
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1134,7 +1213,7 @@ const AdminDashboard: React.FC<{
   );
 };
 
-const UpcomingBirthdays: React.FC<{ members: Member[] }> = ({ members }) => {
+const UpcomingBirthdays: React.FC<{ members: Member[]; settings?: AppSettings }> = ({ members, settings }) => {
   const birthdaysThisWeek = useMemo(() => {
     return members.filter(m => isBirthdayThisWeek(m.birthDate)).sort((a, b) => {
       if (!a.birthDate || !b.birthDate) return 0;
@@ -1168,7 +1247,7 @@ const UpcomingBirthdays: React.FC<{ members: Member[] }> = ({ members }) => {
                 <Calendar size={12} />
                 {member.birthDate}
                 <span className="text-[10px] bg-white px-2 py-0.5 rounded-full border border-pink-100 text-pink-500 uppercase tracking-wider font-bold">
-                  {isFnfMember(member) ? "FNF" : member.type}
+                  {isVisitorMember(member, settings) ? "First Timer" : isFnfMember(member, settings) ? "FNF" : member.type}
                 </span>
               </p>
             </div>
@@ -1238,17 +1317,24 @@ const ChurchDashboard: React.FC<{
           matchesScope(m, activeBranchId, data.settings?.organization) &&
           [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status) &&
           (m.type === MemberType.MEMBER ||
-            m.type === MemberType.FNF ||
+            isFnfMember(m, data.settings) ||
+            isVisitorMember(m, data.settings) ||
             ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
             m.type === MemberType.TEACHER),
       );
       const population = membersInChurch.length;
 
       let memberPop = 0;
+      let fnfPop = 0;
+      let firstTimersPop = 0;
       let teacherPop = 0;
       membersInChurch.forEach(m => {
         if (m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE")) {
           teacherPop++;
+        } else if (isVisitorMember(m, data.settings)) {
+          firstTimersPop++;
+        } else if (isFnfMember(m, data.settings)) {
+          fnfPop++;
         } else {
           memberPop++;
         }
@@ -1294,11 +1380,32 @@ const ChurchDashboard: React.FC<{
           last5.reduce((acc, curr) => acc + curr.count, 0) / last5.length,
         )
         : 0;
-      const lastAtt = last5.length > 0 ? last5[last5.length - 1].count : 0;
+      const now = new Date();
+      const isSundayToday = now.getDay() === 0;
+      const currentSunday = new Date(now);
+      currentSunday.setDate(now.getDate() - now.getDay());
+      const currentSundayStr = currentSunday.toISOString().split("T")[0];
+      const todayYear = now.getFullYear();
+      const todayMonth = String(now.getMonth() + 1).padStart(2, "0");
+      const todayDay = String(now.getDate()).padStart(2, "0");
+      const localTodayStr = `${todayYear}-${todayMonth}-${todayDay}`;
 
+      const churchAttendance = attendance;
+      const hasTodayAttendance = churchAttendance.some(
+        (r) => r.date === currentSundayStr || r.date === localTodayStr
+      );
+      const isPendingToday = isSundayToday && !hasTodayAttendance;
+
+      let lastAtt = 0;
       let lastMemberAttendance = 0;
       let lastTeacherAttendance = 0;
-      if (attendance.length > 0) {
+
+      if (isPendingToday) {
+        lastAtt = 0;
+        lastMemberAttendance = 0;
+        lastTeacherAttendance = 0;
+      } else if (attendance.length > 0) {
+        lastAtt = last5.length > 0 ? last5[last5.length - 1].count : 0;
         const lastRec = attendance[attendance.length - 1];
         lastRec.presentMemberIds.forEach(id => {
           const m = data.members.find(mem => mem.id === id);
@@ -1312,7 +1419,7 @@ const ChurchDashboard: React.FC<{
         });
       }
 
-      const trend = avg > 0 ? Math.round(((lastAtt - avg) / avg) * 100) : 0;
+      const trend = (!isPendingToday && avg > 0) ? Math.round(((lastAtt - avg) / avg) * 100) : 0;
       const target = data.targets?.[activeChurch] || 0;
       const retention = population > 0 ? Math.round((avg / population) * 100) : 0;
 
@@ -1331,6 +1438,8 @@ const ChurchDashboard: React.FC<{
       return {
         totalMembers: population,
         memberPop,
+        fnfPop,
+        firstTimersPop,
         teacherPop,
         churchKidsCount: churchKids.length,
         assignedKidsCount,
@@ -1343,6 +1452,7 @@ const ChurchDashboard: React.FC<{
         lastTeacherAttendance,
         trendData: last5,
         trend,
+        isPending: isPendingToday,
         target,
         retention,
       };
@@ -1381,7 +1491,7 @@ const ChurchDashboard: React.FC<{
             (m) =>
               m.assignedChurch === activeChurch &&
               matchesScope(m, activeBranchId, data.settings?.organization) &&
-              (m.type === MemberType.MEMBER || isFnfMember(m)) &&
+              (m.type === MemberType.MEMBER || isFnfMember(m, data.settings) || isVisitorMember(m, data.settings)) &&
               ["Active", "Inconsistent", "Not Active"].includes(m.status)
           );
         }
@@ -1490,6 +1600,7 @@ const ChurchDashboard: React.FC<{
         inconsistent: 0,
         notActive: 0,
         fnf: 0,
+        firstTimers: 0,
       };
 
       data.members.forEach(m => {
@@ -1498,7 +1609,9 @@ const ChurchDashboard: React.FC<{
             if (m.status === MemberStatus.ACTIVE) statuses.active++;
             else if (m.status === MemberStatus.INCONSISTENT) statuses.inconsistent++;
             else if (m.status === MemberStatus.NOT_ACTIVE) statuses.notActive++;
-          } else if (isFnfMember(m)) {
+          } else if (isVisitorMember(m, data.settings)) {
+            statuses.firstTimers++;
+          } else if (isFnfMember(m, data.settings)) {
             statuses.fnf++;
           }
 
@@ -1609,7 +1722,7 @@ const ChurchDashboard: React.FC<{
           hasPrevRecord,
         }
       };
-    }, [data.members, data.attendance, activeChurch]);
+    }, [data.members, data.attendance, activeChurch, data.settings]);
 
     const dynamicTips = useMemo(() => {
       const tips: { id: number; text: string; action?: string; icon?: any }[] = [];
@@ -1617,7 +1730,15 @@ const ChurchDashboard: React.FC<{
       // 1. Attendance Trend
       const curAtt = churchAttendanceBreakdown.members;
       const prevAtt = churchAttendanceBreakdown.prevMembers;
-      if (churchAttendanceBreakdown.hasLatestRecord && churchAttendanceBreakdown.hasPrevRecord) {
+      const isSundayToday = new Date().getDay() === 0;
+
+      if (isSundayToday && !churchAttendanceBreakdown.hasLatestRecord) {
+        tips.push({
+          id: tips.length + 1,
+          text: "Today's Sunday attendance is pending. Awaiting service check-in.",
+          action: "Open Attendance Taker to record today's attendance."
+        });
+      } else if (churchAttendanceBreakdown.hasLatestRecord && churchAttendanceBreakdown.hasPrevRecord) {
         if (curAtt > prevAtt) {
           tips.push({
             id: tips.length + 1,
@@ -1645,8 +1766,23 @@ const ChurchDashboard: React.FC<{
         });
       }
 
-      // 2. Un-converted FNFs
-      if (statusBreakdown.fnf > 0) {
+      // 2. Un-converted FNFs / First Timers
+      if (!isFnfCombined(data.settings)) {
+        if (statusBreakdown.firstTimers > 0) {
+          tips.push({
+            id: tips.length + 1,
+            text: `You have ${statusBreakdown.firstTimers} First Timer(s) recorded in directory.`,
+            action: "Engage your First Timers with welcoming outreach to transition them into regular church family.",
+          });
+        }
+        if (statusBreakdown.fnf > 0) {
+          tips.push({
+            id: tips.length + 1,
+            text: `You have ${statusBreakdown.fnf} recurring FNF(s) recorded in directory.`,
+            action: "Reach out to your regular FNFs and encourage continuous participation.",
+          });
+        }
+      } else if (statusBreakdown.fnf > 0) {
         tips.push({
           id: tips.length + 1,
           text: `You have ${statusBreakdown.fnf} FNF(s) recorded in directory.`,
@@ -1763,10 +1899,23 @@ const ChurchDashboard: React.FC<{
                     <span className="text-slate-600 font-medium">Not Active</span>
                     <span className="font-bold text-amber-600">{statusBreakdown.notActive}</span>
                   </div>
-                  <div className="flex justify-between items-center text-sm bg-slate-50 p-1.5 rounded-lg col-span-2 mt-1 border border-teal-100">
-                    <span className="text-teal-700 font-medium">FNFs (Friends & Family)</span>
-                    <span className="font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded">{statusBreakdown.fnf}</span>
-                  </div>
+                  {!isFnfCombined(data.settings) ? (
+                    <>
+                      <div className="flex justify-between items-center text-sm bg-cyan-50/70 p-1.5 rounded-lg border border-cyan-200/60">
+                        <span className="text-cyan-800 font-medium">First Timers</span>
+                        <span className="font-bold text-cyan-900 bg-cyan-100 px-2 py-0.5 rounded">{statusBreakdown.firstTimers}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm bg-teal-50/70 p-1.5 rounded-lg border border-teal-200/60">
+                        <span className="text-teal-800 font-medium">FNFs (Recurring)</span>
+                        <span className="font-bold text-teal-900 bg-teal-100 px-2 py-0.5 rounded">{statusBreakdown.fnf}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex justify-between items-center text-sm bg-slate-50 p-1.5 rounded-lg col-span-2 mt-1 border border-teal-100">
+                      <span className="text-teal-700 font-medium">FNFs</span>
+                      <span className="font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded">{statusBreakdown.fnf}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1829,8 +1978,18 @@ const ChurchDashboard: React.FC<{
             icon={<Users size={24} />}
             colorClass="bg-indigo-600"
             subtitle={
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex flex-wrap items-center gap-1.5 mt-1 text-xs">
                 <span>{stats.memberPop} Members</span>
+                <span>•</span>
+                {!isFnfCombined(data.settings) ? (
+                  <>
+                    <span>{stats.firstTimersPop} First Timers</span>
+                    <span>•</span>
+                    <span>{stats.fnfPop} FNFs</span>
+                  </>
+                ) : (
+                  <span>{stats.fnfPop} FNFs</span>
+                )}
                 <span>•</span>
                 <span>{stats.teacherPop} Shepherds</span>
               </div>
@@ -1844,22 +2003,34 @@ const ChurchDashboard: React.FC<{
             subtitle="Avg / Active"
           />
           <StatCard
-            title="Last Attendance"
-            value={stats.lastAttendance}
+            title={stats.isPending ? "Today's Attendance" : "Last Attendance"}
+            value={stats.isPending ? 0 : stats.lastAttendance}
             icon={<Calendar size={24} />}
-            colorClass="bg-emerald-500"
-            trend={stats.trend}
+            colorClass={stats.isPending ? "bg-amber-500" : "bg-emerald-500"}
+            trend={stats.isPending ? undefined : stats.trend}
             subtitle={
-              <div className="flex flex-col gap-1 mt-1">
-                <span>{stats.lastMemberAttendance} Members • {stats.lastTeacherAttendance} Shepherds</span>
-                <span>vs Avg ({stats.avgAttendance})</span>
-              </div>
+              stats.isPending ? (
+                <div className="flex flex-col gap-1 mt-1">
+                  <span className="inline-flex items-center gap-1.5 font-bold text-amber-600">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    Pending Attendance
+                  </span>
+                  <span>Awaiting today's service check-in</span>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1 mt-1">
+                  <span>{stats.lastMemberAttendance} Members • {stats.lastTeacherAttendance} Shepherds</span>
+                  <span>vs Avg ({stats.avgAttendance})</span>
+                </div>
+              )
             }
           />
           <StatCard
             title="WoW Change"
             value={
-              stats.trendData.length > 0
+              stats.isPending
+                ? "Pending"
+                : stats.trendData.length > 0
                 ? (stats.trendData[stats.trendData.length - 1].growth > 0
                   ? "+"
                   : "") +
@@ -1868,8 +2039,8 @@ const ChurchDashboard: React.FC<{
                 : "0%"
             }
             icon={<TrendingUp size={24} />}
-            colorClass="bg-sky-500"
-            subtitle="vs Previous Sunday"
+            colorClass={stats.isPending ? "bg-amber-500" : "bg-sky-500"}
+            subtitle={stats.isPending ? "Awaiting today's attendance" : "vs Previous Sunday"}
           />
           <StatCard
             title="Membership Goal"
@@ -1882,7 +2053,10 @@ const ChurchDashboard: React.FC<{
           />
         </div>
 
-        <UpcomingBirthdays members={data.members.filter(m => m.assignedChurch === activeChurch && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status))} />
+        <UpcomingBirthdays
+          members={data.members.filter(m => m.assignedChurch === activeChurch && [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status))}
+          settings={data.settings}
+        />
 
         {/* Outreach Section */}
         {outreachStats && (

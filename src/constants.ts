@@ -121,6 +121,7 @@ export const APP_FEATURES_REGISTRY: FeatureDef[] = [
     iconName: "Settings",
     subfeatures: [
       { id: "GENERAL", name: "General", description: "Configure system name, defaults, and feature flags." },
+      { id: "COMPONENTS", name: "Components & Attendance Config", description: "Configure FNF combining and annual attendance days." },
       { id: "ALLOCATIONS", name: "Shepherd Allocations", description: "Configure and organize children allocations to shepherds per church." },
       { id: "CHURCHES", name: "Churches", description: "Add or remove ministry categories (UJ, LJ, K, I, N)." },
       { id: "ORGANIZATION", name: "Organization Structure", description: "Build and modify Directorates, Zones, and Branches." },
@@ -134,6 +135,10 @@ export const APP_FEATURES_REGISTRY: FeatureDef[] = [
 
 export const DEFAULT_SETTINGS = {
   churches: ["UJ", "LJ", "K", "I"],
+  combineFnfAndFirstTimers: true,
+  attendanceCountMode: "SUNDAY_ONLY" as const,
+  attendanceDays: ["SUNDAY"],
+  showSundayAttendanceCountOnChildRecord: true,
   organization: {
     directorate: "Central Children's Ministry Directorate",
     zones: [

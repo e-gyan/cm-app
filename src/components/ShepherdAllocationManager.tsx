@@ -41,6 +41,7 @@ import {
   RefreshCw,
   ShieldCheck,
   MapPin,
+  Plus,
 } from "lucide-react";
 import { MemberAvatar } from "./MemberAvatar";
 
@@ -1347,8 +1348,23 @@ export const ShepherdAllocationManager: React.FC<ShepherdAllocationManagerProps>
                     {/* Children List */}
                     <div className="p-3 flex-1 flex flex-col justify-between space-y-2 max-h-80 overflow-y-auto">
                       {assignedChildren.length === 0 ? (
-                        <div className="py-8 text-center text-xs text-slate-400 font-medium">
-                          No children assigned
+                        <div className="py-6 px-3 text-center bg-slate-50/60 rounded-2xl border border-dashed border-slate-200/80 my-auto flex flex-col items-center justify-center gap-2">
+                          <Users size={22} className="text-slate-300" />
+                          <p className="text-xs text-slate-500 font-medium">No children assigned to this shepherd</p>
+                          {unassignedChildren.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMovingChild(unassignedChildren[0]);
+                                setMoveWithHousehold(true);
+                              }}
+                              className="px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors flex items-center gap-1 shadow-2xs active:scale-95"
+                              title="Assign an unassigned child to this shepherd"
+                            >
+                              <Plus size={12} />
+                              <span>Assign from unassigned ({unassignedChildren.length})</span>
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <div className="space-y-1.5">

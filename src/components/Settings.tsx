@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { AppData, Member, AppSettings } from "../types";
-import { updateSettings, renameBranchCascade } from "../services/storageService";
+import { updateSettings, renameBranchCascade, regroupFnfAndFirstTimers } from "../services/storageService";
 import { hasRoleSubfeature } from "../lib/permissions";
 import { doc, getDoc } from "firebase/firestore";
 import { db, loginWithGoogle } from "../services/firebase";
@@ -46,6 +46,11 @@ import {
   PanelLeftOpen,
   Menu,
   ChevronLeft,
+  Calendar,
+  Sliders,
+  UserCheck,
+  Sparkles,
+  Info,
 } from "lucide-react";
 import { themeColorPalettes, applyTheme } from "../lib/theme";
 import { APP_FEATURES_REGISTRY, DEFAULT_SETTINGS } from "../constants";
@@ -68,11 +73,11 @@ const Settings: React.FC<SettingsProps> = ({
   const isAdmin =
     currentUser.role === "ADMIN" || currentUser.role === "SUPER_ADMIN";
   const [activeTab, setActiveTab] = useState<
-    "GENERAL" | "ALLOCATIONS" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS" | "MAINTENANCE"
+    "GENERAL" | "COMPONENTS" | "ALLOCATIONS" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS" | "MAINTENANCE"
   >(() => {
     return (
       (sessionStorage.getItem("settings_activeTab") as
-        "GENERAL" | "ALLOCATIONS" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS" | "MAINTENANCE") ||
+        "GENERAL" | "COMPONENTS" | "ALLOCATIONS" | "CHURCHES" | "ORGANIZATION" | "CLOUD" | "THEME" | "PERMISSIONS" | "MAINTENANCE") ||
       "GENERAL"
     );
   });
@@ -111,6 +116,7 @@ const Settings: React.FC<SettingsProps> = ({
   } | null>(null);
   const [selectedConfigChurch, setSelectedConfigChurch] = useState(activeChurch);
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+  const [isRegrouping, setIsRegrouping] = useState(false);
 
   const [duplicateRecords, setDuplicateRecords] = useState<{
     date: string;
@@ -467,17 +473,388 @@ const Settings: React.FC<SettingsProps> = ({
     await savePermissionsToDb({ [role]: defaultPerms }, `Reset ${role} permissions to defaults`);
   };
 
+  const handleToggleCombineFnf = async (shouldCombine: boolean) => {
+    setIsRegrouping(true);
+    try {
+      const res = await regroupFnfAndFirstTimers(shouldCombine, {
+        ...localSettings,
+        combineFnfAndFirstTimers: shouldCombine,
+      });
+      setLocalSettings((prev) => ({
+        ...prev,
+        combineFnfAndFirstTimers: shouldCombine,
+      }));
+      if (shouldCombine) {
+        setStatusMsg({
+          type: "success",
+          text: `Combined successfully! Merged ${res.fnfCount} children into FNFs.`,
+        });
+      } else {
+        setStatusMsg({
+          type: "success",
+          text: `Intelligently regrouped! ${res.firstTimersCount} assigned to First Timers (1 or fewer sessions) and ${res.fnfCount} assigned to FNFs (2+ sessions).`,
+        });
+      }
+      setTimeout(() => setStatusMsg(null), 5000);
+      onUpdate();
+    } catch (e: any) {
+      console.error("Regroup FNF error:", e);
+      setStatusMsg({
+        type: "error",
+        text: "Failed to regroup members: " + (e.message || String(e)),
+      });
+    } finally {
+      setIsRegrouping(false);
+    }
+  };
+
+  const applyComponentSetting = async (updates: Partial<AppSettings>) => {
+    if (updates.combineFnfAndFirstTimers !== undefined) {
+      await handleToggleCombineFnf(updates.combineFnfAndFirstTimers);
+      return;
+    }
+    const updated: AppSettings = {
+      ...localSettings,
+      ...updates,
+    };
+    setLocalSettings(updated);
+    try {
+      await updateSettings(updated);
+      setStatusMsg({
+        type: "success",
+        text: "Configuration saved! Changes are now active across the application.",
+      });
+      setTimeout(() => setStatusMsg(null), 3500);
+      onUpdate();
+    } catch (e: any) {
+      console.error("Save component settings error:", e);
+      setStatusMsg({
+        type: "error",
+        text: "Failed to update configuration: " + (e.message || String(e)),
+      });
+    }
+  };
+
+  const renderComponentConfigSection = () => {
+    const isCombined = localSettings.combineFnfAndFirstTimers !== false;
+    const currentMode = localSettings.attendanceCountMode || "SUNDAY_ONLY";
+    const selectedDays = localSettings.attendanceDays || ["SUNDAY"];
+    const showSundayCount = localSettings.showSundayAttendanceCountOnChildRecord !== false;
+
+    const availableWeekDays = [
+      { id: "SUNDAY", label: "Sunday", desc: "Main Sunday service" },
+      { id: "WEDNESDAY", label: "Wednesday", desc: "Midweek service / Cell meeting" },
+      { id: "FRIDAY", label: "Friday", desc: "Friday fellowship / Prayer" },
+      { id: "SATURDAY", label: "Saturday", desc: "Saturday outreach / Rehearsals" },
+    ];
+
+    const toggleDay = (dayId: string) => {
+      let nextDays: string[];
+      if (selectedDays.includes(dayId)) {
+        if (selectedDays.length <= 1) {
+          return;
+        }
+        nextDays = selectedDays.filter((d) => d !== dayId);
+      } else {
+        nextDays = [...selectedDays, dayId];
+      }
+      applyComponentSetting({ attendanceDays: nextDays });
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="border-b border-slate-100 pb-4">
+          <h3 className="font-extrabold text-lg text-slate-800 flex items-center gap-2">
+            <Layers className="text-indigo-600" size={22} />
+            Component & Attendance Configuration
+          </h3>
+          <p className="text-xs text-slate-500 font-medium mt-1">
+            Configure how components classify First Timers vs FNFs, which days count in annual attendance, and child record displays.
+          </p>
+        </div>
+
+        {/* 1. First Timers and FNFs Policy */}
+        <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200/70 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-black uppercase tracking-wider text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-200/50 inline-block mb-1.5">
+                Component Policy #1
+              </span>
+              <h4 className="font-bold text-base text-slate-800">
+                First Timers & FNFs Classification
+              </h4>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Choose whether First Timers and FNFs are combined together as FNFs or maintained as separate member categories.
+              </p>
+            </div>
+            <div className="shrink-0 flex items-center gap-2">
+              <span className={`text-xs font-bold ${isCombined ? "text-indigo-600" : "text-slate-400"}`}>
+                {isCombined ? "Combined (FNF)" : "Separated"}
+              </span>
+              <button
+                type="button"
+                disabled={isRegrouping}
+                onClick={() => handleToggleCombineFnf(!isCombined)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  isCombined ? "bg-indigo-600" : "bg-slate-300"
+                } ${isRegrouping ? "opacity-60 cursor-not-allowed" : ""}`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    isCombined ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+            <div
+              onClick={() => !isRegrouping && handleToggleCombineFnf(true)}
+              className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                isCombined
+                  ? "bg-white border-indigo-500 shadow-sm ring-1 ring-indigo-500"
+                  : "bg-white/60 border-slate-200 hover:border-slate-300"
+              } ${isRegrouping ? "pointer-events-none opacity-60" : ""}`}
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                    <Users size={16} className={isCombined ? "text-indigo-600" : "text-slate-400"} />
+                    Combine into "FNF"
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    First Timers are merged into the unified <strong>FNF</strong> category across Attendance, People Hub, Outreach, Reports, and Dashboard.
+                  </p>
+                </div>
+                {isCombined && <CheckCircle size={18} className="text-indigo-600 shrink-0 mt-0.5" />}
+              </div>
+            </div>
+
+            <div
+              onClick={() => !isRegrouping && handleToggleCombineFnf(false)}
+              className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                !isCombined
+                  ? "bg-white border-indigo-500 shadow-sm ring-1 ring-indigo-500"
+                  : "bg-white/60 border-slate-200 hover:border-slate-300"
+              } ${isRegrouping ? "pointer-events-none opacity-60" : ""}`}
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                    <UserCheck size={16} className={!isCombined ? "text-indigo-600" : "text-slate-400"} />
+                    Separate First Timers and FNFs
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Intelligently categorizes members: children with <strong>1 or fewer sessions</strong> are assigned as <strong>First Timers</strong>, while those with <strong>2+ sessions</strong> become <strong>FNFs</strong>.
+                  </p>
+                </div>
+                {!isCombined && <CheckCircle size={18} className="text-indigo-600 shrink-0 mt-0.5" />}
+              </div>
+            </div>
+          </div>
+
+          {/* Intelligent Regrouping Info & Re-Analyze Action */}
+          {!isCombined && (
+            <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900">
+              <div className="flex items-start gap-2">
+                <Sparkles size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-amber-950">Intelligent Attendance Auto-Regrouping Active</div>
+                  <div className="text-amber-800 mt-0.5">
+                    Separation utilizes empirical attendance history: children with 1 or fewer sessions are assigned to First Timers, and recurring children (2+ sessions) are assigned to FNFs.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isRegrouping}
+                onClick={() => handleToggleCombineFnf(false)}
+                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-colors shadow-sm text-xs self-start sm:self-auto disabled:opacity-50 cursor-pointer"
+              >
+                <RefreshCw size={13} className={isRegrouping ? "animate-spin" : ""} />
+                {isRegrouping ? "Regrouping..." : "Re-Analyze & Regroup"}
+              </button>
+            </div>
+          )}
+
+          <div className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5 pt-1">
+            <Info size={13} className="text-indigo-500 shrink-0" />
+            Changes take effect immediately across all application components upon selection.
+          </div>
+        </div>
+
+        {/* 2. Days to include as part of attendance for the year */}
+        <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200/70 space-y-4">
+          <div>
+            <span className="text-xs font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200/50 inline-block mb-1.5">
+              Attendance Policy #2
+            </span>
+            <h4 className="font-bold text-base text-slate-800 flex items-center gap-2">
+              <CalendarCheck size={18} className="text-emerald-600" />
+              Annual Attendance Inclusion Days
+            </h4>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Specify which service days are counted towards annual attendance calculations, attendance rates, and absence streaks.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {[
+              {
+                id: "SUNDAY_ONLY",
+                title: "Sundays Only (Standard)",
+                desc: "Only Sunday service attendance counts toward the annual record and child rates.",
+              },
+              {
+                id: "SUNDAY_AND_WEDNESDAY",
+                title: "Sundays & Wednesdays",
+                desc: "Includes Sunday services and Wednesday midweek cell meetings in annual attendance.",
+              },
+              {
+                id: "ALL_DAYS",
+                title: "All Logged Sessions",
+                desc: "Every logged attendance session is included in annual calculations.",
+              },
+            ].map((opt) => {
+              const isSel = currentMode === opt.id;
+              return (
+                <div
+                  key={opt.id}
+                  onClick={() =>
+                    applyComponentSetting({
+                      attendanceCountMode: opt.id as any,
+                      attendanceDays: opt.id === "SUNDAY_ONLY" ? ["SUNDAY"] : opt.id === "SUNDAY_AND_WEDNESDAY" ? ["SUNDAY", "WEDNESDAY"] : ["SUNDAY", "WEDNESDAY", "FRIDAY", "SATURDAY"],
+                    })
+                  }
+                  className={`p-4 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
+                    isSel
+                      ? "bg-white border-emerald-500 shadow-sm ring-1 ring-emerald-500"
+                      : "bg-white/60 border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-sm text-slate-800">{opt.title}</span>
+                      {isSel && <CheckCircle size={16} className="text-emerald-600" />}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">{opt.desc}</p>
+                  </div>
+                  <div className="mt-3">
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                        isSel ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {isSel ? "Active Policy" : "Click to Select"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Granular Days Checkboxes */}
+          <div className="pt-2 border-t border-slate-200/60 mt-3">
+            <span className="text-xs font-bold text-slate-700 block mb-2">
+              Specific Included Days of the Week:
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {availableWeekDays.map((d) => {
+                const checked = selectedDays.includes(d.id);
+                return (
+                  <label
+                    key={d.id}
+                    onClick={() => toggleDay(d.id)}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer select-none transition-all ${
+                      checked
+                        ? "bg-white border-emerald-400 text-emerald-800 shadow-sm"
+                        : "bg-white/50 border-slate-200 text-slate-600 hover:bg-white"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {}}
+                      className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <div className="text-xs font-bold leading-tight">
+                      {d.label}
+                      <span className="text-[10px] font-normal text-slate-400 block">{d.desc}</span>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* 3. Child Record and Sunday Attendance Count */}
+        <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200/70 space-y-4">
+          <div>
+            <span className="text-xs font-black uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-200/50 inline-block mb-1.5">
+              Child Record Display #3
+            </span>
+            <h4 className="font-bold text-base text-slate-800 flex items-center gap-2">
+              <Calendar size={18} className="text-blue-600" />
+              Child Attendance Record & Sunday Breakdown
+            </h4>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Configure what is displayed on a child's directory badge and profile.
+            </p>
+          </div>
+
+          <label className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 cursor-pointer hover:border-slate-300 transition-all">
+            <div className="space-y-0.5 pr-4">
+              <span className="font-bold text-sm text-slate-800 block">
+                Show Sunday Attendance Count on Child Record
+              </span>
+              <p className="text-xs text-slate-500 font-medium">
+                Displays the child's explicit Sunday attendance count (e.g. <code>Sun: 12/15</code>) alongside their overall attendance percentage on roster badges and profile modals.
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={showSundayCount}
+              onChange={(e) =>
+                applyComponentSetting({
+                  showSundayAttendanceCountOnChildRecord: e.target.checked,
+                })
+              }
+              className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer shrink-0"
+            />
+          </label>
+
+          {/* New Child Attendance Grace Period Info */}
+          <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200/70 text-blue-900 flex items-start gap-3">
+            <Sparkles className="text-blue-600 shrink-0 mt-0.5" size={18} />
+            <div className="space-y-1">
+              <span className="font-bold text-xs uppercase tracking-wider text-blue-800 block">
+                New Child Attendance Protection (Active)
+              </span>
+              <p className="text-xs leading-relaxed text-blue-800/90 font-medium">
+                Newly registered children now receive initial registration grace: their attendance safely initializes with their joined date and displays as <strong>New Member (0 sessions)</strong> instead of showing 0% with premature absence alerts or risk of deactivation.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const isSuperAdmin = currentUser.role === "SUPER_ADMIN" || currentUser.name?.toLowerCase().trim() === "emmanuel gyan";
 
   const canAccessSettingsTab = (tabId: string) => {
     if (isSuperAdmin || currentUser.role === "ADMIN") return true;
     if (tabId === "MAINTENANCE") return false;
+    if (tabId === "COMPONENTS") return canAccessSettingsTab("GENERAL");
     return hasRoleSubfeature(currentUser.role || "", "Settings", tabId);
   };
 
   const visibleSettingsTabs = useMemo(() => {
-    const tabs: { id: "GENERAL" | "ALLOCATIONS" | "CHURCHES" | "ORGANIZATION" | "THEME" | "PERMISSIONS" | "CLOUD" | "MAINTENANCE"; label: string; icon: any }[] = [
+    const tabs: { id: "GENERAL" | "COMPONENTS" | "ALLOCATIONS" | "CHURCHES" | "ORGANIZATION" | "THEME" | "PERMISSIONS" | "CLOUD" | "MAINTENANCE"; label: string; icon: any }[] = [
       { id: "GENERAL", label: "General", icon: SettingsIcon },
+      { id: "COMPONENTS", label: "Components & Attendance", icon: Layers },
       { id: "ALLOCATIONS", label: "Shepherd Allocations", icon: Users },
       { id: "CHURCHES", label: "Church Branches", icon: Database },
       { id: "ORGANIZATION", label: "Organization Structure", icon: List },
@@ -763,6 +1140,18 @@ const Settings: React.FC<SettingsProps> = ({
                   />
                 </label>
               </div>
+
+              {/* Component & Attendance Config inside General tab */}
+              <div className="pt-6 border-t border-slate-100">
+                {renderComponentConfigSection()}
+              </div>
+            </div>
+          )}
+
+          {/* COMPONENTS & ATTENDANCE DEDICATED TAB */}
+          {activeTab === "COMPONENTS" && (
+            <div>
+              {renderComponentConfigSection()}
             </div>
           )}
 

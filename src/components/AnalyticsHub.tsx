@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { AppData, type Church, Member, MemberType, MemberStatus, isFnfMember } from "../types";
+import { AppData, type Church, Member, MemberType, MemberStatus, isFnfMember, isVisitorMember, isFnfCombined } from "../types";
 import { calculateChurchDivisions, matchesScope, getScopeDisplayLabel } from "../lib/teacherDivision";
 import { isSundayAttendance } from "../lib/dateUtils";
 import {
@@ -548,7 +548,8 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
             m.type === MemberType.TEACHER;
           if (m.status === MemberStatus.INCONSISTENT) entry.Inconsistent++;
           else if (m.type === MemberType.MEMBER || isTeacher) entry.Member++;
-          else if (isFnfMember(m)) entry.FNF++;
+          else if (isVisitorMember(m, data.settings)) entry.Visitor++;
+          else if (isFnfMember(m, data.settings)) entry.FNF++;
 
           if ([MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)) {
             if (m.gender === "MALE") entry.Male++;
@@ -560,7 +561,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
     });
 
     return Array.from(groupedByDate.values());
-  }, [data.attendance, effectiveChurch, timeRange, selectedYear, scopedMembers, activeBranchId, data.settings?.organization]);
+  }, [data.attendance, effectiveChurch, timeRange, selectedYear, scopedMembers, activeBranchId, data.settings]);
 
   // 2. High Level KPI
   const stats = useMemo(() => {
@@ -897,17 +898,19 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       (m) => isMember(m) && m.status === MemberStatus.NOT_ACTIVE
     );
 
-    // Friends & Family (FNFs)
-    const fnf = churchPeople.filter((m) => isFnfMember(m));
+    // Friends & Family (FNFs) and First Timers
+    const firstTimers = churchPeople.filter((m) => isVisitorMember(m, data.settings));
+    const fnf = churchPeople.filter((m) => isFnfMember(m, data.settings));
 
     const totalCount =
       activeMembers.length +
       inconsistentMembers.length +
       inactiveMembers.length +
+      firstTimers.length +
       fnf.length;
 
     if (totalCount === 0) {
-      alert(`No members or FNFs found for ${church}.`);
+      alert(`No members or guests found for ${church}.`);
       return;
     }
 
@@ -941,13 +944,30 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       text += `\n`;
     }
 
-    // 4. FRIENDS & FAMILY (FNFs)
-    if (fnf.length > 0) {
-      text += `*FNFS (${fnf.length})*\n`;
-      fnf.forEach((m, i) => {
-        text += `${i + 1}. ${m.name}\n`;
-      });
-      text += `\n`;
+    // 4. FIRST TIMERS & FNFS
+    if (!isFnfCombined(data.settings)) {
+      if (firstTimers.length > 0) {
+        text += `*FIRST TIMERS (${firstTimers.length})*\n`;
+        firstTimers.forEach((m, i) => {
+          text += `${i + 1}. ${m.name}\n`;
+        });
+        text += `\n`;
+      }
+      if (fnf.length > 0) {
+        text += `*FNFS (${fnf.length})*\n`;
+        fnf.forEach((m, i) => {
+          text += `${i + 1}. ${m.name}\n`;
+        });
+        text += `\n`;
+      }
+    } else {
+      if (fnf.length > 0) {
+        text += `*FNFS (${fnf.length})*\n`;
+        fnf.forEach((m, i) => {
+          text += `${i + 1}. ${m.name}\n`;
+        });
+        text += `\n`;
+      }
     }
 
     const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
@@ -981,7 +1001,8 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
           if (m) {
             const isTeacher = m.type === MemberType.TEACHER || ["Teacher", "Helper", "Volunteer"].includes(m.type) || (m.role && m.role !== "NONE");
             if (isTeacher) teachersCount++;
-            else if (isFnfMember(m)) fnfCount++;
+            else if (isVisitorMember(m, data.settings)) visitorsCount++;
+            else if (isFnfMember(m, data.settings)) fnfCount++;
             else membersCount++;
           }
         });
@@ -991,9 +1012,9 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
         dateStr,
         membersCount,
         fnfCount,
-        visitorsCount: 0,
+        visitorsCount,
         teachersCount,
-        total: membersCount + fnfCount + teachersCount
+        total: membersCount + fnfCount + visitorsCount + teachersCount
       };
     });
 
@@ -1003,29 +1024,30 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
     const avg2W = {
       members: Math.round(latest2.reduce((acc, s) => acc + s.membersCount, 0) / (latest2.length || 1)),
       fnf: Math.round(latest2.reduce((acc, s) => acc + s.fnfCount, 0) / (latest2.length || 1)),
-      visitors: 0,
+      visitors: Math.round(latest2.reduce((acc, s) => acc + s.visitorsCount, 0) / (latest2.length || 1)),
       teachers: Math.round(latest2.reduce((acc, s) => acc + s.teachersCount, 0) / (latest2.length || 1)),
     };
 
     const avg1M = {
       members: Math.round(latest4.reduce((acc, s) => acc + s.membersCount, 0) / (latest4.length || 1)),
       fnf: Math.round(latest4.reduce((acc, s) => acc + s.fnfCount, 0) / (latest4.length || 1)),
-      visitors: 0,
+      visitors: Math.round(latest4.reduce((acc, s) => acc + s.visitorsCount, 0) / (latest4.length || 1)),
       teachers: Math.round(latest4.reduce((acc, s) => acc + s.teachersCount, 0) / (latest4.length || 1)),
     };
 
     // Calculate targets: 5% growth over the highest of the two rolling averages
-    const calcTarget = (a, b) => Math.ceil(Math.max(a, b) * 1.05);
+    const calcTarget = (a: number, b: number) => Math.ceil(Math.max(a, b) * 1.05);
     const membersTarget = calcTarget(avg2W.members, avg1M.members);
     const fnfTarget = calcTarget(avg2W.fnf, avg1M.fnf);
+    const visitorsTarget = calcTarget(avg2W.visitors, avg1M.visitors);
     const teachersTarget = Math.max(avg2W.teachers, avg1M.teachers); // Teachers don't need arbitrary growth
 
     const target = {
       members: membersTarget,
       fnf: fnfTarget,
-      visitors: 0,
+      visitors: visitorsTarget,
       teachers: teachersTarget,
-      total: membersTarget + fnfTarget + teachersTarget
+      total: membersTarget + fnfTarget + visitorsTarget + teachersTarget
     };
 
     const trend = target.total >= (dateStats[0]?.total || 0) ? "UP" : "DOWN";
@@ -1039,7 +1061,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
       growthRate,
       baseCount: dateStats.length
     };
-  }, [data.attendance, data.members, effectiveChurch]);
+  }, [data.attendance, data.members, effectiveChurch, data.settings]);
 
   return (
     <div className="space-y-6 pb-20 animate-in fade-in slide-in-from-bottom-4">
@@ -1167,8 +1189,20 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                     <span title="1-Month Avg">1M: {predictionModel.avg1M.members}</span>
                   </div>
                 </div>
+                {!isFnfCombined(data.settings) && (
+                  <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center">
+                    <div className="text-[10px] font-bold text-cyan-200 uppercase tracking-wider mb-1">First Timers</div>
+                    <div className="text-2xl font-bold text-white mb-2">{predictionModel.target.visitors}</div>
+                    <div className="flex gap-2 text-[9px] text-cyan-200/80">
+                      <span title="2-Week Avg">2W: {predictionModel.avg2W.visitors}</span>
+                      <span title="1-Month Avg">1M: {predictionModel.avg1M.visitors}</span>
+                    </div>
+                  </div>
+                )}
                 <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center">
-                  <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">FNFs</div>
+                  <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">
+                    {!isFnfCombined(data.settings) ? "FNFs (Recurring)" : "FNFs"}
+                  </div>
                   <div className="text-2xl font-bold text-white mb-2">{predictionModel.target.fnf}</div>
                   <div className="flex gap-2 text-[9px] text-indigo-300/80">
                     <span title="2-Week Avg">2W: {predictionModel.avg2W.fnf}</span>
@@ -1318,8 +1352,13 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                     <div className="w-2 h-2 rounded-full bg-indigo-500"></div>{" "}
                     Member
                   </div>
+                  {!isFnfCombined(data.settings) && (
+                    <div className="flex items-center gap-1 text-cyan-600">
+                      <div className="w-2 h-2 rounded-full bg-cyan-500"></div> First Timers
+                    </div>
+                  )}
                   <div className="flex items-center gap-1 text-amber-600">
-                    <div className="w-2 h-2 rounded-full bg-amber-500"></div> FNFs
+                    <div className="w-2 h-2 rounded-full bg-amber-500"></div> {!isFnfCombined(data.settings) ? "FNFs (Recurring)" : "FNFs"}
                   </div>
                   <div className="flex items-center gap-1 text-rose-600">
                     <div className="w-2 h-2 rounded-full bg-rose-500"></div> Inconsistent
@@ -1411,10 +1450,21 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                           stroke="#6366f1"
                           fill="url(#colorMem)"
                         />
+                        {!isFnfCombined(data.settings) && (
+                          <Area
+                            type="monotone"
+                            dataKey="Visitor"
+                            name="First Timers"
+                            stackId="1"
+                            stroke="#06b6d4"
+                            fill="#06b6d4"
+                            fillOpacity={0.6}
+                          />
+                        )}
                         <Area
                           type="monotone"
                           dataKey="FNF"
-                          name="FNFs"
+                          name={!isFnfCombined(data.settings) ? "FNFs (Recurring)" : "FNFs"}
                           stackId="1"
                           stroke="#f59e0b"
                           fill="url(#colorFnf)"
