@@ -662,7 +662,7 @@ const Settings: React.FC<SettingsProps> = ({
                 <div>
                   <div className="font-bold text-amber-950">Intelligent Attendance Auto-Regrouping Active</div>
                   <div className="text-amber-800 mt-0.5">
-                    Separation utilizes empirical attendance history: children with 1 or fewer sessions are assigned to First Timers, and recurring children (2+ sessions) are assigned to FNFs.
+                    Separation utilizes empirical attendance history: children with 1 or fewer sessions are assigned to First Timers, and children with 2+ sessions are assigned to FNFs.
                   </div>
                 </div>
               </div>

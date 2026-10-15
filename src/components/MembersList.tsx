@@ -12,7 +12,7 @@ import {
   isVisitorMember,
   isFnfCombined,
 } from "../types";
-import { isSundayAttendance, isCellAttendance } from "../lib/dateUtils";
+import { isSundayAttendance, isCellAttendance, isWednesday } from "../lib/dateUtils";
 import {
   User,
   Users,
@@ -825,12 +825,9 @@ const MembersList: React.FC<MembersListProps> = ({
   };
 
   const getMemberAttendanceCount = (member: Member) => {
-    let rawDate = member.lastActivationDate || member.joinedDate || (member.addedAt ? new Date(member.addedAt).toISOString() : undefined);
-    let startDate = rawDate ? new Date(rawDate) : new Date();
-    if (isNaN(startDate.getTime())) {
-      startDate = new Date();
-    }
-    startDate.setHours(0, 0, 0, 0);
+    const currentYear = new Date().getFullYear();
+    const startOfYear = new Date(currentYear, 0, 1);
+    startOfYear.setHours(0, 0, 0, 0);
 
     const isIncludedSession = (r: AttendanceRecord) => {
       const mode = data.settings?.attendanceCountMode || "SUNDAY_ONLY";
@@ -857,8 +854,8 @@ const MembersList: React.FC<MembersListProps> = ({
 
       const isPresent = r.presentMemberIds.includes(member.id);
       return (
-        r.churchId === member.assignedChurch &&
-        recordDate.getTime() >= startDate.getTime() &&
+        recordDate.getTime() >= startOfYear.getTime() &&
+        (r.churchId === member.assignedChurch || isPresent) &&
         (!isVacation || isPresent)
       );
     });
@@ -869,15 +866,10 @@ const MembersList: React.FC<MembersListProps> = ({
   };
 
   const renderAttendanceBadge = (member: Member) => {
-    // Determine the start date for attendance calculation
-    // Priority: Last Activation Date > Joined Date > addedAt
-    let rawDate = member.lastActivationDate || member.joinedDate || (member.addedAt ? new Date(member.addedAt).toISOString() : undefined);
-    let startDate = rawDate ? new Date(rawDate) : new Date();
-    if (isNaN(startDate.getTime())) {
-      startDate = new Date();
-    }
-    // Normalize to midnight to ensure inclusive comparison regardless of time
-    startDate.setHours(0, 0, 0, 0);
+    // Attendance evaluated from the beginning of the current calendar year
+    const currentYear = new Date().getFullYear();
+    const startOfYear = new Date(currentYear, 0, 1);
+    startOfYear.setHours(0, 0, 0, 0);
 
     const isIncludedSession = (r: AttendanceRecord) => {
       const mode = data.settings?.attendanceCountMode || "SUNDAY_ONLY";
@@ -903,18 +895,39 @@ const MembersList: React.FC<MembersListProps> = ({
       }
 
       const isPresent = r.presentMemberIds.includes(member.id);
-      // Include if it's the current church AND on or after the calculated start date AND not on vacation (UNLESS they were present)
       return (
-        r.churchId === member.assignedChurch &&
-        recordDate.getTime() >= startDate.getTime() &&
+        recordDate.getTime() >= startOfYear.getTime() &&
+        (r.churchId === member.assignedChurch || isPresent) &&
         (!isVacation || isPresent)
       );
     });
 
-    // Specifically calculate Sunday count for this child
-    const sundayRecords = churchAttendance.filter(r => isSundayAttendance(r));
-    const sundayAttended = sundayRecords.filter(r => r.presentMemberIds.includes(member.id)).length;
-    const totalSundays = sundayRecords.length;
+    // Specifically calculate Sunday count from the beginning of the year for this child
+    const yearSundayRecords = data.attendance.filter((r) => {
+      if (!isSundayAttendance(r)) return false;
+      const recordDate = new Date(r.date);
+      recordDate.setHours(0, 0, 0, 0);
+      return recordDate.getTime() >= startOfYear.getTime();
+    });
+
+    // Unique Sundays held for member's assigned church (or all unique Sunday dates this year)
+    const churchSundayDates = new Set(
+      yearSundayRecords
+        .filter((r) => r.churchId === member.assignedChurch)
+        .map((r) => r.date)
+    );
+    const totalSundayDates = churchSundayDates.size > 0
+      ? churchSundayDates
+      : new Set(yearSundayRecords.map((r) => r.date));
+    const totalSundays = totalSundayDates.size;
+
+    // Distinct Sunday dates this year that the member attended
+    const attendedSundayDates = new Set(
+      yearSundayRecords
+        .filter((r) => r.presentMemberIds?.includes(member.id))
+        .map((r) => r.date)
+    );
+    const sundayAttended = attendedSundayDates.size;
 
     const totalSessions = churchAttendance.length;
     const attendedSessions = churchAttendance.filter((r) =>
@@ -1059,8 +1072,8 @@ const MembersList: React.FC<MembersListProps> = ({
                 {attendedSessions}/{totalSessions}
               </span>
               {showSundayCount && (
-                <span className="text-[9px] font-bold text-slate-500">
-                  Sun: {sundayAttended}/{totalSundays}
+                <span className="text-[9px] font-bold text-slate-500" title="Sunday attendance this year / total Sundays this year">
+                  {sundayAttended}/{totalSundays}
                 </span>
               )}
             </div>
@@ -1193,7 +1206,7 @@ const MembersList: React.FC<MembersListProps> = ({
                                   <PartyPopper size={12} /> Birthday Week!
                                 </div>
                               )}
-                              {!isTeacherSection && (
+                              {!isTeacherSection && selectedShepherdFilter === "ALL" && (
                                 <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                                   {(() => {
                                     if (!member.assignedTeacherId) {
@@ -1538,7 +1551,7 @@ const MembersList: React.FC<MembersListProps> = ({
                                 )}
                               </span>
                             )}
-                            {!isTeacherSection && (
+                            {!isTeacherSection && selectedShepherdFilter === "ALL" && (
                               <div className="flex flex-wrap items-center gap-1.5 w-full mt-1">
                                 {(() => {
                                   if (!member.assignedTeacherId) {
@@ -3131,6 +3144,10 @@ const MembersList: React.FC<MembersListProps> = ({
 
                 const history = data.attendance
                   .filter((r) => {
+                    // Exclude Wednesday records (Wednesday is exclusively LC Live / midweek staff meeting)
+                    if (isWednesday(r.date) || r.attendanceType === "CELL") {
+                      return false;
+                    }
                     const recordDate = new Date(r.date);
                     const isPresent = r.presentMemberIds.includes(member.id);
                     if (isPresent) return true;
@@ -3204,6 +3221,7 @@ const MembersList: React.FC<MembersListProps> = ({
                   const targetYear = targetDate.getFullYear();
 
                   const recordsInMonth = history.filter((r) => {
+                    if (isWednesday(r.date) || r.attendanceType === "CELL") return false;
                     const d = new Date(r.date);
                     return (
                       d.getMonth() === targetMonth &&
@@ -3216,6 +3234,7 @@ const MembersList: React.FC<MembersListProps> = ({
                   ).length;
 
                   const churchRecordsInMonth = data.attendance.filter((r) => {
+                    if (isWednesday(r.date) || r.attendanceType === "CELL") return false;
                     const d = new Date(r.date);
                     return (
                       r.churchId === member.assignedChurch &&
@@ -3327,6 +3346,16 @@ const MembersList: React.FC<MembersListProps> = ({
                           );
                           const service = record.serviceMap?.[member.id];
 
+                          let isVacationRecord = false;
+                          if (member.vacationStartDate && member.vacationEndDate) {
+                            const vStart = new Date(member.vacationStartDate).getTime();
+                            const vEnd = new Date(member.vacationEndDate).getTime();
+                            const rTime = new Date(record.date).getTime();
+                            if (rTime >= vStart && rTime <= vEnd) {
+                              isVacationRecord = true;
+                            }
+                          }
+
                           return (
                             <div
                               key={`${record.date}-${index}`}
@@ -3334,7 +3363,7 @@ const MembersList: React.FC<MembersListProps> = ({
                             >
                               <div className="flex items-center gap-3">
                                 <div
-                                  className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${isPresent ? "bg-emerald-50 border-emerald-500 text-emerald-600" : "bg-slate-50 border-slate-200 text-slate-300"}`}
+                                  className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${isPresent ? "bg-emerald-50 border-emerald-500 text-emerald-600" : isVacationRecord ? "bg-amber-50 border-amber-400 text-amber-600" : "bg-slate-50 border-slate-200 text-slate-300"}`}
                                 >
                                   {isPresent ? (
                                     <Activity size={20} />
@@ -3346,8 +3375,8 @@ const MembersList: React.FC<MembersListProps> = ({
                                   <div className="font-bold text-slate-700">
                                     {formatDateDDMMYYYY(record.date)}
                                   </div>
-                                  <div className="text-[10px] text-slate-400 font-bold uppercase">
-                                    {isPresent ? "Present" : "Absent"}
+                                  <div className={`text-[10px] font-bold uppercase ${isVacationRecord && !isPresent ? "text-amber-600 font-black" : "text-slate-400"}`}>
+                                    {isPresent ? "Present" : isVacationRecord ? "Excused Break / Vacation" : "Absent"}
                                   </div>
                                   {record.churchId !==
                                     member.assignedChurch && (

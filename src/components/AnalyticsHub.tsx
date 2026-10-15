@@ -32,6 +32,12 @@ import {
   Wallet,
   X,
   User,
+  Cake,
+  Sparkles,
+  GraduationCap,
+  AlertTriangle,
+  CheckCircle2,
+  Info,
 } from "lucide-react";
 import { motion } from "motion/react";
 import * as d3 from "d3";
@@ -74,7 +80,7 @@ const DemographicsChart = ({
 }) => {
   const svgRef = React.useRef<SVGSVGElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 250 });
+  const [dimensions, setDimensions] = useState({ width: 0, height: 240 });
 
   useEffect(() => {
     const observeTarget = containerRef.current;
@@ -84,7 +90,7 @@ const DemographicsChart = ({
       if (entry) {
         setDimensions({
           width: entry.contentRect.width,
-          height: entry.contentRect.height > 0 ? entry.contentRect.height : 250,
+          height: entry.contentRect.height > 0 ? entry.contentRect.height : 240,
         });
       }
     });
@@ -92,75 +98,78 @@ const DemographicsChart = ({
     return () => resizeObserver.disconnect();
   }, []);
 
-  useEffect(() => {
-    if (!svgRef.current || dimensions.width === 0) return;
-
+  const demographicsData = useMemo(() => {
     const filtered = members.filter((m) =>
       m.status !== MemberStatus.ARCHIVED &&
       (effectiveChurch === "All" ? true : m.assignedChurch === effectiveChurch)
     );
 
-    let ageGroups: { group: string; min: number; max: number; count: number }[] = [];
+    let ageGroups: { group: string; min: number; max: number; count: number; desc: string }[] = [];
 
     switch (effectiveChurch) {
       case "I":
       case "N":
         ageGroups = [
-          { group: "0 yrs", min: 0, max: 0, count: 0 },
-          { group: "1 yr", min: 1, max: 1, count: 0 },
-          { group: "2 yrs", min: 2, max: 2, count: 0 },
-          { group: "Outliers (3+)", min: 3, max: 999, count: 0 },
-          { group: "Unknown", min: -1, max: -1, count: 0 },
+          { group: "0 yrs", min: 0, max: 0, count: 0, desc: "Infants (Under 1)" },
+          { group: "1 yr", min: 1, max: 1, count: 0, desc: "Early Toddlers" },
+          { group: "2 yrs", min: 2, max: 2, count: 0, desc: "Approaching Kinder" },
+          { group: "Outliers (3+)", min: 3, max: 999, count: 0, desc: "Promotion overdue" },
+          { group: "Unknown", min: -1, max: -1, count: 0, desc: "Birth date not provided" },
         ];
         break;
       case "K":
         ageGroups = [
-          { group: "< 3", min: 0, max: 2, count: 0 },
-          { group: "3 yrs", min: 3, max: 3, count: 0 },
-          { group: "4 yrs", min: 4, max: 4, count: 0 },
-          { group: "5 yrs", min: 5, max: 5, count: 0 },
-          { group: "Outliers (6+)", min: 6, max: 999, count: 0 },
-          { group: "Unknown", min: -1, max: -1, count: 0 },
+          { group: "< 3 yrs", min: 0, max: 2, count: 0, desc: "Early transition in" },
+          { group: "3 yrs", min: 3, max: 3, count: 0, desc: "Junior Kinder" },
+          { group: "4 yrs", min: 4, max: 4, count: 0, desc: "Mid Kinder" },
+          { group: "5 yrs", min: 5, max: 5, count: 0, desc: "Approaching Lower Junior" },
+          { group: "Outliers (6+)", min: 6, max: 999, count: 0, desc: "Promotion overdue" },
+          { group: "Unknown", min: -1, max: -1, count: 0, desc: "Birth date not provided" },
         ];
         break;
       case "LJ":
         ageGroups = [
-          { group: "< 6", min: 0, max: 5, count: 0 },
-          { group: "6 yrs", min: 6, max: 6, count: 0 },
-          { group: "7 yrs", min: 7, max: 7, count: 0 },
-          { group: "8 yrs", min: 8, max: 8, count: 0 },
-          { group: "Outliers (9+)", min: 9, max: 999, count: 0 },
-          { group: "Unknown", min: -1, max: -1, count: 0 },
+          { group: "< 6 yrs", min: 0, max: 5, count: 0, desc: "Early transition in" },
+          { group: "6 yrs", min: 6, max: 6, count: 0, desc: "Class 1 Primary" },
+          { group: "7 yrs", min: 7, max: 7, count: 0, desc: "Class 2 Primary" },
+          { group: "8 yrs", min: 8, max: 8, count: 0, desc: "Approaching Upper Junior" },
+          { group: "Outliers (9+)", min: 9, max: 999, count: 0, desc: "Promotion overdue" },
+          { group: "Unknown", min: -1, max: -1, count: 0, desc: "Birth date not provided" },
         ];
         break;
       case "UJ":
         ageGroups = [
-          { group: "< 9", min: 0, max: 8, count: 0 },
-          { group: "9 yrs", min: 9, max: 9, count: 0 },
-          { group: "10 yrs", min: 10, max: 10, count: 0 },
-          { group: "11 yrs", min: 11, max: 11, count: 0 },
-          { group: "12 yrs", min: 12, max: 12, count: 0 },
-          { group: "Outliers (13+)", min: 13, max: 999, count: 0 },
-          { group: "Unknown", min: -1, max: -1, count: 0 },
+          { group: "< 9 yrs", min: 0, max: 8, count: 0, desc: "Early transition in" },
+          { group: "9 yrs", min: 9, max: 9, count: 0, desc: "Class 4 Upper" },
+          { group: "10 yrs", min: 10, max: 10, count: 0, desc: "Class 5 Upper" },
+          { group: "11 yrs", min: 11, max: 11, count: 0, desc: "Class 6 Upper" },
+          { group: "12 yrs", min: 12, max: 12, count: 0, desc: "Approaching Teens" },
+          { group: "Outliers (13+)", min: 13, max: 999, count: 0, desc: "Teens overdue" },
+          { group: "Unknown", min: -1, max: -1, count: 0, desc: "Birth date not provided" },
         ];
         break;
       default: // "All" or unknown
         ageGroups = [
-          { group: "I (0-2)", min: 0, max: 2, count: 0 },
-          { group: "K (3-5)", min: 3, max: 5, count: 0 },
-          { group: "LJ (6-8)", min: 6, max: 8, count: 0 },
-          { group: "UJ (9-12)", min: 9, max: 12, count: 0 },
-          { group: "Teens (13+)", min: 13, max: 999, count: 0 },
-          { group: "Unknown", min: -1, max: -1, count: 0 },
+          { group: "I (0-2)", min: 0, max: 2, count: 0, desc: "Infants & Toddlers" },
+          { group: "K (3-5)", min: 3, max: 5, count: 0, desc: "Kindergarten" },
+          { group: "LJ (6-8)", min: 6, max: 8, count: 0, desc: "Lower Junior" },
+          { group: "UJ (9-12)", min: 9, max: 12, count: 0, desc: "Upper Junior" },
+          { group: "Teens (13+)", min: 13, max: 999, count: 0, desc: "Adolescents / Youth" },
+          { group: "Unknown", min: -1, max: -1, count: 0, desc: "Birth date not recorded" },
         ];
         break;
     }
 
+    const knownAges: number[] = [];
+    let unknownCount = 0;
+
     filtered.forEach((m) => {
       const age = calculateAge(m.birthDate);
       if (age === null) {
+        unknownCount++;
         ageGroups[ageGroups.length - 1].count++;
       } else {
+        knownAges.push(age);
         for (let i = 0; i < ageGroups.length - 1; i++) {
           if (age >= ageGroups[i].min && age <= ageGroups[i].max) {
             ageGroups[i].count++;
@@ -170,7 +179,124 @@ const DemographicsChart = ({
       }
     });
 
-    const ageData = ageGroups.map(g => ({ group: g.group, count: g.count }));
+    const totalCount = filtered.length;
+    const avgAge =
+      knownAges.length > 0
+        ? (knownAges.reduce((s, a) => s + a, 0) / knownAges.length).toFixed(1)
+        : null;
+
+    const enrichedGroups = ageGroups.map((g) => ({
+      ...g,
+      pct: totalCount > 0 ? Math.round((g.count / totalCount) * 100) : 0,
+    }));
+
+    const validGroups = enrichedGroups.filter((g) => g.group !== "Unknown");
+    const dominant = validGroups.reduce(
+      (prev, curr) => (curr.count > prev.count ? curr : prev),
+      validGroups[0] || enrichedGroups[0]
+    );
+
+    const transitionGroup =
+      effectiveChurch === "I" || effectiveChurch === "N"
+        ? enrichedGroups.find((g) => g.group === "2 yrs")
+        : effectiveChurch === "K"
+        ? enrichedGroups.find((g) => g.group === "5 yrs")
+        : effectiveChurch === "LJ"
+        ? enrichedGroups.find((g) => g.group === "8 yrs")
+        : effectiveChurch === "UJ"
+        ? enrichedGroups.find((g) => g.group === "12 yrs")
+        : enrichedGroups.find((g) => g.group === "UJ (9-12)");
+
+    const outliers = enrichedGroups.find(
+      (g) => g.group.includes("Outliers") || g.group.includes("Teens")
+    );
+
+    return {
+      totalCount,
+      avgAge,
+      unknownCount,
+      enrichedGroups,
+      dominant,
+      transitionGroup,
+      outliers,
+    };
+  }, [members, effectiveChurch]);
+
+  const AGE_COLORS_BY_CHURCH: Record<string, Record<string, string>> = {
+    I: {
+      "0 yrs": "#ec4899",
+      "1 yr": "#a855f7",
+      "2 yrs": "#6366f1",
+      "Outliers (3+)": "#f97316",
+      "Unknown": "#94a3b8",
+    },
+    N: {
+      "0 yrs": "#ec4899",
+      "1 yr": "#a855f7",
+      "2 yrs": "#6366f1",
+      "Outliers (3+)": "#f97316",
+      "Unknown": "#94a3b8",
+    },
+    K: {
+      "< 3 yrs": "#06b6d4",
+      "3 yrs": "#3b82f6",
+      "4 yrs": "#8b5cf6",
+      "5 yrs": "#ec4899",
+      "Outliers (6+)": "#f97316",
+      "Unknown": "#94a3b8",
+    },
+    LJ: {
+      "< 6 yrs": "#06b6d4",
+      "6 yrs": "#10b981",
+      "7 yrs": "#3b82f6",
+      "8 yrs": "#8b5cf6",
+      "Outliers (9+)": "#f97316",
+      "Unknown": "#94a3b8",
+    },
+    UJ: {
+      "< 9 yrs": "#06b6d4",
+      "9 yrs": "#10b981",
+      "10 yrs": "#3b82f6",
+      "11 yrs": "#6366f1",
+      "12 yrs": "#a855f7",
+      "Outliers (13+)": "#f97316",
+      "Unknown": "#94a3b8",
+    },
+    All: {
+      "I (0-2)": "#ec4899",
+      "K (3-5)": "#06b6d4",
+      "LJ (6-8)": "#10b981",
+      "UJ (9-12)": "#6366f1",
+      "Teens (13+)": "#f97316",
+      "Unknown": "#94a3b8",
+    },
+  };
+
+  const DEFAULT_AGE_PALETTE = [
+    "#6366f1",
+    "#06b6d4",
+    "#10b981",
+    "#f59e0b",
+    "#ec4899",
+    "#8b5cf6",
+    "#3b82f6",
+    "#f97316",
+    "#94a3b8",
+  ];
+
+  const getAgeGroupColor = (group: string, church: string, index: number): string => {
+    const churchMap = AGE_COLORS_BY_CHURCH[church] || AGE_COLORS_BY_CHURCH.All;
+    if (churchMap && churchMap[group]) return churchMap[group];
+    return DEFAULT_AGE_PALETTE[index % DEFAULT_AGE_PALETTE.length];
+  };
+
+  useEffect(() => {
+    if (!svgRef.current || dimensions.width === 0) return;
+
+    const ageData = demographicsData.enrichedGroups.map((g) => ({
+      group: g.group,
+      count: g.count,
+    }));
 
     const margin = { top: 20, right: 20, bottom: 40, left: 40 };
     const width = dimensions.width - margin.left - margin.right;
@@ -179,7 +305,6 @@ const DemographicsChart = ({
     const selection = d3.select(svgRef.current);
     selection.selectAll("*").remove();
 
-    // preserve aspect ratio and enable scaling
     selection
       .attr("viewBox", `0 0 ${dimensions.width} ${dimensions.height}`)
       .attr("preserveAspectRatio", "xMidYMid meet");
@@ -192,7 +317,7 @@ const DemographicsChart = ({
       .scaleBand()
       .range([0, width])
       .domain(ageData.map((d) => d.group))
-      .padding(0.2);
+      .padding(0.25);
 
     svg
       .append("g")
@@ -200,11 +325,12 @@ const DemographicsChart = ({
       .call(d3.axisBottom(x))
       .selectAll("text")
       .attr("fill", "#64748b")
-      .style("font-size", "12px");
+      .style("font-size", "11px")
+      .style("font-weight", "600");
 
     svg.selectAll(".domain, .tick line").attr("stroke", "#e2e8f0");
 
-    const maxCount = d3.max(ageData, (d) => d.count) || 10;
+    const maxCount = Math.max(5, d3.max(ageData, (d) => d.count) || 5);
     const y = d3.scaleLinear().domain([0, maxCount]).range([height, 0]);
 
     svg
@@ -212,7 +338,7 @@ const DemographicsChart = ({
       .call(d3.axisLeft(y).ticks(5).tickFormat(d3.format("d")))
       .selectAll("text")
       .attr("fill", "#64748b")
-      .style("font-size", "12px");
+      .style("font-size", "11px");
 
     svg.selectAll(".domain").attr("stroke", "transparent");
     svg
@@ -224,82 +350,16 @@ const DemographicsChart = ({
       .select(svgRef.current.parentNode as any)
       .append("div")
       .style("position", "absolute")
-      .style("padding", "8px")
-      .style("background", "white")
-      .style("border", "1px solid #e2e8f0")
+      .style("padding", "8px 12px")
+      .style("background", "#1e293b")
+      .style("color", "white")
       .style("border-radius", "8px")
       .style("pointer-events", "none")
       .style("opacity", 0)
       .style("font-size", "12px")
-      .style("box-shadow", "0 4px 6px -1px rgb(0 0 0 / 0.1)");
-
-    const AGE_COLORS_BY_CHURCH: Record<string, Record<string, string>> = {
-      I: {
-        "0 yrs": "#ec4899",
-        "1 yr": "#a855f7",
-        "2 yrs": "#6366f1",
-        "Outliers (3+)": "#f97316",
-        "Unknown": "#94a3b8",
-      },
-      N: {
-        "0 yrs": "#ec4899",
-        "1 yr": "#a855f7",
-        "2 yrs": "#6366f1",
-        "Outliers (3+)": "#f97316",
-        "Unknown": "#94a3b8",
-      },
-      K: {
-        "< 3": "#06b6d4",
-        "3 yrs": "#3b82f6",
-        "4 yrs": "#8b5cf6",
-        "5 yrs": "#ec4899",
-        "Outliers (6+)": "#f97316",
-        "Unknown": "#94a3b8",
-      },
-      LJ: {
-        "< 6": "#06b6d4",
-        "6 yrs": "#10b981",
-        "7 yrs": "#3b82f6",
-        "8 yrs": "#8b5cf6",
-        "Outliers (9+)": "#f97316",
-        "Unknown": "#94a3b8",
-      },
-      UJ: {
-        "< 9": "#06b6d4",
-        "9 yrs": "#10b981",
-        "10 yrs": "#3b82f6",
-        "11 yrs": "#6366f1",
-        "12 yrs": "#a855f7",
-        "Outliers (13+)": "#f97316",
-        "Unknown": "#94a3b8",
-      },
-      All: {
-        "I (0-2)": "#ec4899",
-        "K (3-5)": "#06b6d4",
-        "LJ (6-8)": "#10b981",
-        "UJ (9-12)": "#6366f1",
-        "Teens (13+)": "#f97316",
-        "Unknown": "#94a3b8",
-      },
-    };
-
-    const DEFAULT_AGE_PALETTE = [
-      "#6366f1",
-      "#06b6d4",
-      "#10b981",
-      "#f59e0b",
-      "#ec4899",
-      "#8b5cf6",
-      "#3b82f6",
-      "#f97316",
-      "#94a3b8",
-    ];
-
-    const getAgeGroupColor = (group: string, church: string, index: number): string => {
-      const churchMap = AGE_COLORS_BY_CHURCH[church] || AGE_COLORS_BY_CHURCH.All;
-      if (churchMap && churchMap[group]) return churchMap[group];
-      return DEFAULT_AGE_PALETTE[index % DEFAULT_AGE_PALETTE.length];
-    };
+      .style("font-weight", "500")
+      .style("box-shadow", "0 10px 15px -3px rgba(0, 0, 0, 0.2)")
+      .style("z-index", "20");
 
     svg
       .selectAll("mybar")
@@ -311,17 +371,19 @@ const DemographicsChart = ({
       .attr("width", x.bandwidth())
       .attr("height", 0)
       .attr("fill", (d, i) => getAgeGroupColor(d.group, effectiveChurch, i))
-      .attr("rx", 4)
+      .attr("rx", 6)
       .on("mouseover", (event, d) => {
         const idx = ageData.findIndex((a) => a.group === d.group);
         const color = getAgeGroupColor(d.group, effectiveChurch, idx >= 0 ? idx : 0);
+        const groupObj = demographicsData.enrichedGroups.find((g) => g.group === d.group);
         tooltip.transition().duration(200).style("opacity", 1);
         tooltip
           .html(`
             <div style="display:flex;align-items:center;gap:6px">
               <span style="width:10px;height:10px;border-radius:50%;background:${color};display:inline-block"></span>
-              <span><b>${d.group}</b>: ${d.count} members</span>
+              <span><b>${d.group}</b>: <b>${d.count}</b> children (${groupObj?.pct || 0}%)</span>
             </div>
+            ${groupObj?.desc ? `<div style="font-size:10px;color:#cbd5e1;margin-top:3px">${groupObj.desc}</div>` : ""}
           `)
           .style("left", event.pageX + 10 + "px")
           .style("top", event.pageY - 28 + "px");
@@ -330,28 +392,229 @@ const DemographicsChart = ({
         tooltip.transition().duration(500).style("opacity", 0);
       })
       .transition()
-      .duration(800)
+      .duration(750)
       .attr("y", (d) => y(d.count))
       .attr("height", (d) => height - y(d.count))
-      .delay((d, i) => i * 100);
+      .delay((d, i) => i * 80);
 
     return () => {
       d3.select(svgRef.current?.parentNode as any)
         .selectAll("div")
         .remove();
     };
-  }, [members, effectiveChurch, dimensions]);
+  }, [demographicsData, effectiveChurch, dimensions]);
+
+  const profileIntegrityPct =
+    demographicsData.totalCount > 0
+      ? Math.round(
+          ((demographicsData.totalCount - demographicsData.unknownCount) /
+            demographicsData.totalCount) *
+            100
+        )
+      : 100;
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full h-full relative flex items-center justify-center"
-    >
-      <svg
-        ref={svgRef}
-        className="w-full h-full"
-        style={{ maxHeight: "250px" }}
-      ></svg>
+    <div className="space-y-6">
+      {/* Header & Subtitle */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+            <Users size={20} className="text-indigo-600" /> Age Demographics & Cohort Intelligence
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Empirical age distribution, developmental cohort sizing, and promotion readiness for{" "}
+            <span className="font-bold text-indigo-700">
+              {effectiveChurch === "All" ? "All Departments" : `${effectiveChurch} Department`}
+            </span>
+          </p>
+        </div>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-100 flex items-center gap-1.5">
+            <Sparkles size={12} className="text-indigo-500" />
+            {effectiveChurch === "All" ? "Global Scope" : `${effectiveChurch} Cohort`}
+          </span>
+        </div>
+      </div>
+
+      {/* 4 Executive KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-100 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Average Age</span>
+            <Cake size={16} className="text-pink-500" />
+          </div>
+          <div className="text-2xl font-black text-slate-800">
+            {demographicsData.avgAge ? `${demographicsData.avgAge} yrs` : "—"}
+          </div>
+          <span className="text-[10px] text-slate-400 mt-1">Mean active cohort age</span>
+        </div>
+
+        <div className="bg-indigo-50/60 p-4 rounded-2xl border border-indigo-100 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-indigo-600 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Active Children</span>
+            <Users size={16} className="text-indigo-600" />
+          </div>
+          <div className="text-2xl font-black text-indigo-900">
+            {demographicsData.totalCount}
+          </div>
+          <span className="text-[10px] text-indigo-600/80 mt-1">Total in current scope</span>
+        </div>
+
+        <div className="bg-teal-50/60 p-4 rounded-2xl border border-teal-100 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-teal-700 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Primary Cohort</span>
+            <Target size={16} className="text-teal-600" />
+          </div>
+          <div className="text-lg font-black text-teal-900 truncate" title={demographicsData.dominant?.group}>
+            {demographicsData.dominant?.group || "—"}
+          </div>
+          <span className="text-[10px] text-teal-600/80 mt-1">
+            {demographicsData.dominant?.count || 0} kids ({demographicsData.dominant?.pct || 0}% of cohort)
+          </span>
+        </div>
+
+        <div className={`p-4 rounded-2xl border flex flex-col justify-between ${
+          demographicsData.unknownCount > 0
+            ? "bg-amber-50/70 border-amber-200"
+            : "bg-emerald-50/60 border-emerald-100"
+        }`}>
+          <div className={`flex items-center justify-between mb-1 ${
+            demographicsData.unknownCount > 0 ? "text-amber-700" : "text-emerald-700"
+          }`}>
+            <span className="text-[11px] font-bold uppercase tracking-wider">DOB Quality</span>
+            {demographicsData.unknownCount > 0 ? (
+              <AlertTriangle size={16} className="text-amber-600" />
+            ) : (
+              <CheckCircle2 size={16} className="text-emerald-600" />
+            )}
+          </div>
+          <div className={`text-2xl font-black ${
+            demographicsData.unknownCount > 0 ? "text-amber-900" : "text-emerald-900"
+          }`}>
+            {profileIntegrityPct}%
+          </div>
+          <span className={`text-[10px] mt-1 ${
+            demographicsData.unknownCount > 0 ? "text-amber-700 font-bold" : "text-emerald-600/80"
+          }`}>
+            {demographicsData.unknownCount > 0
+              ? `${demographicsData.unknownCount} child(ren) missing birth date`
+              : "All birth dates recorded"}
+          </span>
+        </div>
+      </div>
+
+      {/* Visual Chart Container */}
+      <div className="p-4 bg-slate-50/60 rounded-2xl border border-slate-100">
+        <div className="flex items-center justify-between mb-3 px-1">
+          <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+            Age Group Distribution Bar
+          </span>
+          <span className="text-[11px] text-slate-400">Hover bars to view details</span>
+        </div>
+        <div className="w-full overflow-x-auto hide-scrollbar">
+          <div className="min-w-[480px] h-[240px] relative flex items-center justify-center" ref={containerRef}>
+            <svg ref={svgRef} className="w-full h-full" style={{ maxHeight: "240px" }}></svg>
+          </div>
+        </div>
+      </div>
+
+      {/* Cohort Breakdown Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {demographicsData.enrichedGroups.map((g, idx) => {
+          const color = getAgeGroupColor(g.group, effectiveChurch, idx);
+          const isDominant = demographicsData.dominant?.group === g.group && g.group !== "Unknown";
+          const isTransition = demographicsData.transitionGroup?.group === g.group;
+
+          return (
+            <div
+              key={g.group}
+              className={`p-3.5 rounded-2xl border transition-all ${
+                isDominant
+                  ? "bg-indigo-50/30 border-indigo-200 shadow-xs"
+                  : "bg-white border-slate-100 shadow-xs hover:border-slate-200"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="w-3 h-3 rounded-full shrink-0"
+                    style={{ backgroundColor: color }}
+                  />
+                  <span className="font-bold text-xs text-slate-800 truncate">{g.group}</span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {isDominant && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                      Core Group
+                    </span>
+                  )}
+                  {isTransition && g.count > 0 && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 flex items-center gap-1">
+                      <GraduationCap size={10} /> Transition Ready
+                    </span>
+                  )}
+                  <span className="font-black text-xs text-slate-700">{g.count}</span>
+                  <span className="text-[10px] text-slate-400 font-medium">({g.pct}%)</span>
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden mb-2">
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{
+                    width: `${g.pct}%`,
+                    backgroundColor: color,
+                  }}
+                />
+              </div>
+
+              <div className="text-[10px] text-slate-400 font-medium flex items-center justify-between">
+                <span>{g.desc}</span>
+                <span>{g.count === 1 ? "1 child" : `${g.count} children`}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Strategic Informative Guidance Card */}
+      <div className="p-4 rounded-2xl bg-gradient-to-r from-indigo-50/80 via-purple-50/50 to-pink-50/30 border border-indigo-100 flex items-start gap-3">
+        <div className="p-2 bg-indigo-100 text-indigo-700 rounded-xl shrink-0 mt-0.5">
+          <Info size={16} />
+        </div>
+        <div className="text-xs text-slate-700 space-y-1">
+          <div className="font-bold text-slate-900 text-sm">
+            Demographic Ministry Insights & Next Steps
+          </div>
+          <p className="text-slate-600 leading-relaxed">
+            {demographicsData.dominant ? (
+              <>
+                The primary cohort in this department is <b>{demographicsData.dominant.group}</b> representing{" "}
+                <b>{demographicsData.dominant.pct}%</b> of all active children ({demographicsData.dominant.count} members).
+              </>
+            ) : null}{" "}
+            {demographicsData.transitionGroup && demographicsData.transitionGroup.count > 0 ? (
+              <>
+                There are <b>{demographicsData.transitionGroup.count} children</b> in the{" "}
+                <b>{demographicsData.transitionGroup.group}</b> cohort approaching promotion age. Begin preparing transition
+                material and coordination with the receiving department shepherds.
+              </>
+            ) : null}{" "}
+            {demographicsData.outliers && demographicsData.outliers.count > 0 ? (
+              <span className="text-amber-800 font-medium">
+                Note: {demographicsData.outliers.count} child(ren) exceed standard department age brackets and may be due for immediate
+                promotion or reclassification.
+              </span>
+            ) : null}
+            {demographicsData.unknownCount > 0 && (
+              <span className="block text-amber-700 font-semibold mt-1">
+                ⚠️ {demographicsData.unknownCount} child(ren) do not have recorded birth dates. Updating their dates in People Hub will complete promotion tracking.
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
     </div>
   );
 };
@@ -1201,7 +1464,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                 )}
                 <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 flex flex-col items-center">
                   <div className="text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">
-                    {!isFnfCombined(data.settings) ? "FNFs (Recurring)" : "FNFs"}
+                    FNFs
                   </div>
                   <div className="text-2xl font-bold text-white mb-2">{predictionModel.target.fnf}</div>
                   <div className="flex gap-2 text-[9px] text-indigo-300/80">
@@ -1358,7 +1621,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                     </div>
                   )}
                   <div className="flex items-center gap-1 text-amber-600">
-                    <div className="w-2 h-2 rounded-full bg-amber-500"></div> {!isFnfCombined(data.settings) ? "FNFs (Recurring)" : "FNFs"}
+                    <div className="w-2 h-2 rounded-full bg-amber-500"></div> FNFs
                   </div>
                   <div className="flex items-center gap-1 text-rose-600">
                     <div className="w-2 h-2 rounded-full bg-rose-500"></div> Inconsistent
@@ -1464,7 +1727,7 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
                         <Area
                           type="monotone"
                           dataKey="FNF"
-                          name={!isFnfCombined(data.settings) ? "FNFs (Recurring)" : "FNFs"}
+                          name="FNFs"
                           stackId="1"
                           stroke="#f59e0b"
                           fill="url(#colorFnf)"
@@ -1661,19 +1924,12 @@ const AnalyticsHub: React.FC<AnalyticsHubProps> = ({
           </div>
         )}
 
-        {/* Demographics D3 Chart */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-3 flex flex-col">
-          <div className="mb-6 flex justify-between items-center">
-            <h3 className="font-bold text-slate-800">Age Demographics</h3>
-          </div>
-          <div className="flex-1 min-h-[250px] overflow-x-auto hide-scrollbar">
-            <div className="min-w-[500px] h-full">
-              <DemographicsChart
-                members={data.members}
-                effectiveChurch={effectiveChurch}
-              />
-            </div>
-          </div>
+        {/* Demographics Dashboard */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 lg:col-span-3">
+          <DemographicsChart
+            members={data.members}
+            effectiveChurch={effectiveChurch}
+          />
         </div>
       </div>
 

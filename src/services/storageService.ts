@@ -164,12 +164,18 @@ const parseAppDataDoc = (docData: any): AppData => {
     return s;
   });
 
+  let hasPrayerDurationMigrations = false;
   data.prayerSchedule = (data.prayerSchedule || []).map((p) => {
+    let updated = p;
     if (isThesaurusHQ(p.branchId)) {
       hasThesaurusMigrations = true;
-      return { ...p, branchId: "Thesaurus" };
+      updated = { ...updated, branchId: "Thesaurus" };
     }
-    return p;
+    if (updated.isCompleted && (!updated.durationMins || updated.durationMins <= 0)) {
+      hasPrayerDurationMigrations = true;
+      updated = { ...updated, durationMins: 30 };
+    }
+    return updated;
   });
 
   data.notifications = (data.notifications || []).map((n) => {
@@ -180,8 +186,8 @@ const parseAppDataDoc = (docData: any): AppData => {
     return n;
   });
 
-  // If any records were migrated from Thesaurus HQ or Visitor to FNF, queue persistence so cloud data is updated permanently
-  if (hasThesaurusMigrations || hasVisitorMigrations) {
+  // If any records were migrated from Thesaurus HQ, Visitor to FNF, or prayer durations sanitized, queue persistence so cloud data is updated permanently
+  if (hasThesaurusMigrations || hasVisitorMigrations || hasPrayerDurationMigrations) {
     setTimeout(() => {
       updateMainDoc({
         settings: data.settings,

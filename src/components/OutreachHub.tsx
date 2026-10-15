@@ -377,6 +377,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   const [prayerDurationModal, setPrayerDurationModal] = useState<string | null>(
     null,
   );
+  const [customPrayerMins, setCustomPrayerMins] = useState<string>("");
 
   function getStartOfWeek(date: Date) {
     const d = new Date(date);
@@ -1086,26 +1087,26 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     setTimeout(() => setGenMsg(null), 4000);
   };
 
-  const togglePrayerComplete = async (slotId: string) => {
+  const togglePrayerComplete = (slotId: string) => {
+    const slotIdx = localPrayerSlots.findIndex((s) => s.id === slotId);
+    if (slotIdx === -1) return;
+    setCustomPrayerMins("");
+    setPrayerDurationModal(slotId);
+  };
+
+  const unmarkPrayerSlot = async (slotId: string) => {
     const slotIdx = localPrayerSlots.findIndex((s) => s.id === slotId);
     if (slotIdx === -1) return;
 
     const slot = { ...localPrayerSlots[slotIdx] };
-    const wasComplete = slot.isCompleted;
-
-    if (!wasComplete) {
-      // Open modal to ask for duration instead of immediately toggling
-      setPrayerDurationModal(slotId);
-      return;
-    }
-
-    // Unmarking
     slot.isCompleted = false;
     slot.durationMins = 0;
 
     const newSlots = [...localPrayerSlots];
     newSlots[slotIdx] = slot;
     setLocalPrayerSlots(newSlots);
+    setPrayerDurationModal(null);
+    setCustomPrayerMins("");
 
     try {
       await savePrayerSlot(slot);
@@ -1127,6 +1128,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
 
   const confirmPrayerDuration = async (mins: number) => {
     if (!prayerDurationModal) return;
+    if (isNaN(mins) || mins <= 0) return;
 
     const slotId = prayerDurationModal;
     const slotIdx = localPrayerSlots.findIndex(
@@ -1134,6 +1136,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     );
     if (slotIdx === -1) {
       setPrayerDurationModal(null);
+      setCustomPrayerMins("");
       return;
     }
 
@@ -1151,6 +1154,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     newSlots[slotIdx] = slot;
     setLocalPrayerSlots(newSlots);
     setPrayerDurationModal(null);
+    setCustomPrayerMins("");
 
     try {
       await savePrayerSlot(slot);
@@ -1160,7 +1164,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         return next;
       });
       onUpdate();
-      setGenMsg({ type: "success", text: `Prayer session (${mins}m) saved!` });
+      setGenMsg({ type: "success", text: `Prayer session (${mins}m) accounted and saved!` });
       setTimeout(() => setGenMsg(null), 3000);
     } catch (err) {
       console.error("Failed to save prayer slot:", err);
@@ -1438,7 +1442,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       (s) => !s.date || new Date(s.date).getFullYear() === currentYear
     );
     const totalSessions = completed.length;
-    const totalDurationMins = completed.reduce((acc, s) => acc + (s.durationMins || 30), 0);
+    const totalDurationMins = completed.reduce((acc, s) => acc + (Number(s.durationMins) || 0), 0);
     const uniqueKids = new Set<string>();
     completed.forEach((s) => {
       (s.assignedMemberIds || []).forEach((id) => uniqueKids.add(id));
@@ -2422,7 +2426,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               (s.branchId && s.branchId === focusChurchId)
             );
           });
-          const totalPrayerMins = churchPrayerSlots.reduce((acc, s) => acc + (s.durationMins || 30), 0);
+          const totalPrayerMins = churchPrayerSlots.reduce((acc, s) => acc + (Number(s.durationMins) || 0), 0);
 
           return (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
@@ -3001,37 +3005,110 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         })()}
 
       {/* PRAYER DURATION MODAL */}
-      {prayerDurationModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="font-bold text-lg mb-1 text-slate-800">
-              Prayer Duration
-            </h3>
-            <p className="text-sm text-slate-500 mb-6">
-              How many minutes did you pray for this group today?
-            </p>
-            <div className="grid grid-cols-4 gap-3 mb-6">
-              {[0, 5, 10, 15, 20, 25, 30].map((mins) => (
+      {prayerDurationModal && (() => {
+        const activeSlot = localPrayerSlots.find((s) => s.id === prayerDurationModal);
+        const assignedKids = (activeSlot?.assignedMemberIds || [])
+          .map((id) => data.members.find((m) => m.id === id)?.name)
+          .filter(Boolean);
+        const isAlreadyComplete = activeSlot?.isCompleted;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl">
+              <div className="flex items-center gap-2 mb-2 text-indigo-600">
+                <Clock size={20} />
+                <h3 className="font-bold text-lg text-slate-800">
+                  Prayer Duration
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500 mb-3">
+                Select or enter how many minutes were interceded for this schedule:
+              </p>
+
+              {activeSlot && (
+                <div className="mb-4 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="text-[11px] font-bold text-slate-700 flex justify-between">
+                    <span>{formatDateDDMMYYYY(activeSlot.date)} ({activeSlot.dayOfWeek || "Weekly"})</span>
+                    <span className="text-indigo-600 font-black">{assignedKids.length} Children</span>
+                  </div>
+                  {assignedKids.length > 0 && (
+                    <div className="text-[10px] text-slate-500 mt-1 line-clamp-2">
+                      {assignedKids.join(", ")}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="grid grid-cols-4 gap-2 mb-4">
+                {[5, 10, 15, 20, 25, 30, 45, 60].map((mins) => {
+                  const isCurrent = isAlreadyComplete && activeSlot?.durationMins === mins;
+                  return (
+                    <button
+                      key={mins}
+                      onClick={() => confirmPrayerDuration(mins)}
+                      className={`py-2.5 px-2 font-bold rounded-xl border text-xs transition-all ${
+                        isCurrent
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                          : "bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 border-indigo-200/80"
+                      }`}
+                    >
+                      {mins}m
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Custom Minutes Input */}
+              <div className="flex items-center gap-2 mb-5">
+                <input
+                  type="number"
+                  min="1"
+                  max="480"
+                  placeholder="Custom mins..."
+                  value={customPrayerMins}
+                  onChange={(e) => setCustomPrayerMins(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && customPrayerMins) {
+                      confirmPrayerDuration(parseInt(customPrayerMins, 10));
+                    }
+                  }}
+                  className="flex-1 px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-400 focus:bg-white font-medium"
+                />
                 <button
-                  key={mins}
-                  onClick={() => confirmPrayerDuration(mins)}
-                  className="py-2.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl border border-indigo-200 transition-colors"
+                  type="button"
+                  disabled={!customPrayerMins || parseInt(customPrayerMins, 10) <= 0}
+                  onClick={() => confirmPrayerDuration(parseInt(customPrayerMins, 10))}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer"
                 >
-                  {mins}m
+                  Set
                 </button>
-              ))}
-            </div>
-            <div className="flex justify-end">
-              <button
-                onClick={() => setPrayerDurationModal(null)}
-                className="px-4 py-2 text-slate-500 hover:text-slate-700 font-medium"
-              >
-                Cancel
-              </button>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                {isAlreadyComplete ? (
+                  <button
+                    onClick={() => unmarkPrayerSlot(prayerDurationModal)}
+                    className="text-xs text-rose-600 hover:text-rose-700 font-bold hover:underline"
+                  >
+                    Unmark Slot
+                  </button>
+                ) : (
+                  <div></div>
+                )}
+                <button
+                  onClick={() => {
+                    setPrayerDurationModal(null);
+                    setCustomPrayerMins("");
+                  }}
+                  className="px-4 py-2 text-xs text-slate-500 hover:text-slate-700 font-bold"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* CALL MODAL */}
       {callModal && (
@@ -3784,7 +3861,8 @@ const PrayerSlotCard = ({
 
   return (
     <div
-      className={`bg-white rounded-2xl border transition-all ${slot.isCompleted ? "border-green-200 shadow-none" : isExpired ? "border-amber-200 bg-amber-50/50" : "border-slate-100 shadow-sm"} ${unsavedChanges.has(slot.id) ? "ring-2 ring-amber-300" : ""}`}
+      onClick={() => onToggle(slot.id)}
+      className={`bg-white rounded-2xl border transition-all cursor-pointer hover:border-indigo-300 hover:shadow-md ${slot.isCompleted ? "border-green-200 shadow-none" : isExpired ? "border-amber-200 bg-amber-50/50" : "border-slate-100 shadow-sm"} ${unsavedChanges.has(slot.id) ? "ring-2 ring-amber-300" : ""}`}
     >
       <div className="p-4">
         <div className="flex justify-between items-start mb-3">
@@ -3802,7 +3880,7 @@ const PrayerSlotCard = ({
               </h4>
               <p className="text-[10px] text-slate-400 font-medium">
                 {assigned.length} Children •{" "}
-                {slot.durationMins !== undefined ? slot.durationMins : 30} mins
+                {slot.isCompleted ? (slot.durationMins || 0) : (slot.durationMins || 30)} mins
               </p>
             </div>
           </div>
@@ -3824,7 +3902,10 @@ const PrayerSlotCard = ({
               <CalendarPlus size={16} />
             </button>
             <div
-              onClick={() => onToggle(slot.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle(slot.id);
+              }}
               className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors cursor-pointer ${slot.isCompleted ? "bg-green-500 border-green-500 text-white" : "border-slate-300 text-transparent hover:border-green-400"}`}
             >
               <Check size={14} strokeWidth={4} />
@@ -4164,17 +4245,6 @@ const CollapsibleContactSection = ({
                           <MapPin size={10} /> {address.substring(0, 26)}...
                         </div>
                       )}
-                      {member.assignedTeacherId && allMembers && (
-                        <div className="text-[10px] text-indigo-600 font-semibold mt-1 flex items-center gap-1">
-                          <UserCheck size={10} />
-                          <span>
-                            Shepherd: {(() => {
-                              const sh = allMembers.find((m) => m.id === member.assignedTeacherId);
-                              return sh ? sh.name : "Unlinked";
-                            })()}
-                          </span>
-                        </div>
-                      )}
                     </div>
 
                     <div className="flex gap-1.5 shrink-0">
@@ -4287,7 +4357,7 @@ const getMemberStats = (memberId: string, data: AppData) => {
 
   // Helper to sum minutes
   const sumMins = (slots: PrayerSlot[]) =>
-    slots.reduce((acc, s) => acc + (s.durationMins || 30), 0);
+    slots.reduce((acc, s) => acc + (Number(s.durationMins) || 0), 0);
 
   return {
     visits,

@@ -644,7 +644,7 @@ const AdminDashboard: React.FC<{
           eligibleKidIds.has(id),
         );
         if (hasAssigned) {
-          return acc + (s.durationMins !== undefined ? s.durationMins : 30);
+          return acc + (s.durationMins !== undefined && s.durationMins !== null ? Number(s.durationMins) : 30);
         }
         return acc;
       }, 0);
@@ -1560,7 +1560,7 @@ const ChurchDashboard: React.FC<{
             (s.assignedMemberIds || []).some((id) => assignedKidIds.has(id)) ||
             (s.teacherId && isTeacherView && s.teacherId === currentUser.id);
           if (matches) {
-            return acc + (s.durationMins !== undefined ? s.durationMins : 30);
+            return acc + (s.durationMins !== undefined && s.durationMins !== null ? Number(s.durationMins) : 30);
           }
           return acc;
         }, 0);
@@ -1778,7 +1778,7 @@ const ChurchDashboard: React.FC<{
         if (statusBreakdown.fnf > 0) {
           tips.push({
             id: tips.length + 1,
-            text: `You have ${statusBreakdown.fnf} recurring FNF(s) recorded in directory.`,
+            text: `You have ${statusBreakdown.fnf} FNF(s) recorded in directory.`,
             action: "Reach out to your regular FNFs and encourage continuous participation.",
           });
         }
@@ -1906,7 +1906,7 @@ const ChurchDashboard: React.FC<{
                         <span className="font-bold text-cyan-900 bg-cyan-100 px-2 py-0.5 rounded">{statusBreakdown.firstTimers}</span>
                       </div>
                       <div className="flex justify-between items-center text-sm bg-teal-50/70 p-1.5 rounded-lg border border-teal-200/60">
-                        <span className="text-teal-800 font-medium">FNFs (Recurring)</span>
+                        <span className="text-teal-800 font-medium">FNFs</span>
                         <span className="font-bold text-teal-900 bg-teal-100 px-2 py-0.5 rounded">{statusBreakdown.fnf}</span>
                       </div>
                     </>

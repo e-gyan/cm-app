@@ -16,16 +16,29 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.7.22";
-export const APP_RELEASE_NAME = "Report & Dashboard Synchronization for Separate First Timers and FNFs";
-export const APP_BUILD_DATE = "2026-10-05";
+export const APP_VERSION = "1.7.23";
+export const APP_RELEASE_NAME = "Prayer Duration Accounting, Age Demographics Redesign & Intelligent Shepherd UX";
+export const APP_BUILD_DATE = "2026-10-14";
 
 export const CHANGELOG: ReleaseLog[] = [
+  {
+    version: "1.7.23",
+    date: "2026-10-14",
+    title: "Prayer Duration Accounting, Age Demographics Redesign & Intelligent Shepherd UX",
+    badge: "Current Release",
+    changes: [
+      "Prayer Schedule Duration Accounting & DB Migration: Clicking a prayer schedule item opens the duration selector; user-selected minutes are recorded, persisted to Firestore, and totaled across all metrics. Migrated and normalized legacy completed slots with 0 duration to standard 30 minutes",
+      "Clean FNF Terminology: Removed 'recurring' prefix from FNF across the app (Dashboard, Settings, Analytics), standardizing on 'FNFs' and 'FNF'",
+      "Executive Age Demographics & Cohort Intelligence: Redesigned Demographics in Analytics Hub into a modern executive dashboard featuring Average Age, Cohort Volume, Dominant Group, DOB Data Quality alerts, D3 animated distribution, and strategic transition recommendations",
+      "Context-Aware Shepherd Display: In Outreach Hub, shepherd name is omitted on member cards since the logged-in user is already viewing their assigned children. In People Hub, shepherd names display when viewing 'All Shepherds' and hide when filtered by a specific shepherd",
+      "Year-to-Date Sunday Attendance Accounting & Clean Badge UI: Each child's Sunday attendance now displays their accurate attendance from the beginning of the year ({sundayAttended}/{totalSundays}) across church departments, with the excused break icon removed for a clean, distraction-free badge layout, and filtered Attendance History to exclude Wednesday services",
+    ],
+  },
   {
     version: "1.7.22",
     date: "2026-10-05",
     title: "Report & Dashboard Synchronization for Separate First Timers and FNFs",
-    badge: "Current Release",
+    badge: "Previous Release",
     changes: [
       "Dashboard Status Breakdown & Targets: When switched to Separate First Timers and FNFs in Settings, Dashboard immediately displays distinct counts and badge cards for First Timers and recurring FNFs",
       "Church Membership & Population Metrics: Corrected church population filters across Multi-Church and Church Dashboards to include First Timers in active metrics when separated, with live reactive cache updates",
