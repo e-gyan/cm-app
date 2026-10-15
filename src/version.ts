@@ -32,6 +32,7 @@ export const CHANGELOG: ReleaseLog[] = [
       "Executive Age Demographics & Cohort Intelligence: Redesigned Demographics in Analytics Hub into a modern executive dashboard featuring Average Age, Cohort Volume, Dominant Group, DOB Data Quality alerts, D3 animated distribution, and strategic transition recommendations",
       "Context-Aware Shepherd Display: In Outreach Hub, shepherd name is omitted on member cards since the logged-in user is already viewing their assigned children. In People Hub, shepherd names display when viewing 'All Shepherds' and hide when filtered by a specific shepherd",
       "Year-to-Date Sunday Attendance Accounting & Clean Badge UI: Each child's Sunday attendance now displays their accurate attendance from the beginning of the year ({sundayAttended}/{totalSundays}) across church departments, with the excused break icon removed for a clean, distraction-free badge layout, and filtered Attendance History to exclude Wednesday services",
+      "Refined People Hub Transfer Modal: Updated modal header to 'Transfer {Name} to a different church or branch', labeled Target Church with options strictly matching 'I', 'K', 'LJ', and 'UJ', and labeled Target Branch to exclusively list registered system branches without unassigned placeholders",
     ],
   },
   {

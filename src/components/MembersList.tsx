@@ -522,8 +522,23 @@ const MembersList: React.FC<MembersListProps> = ({
   const openTransferModal = (member: Member) => {
     setTransferMember(member);
     setTransferTarget(member.assignedChurch || "UJ");
-    setTransferBranchTarget(member.branchId || "");
-    setTransferZoneTarget(member.zoneId || "");
+    const allBranches = data.settings.organization?.zones?.flatMap((z) => z.branches || []) || [];
+    const validBranch = allBranches.find((b) => (b.id || b.name) === member.branchId);
+    const initialBranchId = validBranch
+      ? (validBranch.id || validBranch.name)
+      : (allBranches[0] ? (allBranches[0].id || allBranches[0].name) : (member.branchId || ""));
+    setTransferBranchTarget(initialBranchId);
+
+    let matchedZone = "";
+    if (data.settings.organization?.zones && initialBranchId) {
+      const foundZone = data.settings.organization.zones.find((z) =>
+        z.branches?.some((b) => (b.id || b.name) === initialBranchId)
+      );
+      if (foundZone) {
+        matchedZone = foundZone.id || foundZone.name;
+      }
+    }
+    setTransferZoneTarget(matchedZone || member.zoneId || "");
   };
 
   const confirmTransfer = async () => {
@@ -3527,12 +3542,9 @@ const MembersList: React.FC<MembersListProps> = ({
             <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-fuchsia-100 text-fuchsia-600 mb-3 mx-auto">
               <ArrowRightLeft size={24} />
             </div>
-            <h3 className="text-xl font-extrabold text-gray-900 text-center mb-1">
-              Transfer Member / Child
+            <h3 className="text-lg font-extrabold text-gray-900 text-center mb-4">
+              Transfer <span className="text-fuchsia-600">{transferMember.name}</span> to a different church or branch
             </h3>
-            <p className="text-gray-500 text-center text-xs mb-4">
-              Transfer <span className="font-bold text-gray-800">{transferMember.name}</span> to a different church department or campus branch.
-            </p>
 
             {/* Current Profile Summary */}
             <div className="p-3 bg-slate-50 border border-slate-200/70 rounded-2xl mb-4 flex items-center justify-between text-xs">
@@ -3551,7 +3563,7 @@ const MembersList: React.FC<MembersListProps> = ({
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1.5 flex items-center gap-1.5">
                   <Building2 size={14} className="text-fuchsia-600" />
-                  Target Church Department
+                  Target Church
                 </label>
                 <div className="relative">
                   <select
@@ -3559,21 +3571,11 @@ const MembersList: React.FC<MembersListProps> = ({
                     value={transferTarget}
                     onChange={(e) => setTransferTarget(e.target.value as Church)}
                   >
-                    {["UJ", "LJ", "K", "I", ...availableChurches.filter((c) => !["UJ", "LJ", "K", "I"].includes(c))].map((c) => (
+                    {(["I", "K", "LJ", "UJ"] as const).map((c) => (
                       <option key={c} value={c}>
-                        {c === "UJ"
-                          ? "Upper Junior (UJ)"
-                          : c === "LJ"
-                            ? "Lower Junior (LJ)"
-                            : c === "K"
-                              ? "Kindergarten (K)"
-                              : c === "I"
-                                ? "Infants (I)"
-                                : `${c} Church`}{" "}
-                        {c === transferMember.assignedChurch ? "(Current)" : ""}
+                        {c} {c === transferMember.assignedChurch ? "(Current)" : ""}
                       </option>
                     ))}
-                    <option value="ARCHIVED">Archive (Graduated / Teen)</option>
                   </select>
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                     <ChevronDown size={16} className="text-gray-400" />
@@ -3581,11 +3583,11 @@ const MembersList: React.FC<MembersListProps> = ({
                 </div>
               </div>
 
-              {/* Target Campus Branch Selector */}
+              {/* Target Branch Selector */}
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1.5 flex items-center gap-1.5">
                   <MapPin size={14} className="text-fuchsia-600" />
-                  Target Campus Branch
+                  Target Branch
                 </label>
                 <div className="relative">
                   <select
@@ -3606,7 +3608,6 @@ const MembersList: React.FC<MembersListProps> = ({
                       setTransferZoneTarget(matchedZone);
                     }}
                   >
-                    <option value="">No Branch (Unassigned)</option>
                     {(data.settings.organization?.zones?.flatMap((z) => z.branches || []) || []).map((b) => {
                       const bVal = b.id || b.name;
                       const isCurrent = bVal === transferMember.branchId;
