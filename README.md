@@ -1,7 +1,7 @@
 # Children's Ministry Directorate (CMD) Platform
 
-[![Version](https://img.shields.io/badge/version-1.7.11-indigo.svg)](src/version.ts)
-[![Release](https://img.shields.io/badge/release-Branch%20Shepherd%20Filters%20%26%20Pastoral%20Sync-emerald.svg)](src/version.ts)
+[![Version](https://img.shields.io/badge/version-1.8.1-indigo.svg)](src/version.ts)
+[![Release](https://img.shields.io/badge/release-Ministry%20App%20Suite%20%26%20PWA%20Accountability-emerald.svg)](src/version.ts)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)](tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-cyan.svg)](package.json)
 
@@ -68,8 +68,12 @@ When introducing changes:
 │   │   ├── Finances.tsx           # Weekly Sunday collections, tithes and category ledgers
 │   │   ├── ReportExport.tsx       # WhatsApp copy-ready reports with Children/Shepherd breakdown
 │   │   ├── ShepherdAllocationManager.tsx # Visual pastoral allocations, household groups & quota balancing
-│   │   ├── Settings.tsx           # Organization, zones, branches, and RBAC matrix
+│   │   ├── Settings.tsx           # Organization, zones, branches, alerts & RBAC matrix
+│   │   ├── AppSuiteSwitcher.tsx   # 9-dot app switcher, launcher & embedded app frame
 │   │   └── Login.tsx              # Passcode/Google authentication and session restoration
+│   │
+│   ├── config/
+│   │   └── suiteApps.ts           # Deployed ministry suite registry (CM, Watchman, Save N Know)
 │   │
 │   ├── services/
 │   │   ├── storageService.ts      # Cloud Firestore sync, 0ms getInstantData(), branch rename cascade
@@ -211,6 +215,12 @@ When introducing changes:
 - **Instant 0ms Archiving & Seamless Deletion**:
   - Dismisses confirmation modals in 0ms with instantaneous optimistic local state removal.
   - Updates Firestore in the background with zero blocking spinners or user wait times.
+
+### 7. Mobile PWA, Accountability Alerts, Smart Paste, Transitions & Suite Switcher (v1.8.x)
+- **Installable PWA & Accountability Alerts**: Supports Android and iPhone home-screen installation with configurable reminder schedules for daily prayers, weekly outreach, Sunday reporting, and church promotions in **Settings**.
+- **Smart Paste Attendance & First Timer Automation**: Allows leaders to paste attendance lists with conflict resolution, captures First Timer gender, parent contact, and location, and automatically promotes First Timers to FNF on their second attendance.
+- **Due Soon Transitions & Yearly Attendance Accuracy**: Tracks children within 3 months of church age limits (`I -> K`, `K -> LJ`, `LJ -> UJ`, `UJ -> Teens`) and calculates yearly attendance from each child's first record of the year with explicit excused-break accounting.
+- **Prayer Persistence & App Suite Switcher**: Persists prayer durations reliably, continuously includes all `Member` children in allocations and schedules, and provides a 9-dot App Switcher to move seamlessly between CM Attendance, Watchman, and Save N Know.
 
 ---
 
