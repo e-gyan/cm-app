@@ -16,16 +16,25 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.8.0";
-export const APP_RELEASE_NAME = "PWA & Alerts, Smart Paste Attendance, Due Soon Transitions, First Timer Details & Prayer Sync";
+export const APP_VERSION = "1.8.1";
+export const APP_RELEASE_NAME = "Ministry App Suite Switcher & Launcher";
 export const APP_BUILD_DATE = "2026-11-16";
 
 export const CHANGELOG: ReleaseLog[] = [
   {
+    version: "1.8.1",
+    date: "2026-11-16",
+    title: "Ministry App Suite Switcher & Launcher",
+    badge: "Current Release",
+    changes: [
+      "Added a 9-dot App Switcher and Launcher Screen to seamlessly switch between Children's Ministry Attendance, Watchman, and Save N Know inside one workspace.",
+    ],
+  },
+  {
     version: "1.8.0",
     date: "2026-11-16",
     title: "PWA & Alerts, Smart Paste Attendance, Due Soon Transitions, First Timer Details & Prayer Sync",
-    badge: "Current Release",
+    badge: "Previous Release",
     changes: [
       "Added Android/iPhone PWA support with configurable accountability alerts, smart paste attendance matching, a Due Soon church transition report tab (< 3 months), First Timer contact/gender/location capture with automatic FNF promotion on second attendance, excused-break yearly attendance counts from each child's first record, and reliable prayer saving with continuous member allocation.",
     ],

@@ -45,6 +45,13 @@ import { DEFAULT_SETTINGS } from "./constants";
 import { matchesScope, getScopeDisplayLabel } from "./lib/teacherDivision";
 import { APP_VERSION } from "./version";
 import { ChangelogModal } from "./components/ChangelogModal";
+import { SUITE_APPS } from "./config/suiteApps";
+import {
+  AppSuiteSwitcherButton,
+  SuiteLauncherView,
+  ExternalAppFrame,
+  ActiveSuiteView,
+} from "./components/AppSuiteSwitcher";
 
 enum View {
   DASHBOARD = "Dashboard",
@@ -107,6 +114,7 @@ const App: React.FC = () => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+  const [activeSuiteApp, setActiveSuiteApp] = useState<ActiveSuiteView>("cm-app");
   const [deferredPwaPrompt, setDeferredPwaPrompt] = useState<any>(null);
   const [isPwaInstalled, setIsPwaInstalled] = useState<boolean>(false);
   const [showIosInstallModal, setShowIosInstallModal] = useState<boolean>(false);
@@ -776,6 +784,7 @@ const App: React.FC = () => {
   }) => (
     <button
       onClick={() => {
+        setActiveSuiteApp("cm-app");
         setCurrentView(view);
       }}
       className={`
@@ -807,7 +816,10 @@ const App: React.FC = () => {
     label: string;
   }) => (
     <button
-      onClick={() => setCurrentView(view)}
+      onClick={() => {
+        setActiveSuiteApp("cm-app");
+        setCurrentView(view);
+      }}
       className={`
         flex flex-col items-center justify-center min-w-[4.5rem] flex-1 py-2 gap-1 active:scale-95 transition-transform
         ${currentView === view ? "text-indigo-600" : "text-slate-400 hover:text-slate-600"}
@@ -1098,8 +1110,13 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Mobile Header Actions (PWA Install, Notification & Logout) */}
+          {/* Mobile Header Actions (App Switcher, PWA Install, Notification & Logout) */}
           <div className="flex items-center gap-1">
+            <AppSuiteSwitcherButton
+              activeSuiteApp={activeSuiteApp}
+              onSelectApp={setActiveSuiteApp}
+              compact
+            />
             {!isPwaInstalled && (deferredPwaPrompt || isIosDevice) && (
               <button
                 onClick={handleInstallPwaClick}
@@ -1313,6 +1330,10 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-4">
+                <AppSuiteSwitcherButton
+                  activeSuiteApp={activeSuiteApp}
+                  onSelectApp={setActiveSuiteApp}
+                />
                 {!isPwaInstalled && (deferredPwaPrompt || isIosDevice) && (
                   <button
                     onClick={handleInstallPwaClick}
@@ -1369,7 +1390,29 @@ const App: React.FC = () => {
             </div>
 
             {/* View Content - State Preservation & Lazy Mount */}
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
+            {activeSuiteApp === "launcher" && (
+              <SuiteLauncherView
+                activeSuiteApp={activeSuiteApp}
+                onSelectApp={setActiveSuiteApp}
+              />
+            )}
+
+            {activeSuiteApp !== "cm-app" && activeSuiteApp !== "launcher" && (() => {
+              const targetApp = SUITE_APPS.find((a) => a.id === activeSuiteApp);
+              if (!targetApp) return null;
+              return (
+                <ExternalAppFrame
+                  app={targetApp}
+                  onBackToCm={() => setActiveSuiteApp("cm-app")}
+                  onSelectApp={setActiveSuiteApp}
+                />
+              );
+            })()}
+
+            <div
+              className="animate-in fade-in slide-in-from-bottom-4 duration-500 relative"
+              style={{ display: activeSuiteApp === "cm-app" ? "block" : "none" }}
+            >
               {showDashboard && visitedViews.has(View.DASHBOARD) && (
                 <div
                   style={{
