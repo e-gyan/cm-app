@@ -51,6 +51,8 @@ import {
   UserCheck,
   Sparkles,
   Info,
+  Bell,
+  Smartphone,
 } from "lucide-react";
 import { themeColorPalettes, applyTheme } from "../lib/theme";
 import { APP_FEATURES_REGISTRY, DEFAULT_SETTINGS } from "../constants";
@@ -838,6 +840,233 @@ const Settings: React.FC<SettingsProps> = ({
             </div>
           </div>
         </div>
+
+        {/* 4. Mobile PWA & Notification Accountability Parameters */}
+        {(() => {
+          const notifCfg = localSettings.notificationConfig || DEFAULT_SETTINGS.notificationConfig!;
+          const updateNotifCfg = (patch: Partial<typeof notifCfg>) => {
+            applyComponentSetting({
+              notificationConfig: {
+                ...notifCfg,
+                ...patch,
+              },
+            });
+          };
+
+          const handleRequestDevicePermission = async () => {
+            if (!("Notification" in window)) {
+              setStatusMsg({ type: "error", text: "Browser/Device notifications are not supported on this device." });
+              return;
+            }
+            const perm = await Notification.requestPermission();
+            if (perm === "granted") {
+              setStatusMsg({ type: "success", text: "Phone/Browser Notification Alerts Activated!" });
+              if ("serviceWorker" in navigator) {
+                const reg = await navigator.serviceWorker.ready;
+                reg.showNotification("CM Ministry Accountability Active", {
+                  body: "Prayer, Outreach, and Reporting alerts are now enabled on your device.",
+                  icon: "/icon-192.svg",
+                  badge: "/icon-192.svg",
+                });
+              }
+            } else {
+              setStatusMsg({ type: "error", text: "Notification permission was not granted. Please enable it in your browser settings." });
+            }
+            setTimeout(() => setStatusMsg(null), 4000);
+          };
+
+          const handleSendTestAlert = async () => {
+            if ("Notification" in window && Notification.permission === "granted") {
+              if ("serviceWorker" in navigator) {
+                const reg = await navigator.serviceWorker.ready;
+                await reg.showNotification("CM Ministry Accountability Reminder", {
+                  body: `Prayer (${notifCfg.prayerAlertTime}), Outreach (${notifCfg.outreachAlertDay} ${notifCfg.outreachAlertTime}), & Sunday Reporting (${notifCfg.reportingAlertTime}) alerts are active!`,
+                  icon: "/icon-192.svg",
+                  badge: "/icon-192.svg",
+                });
+              } else {
+                new Notification("CM Ministry Accountability Reminder", {
+                  body: "Prayer, Outreach, and Reporting alerts are active on your device!",
+                });
+              }
+              setStatusMsg({ type: "success", text: "Test notification sent to your device!" });
+            } else {
+              await handleRequestDevicePermission();
+            }
+            setTimeout(() => setStatusMsg(null), 3500);
+          };
+
+          return (
+            <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200/70 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <span className="text-xs font-black uppercase tracking-wider text-purple-700 bg-purple-50 px-2.5 py-1 rounded-md border border-purple-200/50 inline-block mb-1.5">
+                    PWA & Accountability Alerts #4
+                  </span>
+                  <h4 className="font-bold text-base text-slate-800 flex items-center gap-2">
+                    <Bell size={18} className="text-purple-600" />
+                    Prayer, Outreach & Reporting Notification Parameters
+                  </h4>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Configure scheduled reminder parameters for Android, iPhone (PWA), and desktop browsers so shepherds and coordinators stay on course for reporting and accountability.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleRequestDevicePermission}
+                    className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
+                  >
+                    <Smartphone size={14} /> Enable Phone Alerts
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendTestAlert}
+                    className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all"
+                  >
+                    <Bell size={14} /> Test Alert
+                  </button>
+                </div>
+              </div>
+
+              {/* Master Enable Toggle */}
+              <label className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 cursor-pointer">
+                <div>
+                  <span className="font-bold text-sm text-slate-800 block">
+                    Enable Accountability Notification System
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    Activates automated reminders for Prayer Schedule, Weekly Outreach, Sunday Attendance Reporting, and Age Promotions.
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={notifCfg.enabled}
+                  onChange={(e) => updateNotifCfg({ enabled: e.target.checked })}
+                  className="w-5 h-5 text-purple-600 rounded focus:ring-purple-500"
+                />
+              </label>
+
+              {/* Alert Parameters Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {/* 1. Daily Prayer Alert */}
+                <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs uppercase text-indigo-900">
+                      1. Daily Prayer Schedule Alert (Mon–Fri)
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={notifCfg.prayerAlertEnabled}
+                      onChange={(e) => updateNotifCfg({ prayerAlertEnabled: e.target.checked })}
+                      className="w-4 h-4 text-indigo-600 rounded"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Reminds shepherds to pray for their assigned children and log completion duration.
+                  </p>
+                  <div className="flex items-center justify-between pt-1">
+                    <label className="text-xs font-bold text-slate-600">Reminder Time:</label>
+                    <input
+                      type="time"
+                      value={notifCfg.prayerAlertTime || "18:00"}
+                      onChange={(e) => updateNotifCfg({ prayerAlertTime: e.target.value })}
+                      className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Weekly Outreach & Follow-Up Alert */}
+                <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs uppercase text-emerald-900">
+                      2. Outreach & Visitation Alert
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={notifCfg.outreachAlertEnabled}
+                      onChange={(e) => updateNotifCfg({ outreachAlertEnabled: e.target.checked })}
+                      className="w-4 h-4 text-emerald-600 rounded"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Prompts shepherds & leaders to complete home visits and phone follow-ups.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Day</label>
+                      <select
+                        value={notifCfg.outreachAlertDay || "SATURDAY"}
+                        onChange={(e) => updateNotifCfg({ outreachAlertDay: e.target.value })}
+                        className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                      >
+                        <option value="THURSDAY">Thursday</option>
+                        <option value="FRIDAY">Friday</option>
+                        <option value="SATURDAY">Saturday</option>
+                        <option value="SUNDAY">Sunday</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Time</label>
+                      <input
+                        type="time"
+                        value={notifCfg.outreachAlertTime || "09:00"}
+                        onChange={(e) => updateNotifCfg({ outreachAlertTime: e.target.value })}
+                        className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Sunday Attendance & Reporting Accountability Alert */}
+                <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs uppercase text-amber-900">
+                      3. Sunday Reporting Accountability Alert
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={notifCfg.reportingAlertEnabled}
+                      onChange={(e) => updateNotifCfg({ reportingAlertEnabled: e.target.checked })}
+                      className="w-4 h-4 text-amber-600 rounded"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Alerts church heads & coordinators on Sunday if attendance or report submission is pending.
+                  </p>
+                  <div className="flex items-center justify-between pt-1">
+                    <label className="text-xs font-bold text-slate-600">Sunday Cutoff Time:</label>
+                    <input
+                      type="time"
+                      value={notifCfg.reportingAlertTime || "13:00"}
+                      onChange={(e) => updateNotifCfg({ reportingAlertTime: e.target.value })}
+                      className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                {/* 4. Due Soon Church Transition Alert */}
+                <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs uppercase text-purple-900">
+                      4. Age Limit / Church Promotion Alert (&lt; 3 Mos)
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={notifCfg.promotionsAlertEnabled}
+                      onChange={(e) => updateNotifCfg({ promotionsAlertEnabled: e.target.checked })}
+                      className="w-4 h-4 text-purple-600 rounded"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Notifies church teachers when children in their church are within 3 months of moving to the next church (I→K, K→LJ, LJ→UJ, UJ→Teens).
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   };

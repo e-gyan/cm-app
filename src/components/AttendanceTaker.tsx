@@ -32,6 +32,10 @@ import {
   Undo2,
   AlertCircle,
   Plus,
+  ClipboardPaste,
+  Phone,
+  MapPin,
+  Sparkles,
 } from "lucide-react";
 import { motion } from "motion/react";
 import {
@@ -123,8 +127,44 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
   );
 
   const [newMemberNames, setNewMemberNames] = useState<string[]>([""]);
+  const [firstTimerEntries, setFirstTimerEntries] = useState<
+    {
+      name: string;
+      gender: "MALE" | "FEMALE";
+      parentPhone: string;
+      address: string;
+      roleType: MemberType.VISITOR | MemberType.FNF;
+    }[]
+  >([
+    {
+      name: "",
+      gender: "MALE",
+      parentPhone: "",
+      address: "",
+      roleType: MemberType.VISITOR,
+    },
+  ]);
   const [isSubmittingVisitor, setIsSubmittingVisitor] = useState(false);
   const [isAddingFNF, setIsAddingFNF] = useState(false);
+
+  // Smart Paste Attendance Pop Feature State
+  const [isSmartPasteOpen, setIsSmartPasteOpen] = useState(false);
+  const [smartPasteRawText, setSmartPasteRawText] = useState("");
+  const [smartPasteStep, setSmartPasteStep] = useState<"INPUT" | "REVIEW">("INPUT");
+  const [smartPasteItems, setSmartPasteItems] = useState<
+    {
+      id: string;
+      rawLine: string;
+      status: "EXACT" | "CONFUSION" | "FIRST_TIMER" | "SKIP";
+      selectedMemberId?: string;
+      candidates: Member[];
+      firstTimerName: string;
+      firstTimerGender: "MALE" | "FEMALE";
+      firstTimerPhone: string;
+      firstTimerLocation: string;
+    }[]
+  >([]);
+  const [isRecordingSmartPaste, setIsRecordingSmartPaste] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboardTimeframe, setLeaderboardTimeframe] = useState<
     "2_WEEKS" | "MONTH" | "QUARTER" | "ALL_TIME" | "CM"
@@ -766,23 +806,21 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
     }
   };
 
-  const parsedFirstTimerNames = useMemo(() => {
-    const rawList: string[] = [];
-    newMemberNames.forEach((n) => {
-      const pieces = n.split(/[\n,]+/);
-      pieces.forEach((p) => {
-        const cleaned = sanitizeInput(p).trim();
-        if (cleaned.length > 0) rawList.push(cleaned);
-      });
-    });
-    return Array.from(new Set(rawList));
-  }, [newMemberNames]);
+  const validFirstTimerEntries = useMemo(() => {
+    return firstTimerEntries
+      .map((entry) => ({
+        ...entry,
+        name: sanitizeInput(entry.name).trim(),
+        parentPhone: sanitizeInput(entry.parentPhone).trim(),
+        address: sanitizeInput(entry.address).trim(),
+      }))
+      .filter((entry) => entry.name.length > 0);
+  }, [firstTimerEntries]);
 
   const handleAddFNF = async () => {
-    if (parsedFirstTimerNames.length === 0 || isSubmittingVisitor) return;
+    if (validFirstTimerEntries.length === 0 || isSubmittingVisitor) return;
     setIsSubmittingVisitor(true);
     try {
-      // Auto-assign from fnfTargetChurch or current church view if valid, or shepherd's profile
       const targetChurch: Church = (fnfTargetChurch && availableChurches.includes(fnfTargetChurch))
         ? fnfTargetChurch
         : ((effectiveChurch && availableChurches.includes(effectiveChurch as Church))
@@ -796,19 +834,32 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       const targetZoneId = currentUser?.zoneId || "";
 
       const shouldCombine = isFnfCombined(data.settings);
-      const newMembers: Member[] = parsedFirstTimerNames.map((cleanName) => ({
+      const joinDateIso = selectedDate
+        ? `${selectedDate}T${new Date().toISOString().split("T")[1] || "09:00:00.000Z"}`
+        : new Date().toISOString();
+
+      const newMembers: Member[] = validFirstTimerEntries.map((entry) => ({
         id: crypto.randomUUID(),
-        name: cleanName,
-        type: shouldCombine ? MemberType.FNF : MemberType.VISITOR,
+        name: entry.name,
+        type:
+          entry.roleType === MemberType.FNF
+            ? MemberType.FNF
+            : shouldCombine
+            ? MemberType.FNF
+            : MemberType.VISITOR,
+        previousType: entry.roleType,
         assignedChurch: targetChurch,
         passcode: "",
         status: MemberStatus.ACTIVE,
-        gender: determineGenderByName(cleanName),
+        gender: entry.gender || determineGenderByName(entry.name),
+        parentPhone: entry.parentPhone || undefined,
+        phone: entry.parentPhone || undefined,
+        address: entry.address || undefined,
         branchId: targetBranchId,
         zoneId: targetZoneId,
-        assignedTeacherId: undefined, // FNFs/Visitors remain unassigned
-        joinedDate: new Date().toISOString(),
-        addedAt: Date.now()
+        assignedTeacherId: undefined,
+        joinedDate: joinDateIso,
+        addedAt: Date.now(),
       }));
 
       // 1. Instant 0ms optimistic update
@@ -823,15 +874,23 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       setServiceMap(newSMap);
       saveDraft(newSet, punctualIds, newSMap);
 
-      setNewMemberNames([""]);
-      setIsAddingFNF(false); // Modal closes instantly in 0ms!
+      setFirstTimerEntries([
+        {
+          name: "",
+          gender: "MALE",
+          parentPhone: "",
+          address: "",
+          roleType: MemberType.VISITOR,
+        },
+      ]);
+      setIsAddingFNF(false);
       setIsSubmittingVisitor(false);
       setSuccessMsg(
         newMembers.length > 1
-          ? `${newMembers.length} FNFs added & saved`
-          : "FNF added & saved"
+          ? `${newMembers.length} First Timers / FNFs added & saved`
+          : "First Timer / FNF added & saved"
       );
-      setTimeout(() => setSuccessMsg(""), 2000);
+      setTimeout(() => setSuccessMsg(""), 2500);
 
       // 2. Background database persistence
       (async () => {
@@ -839,14 +898,259 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
           await addMembers(newMembers);
           await confirmSave(newSet, newSMap, newMembers);
         } catch (err) {
-          console.error("Failed to save FNFs in background:", err);
-          setSuccessMsg("Error saving FNFs");
+          console.error("Failed to save First Timers in background:", err);
+          setSuccessMsg("Error saving First Timers");
         }
       })();
     } catch (err) {
-      console.error("Failed to add FNFs:", err);
+      console.error("Failed to add First Timers:", err);
       setIsSubmittingVisitor(false);
       setIsAddingFNF(false);
+    }
+  };
+
+  // --- SMART PASTE ATTENDANCE MATCHING & RECORDING ---
+  const parseSmartPasteLine = (rawLine: string) => {
+    // Strip leading numbering or bullets e.g. "1. ", "2) ", "- ", "• "
+    const cleanedLine = rawLine.replace(/^\s*(?:\d+[\.\)\-:]|[\u2022\-\*])\s*/, "").trim();
+    // Support optional pipe, dash, or comma separated details: Name | Gender | Phone | Location
+    const parts = cleanedLine
+      .split(/\s*\|\s*|\s+-\s+|\s*,\s*/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    let name = parts[0] || "";
+    let gender: "MALE" | "FEMALE" | undefined = undefined;
+    let phone = "";
+    let location = "";
+
+    for (let i = 1; i < parts.length; i++) {
+      const p = parts[i];
+      const upper = p.toUpperCase();
+      if (upper === "M" || upper === "MALE" || upper === "BOY") {
+        gender = "MALE";
+      } else if (upper === "F" || upper === "FEMALE" || upper === "GIRL") {
+        gender = "FEMALE";
+      } else if (/\d{7,}/.test(p.replace(/\s+/g, ""))) {
+        phone = p;
+      } else if (!location) {
+        location = p;
+      } else {
+        location += `, ${p}`;
+      }
+    }
+
+    const cleanName = sanitizeInput(name).trim();
+    const resolvedGender: "MALE" | "FEMALE" =
+      gender || (determineGenderByName(cleanName) === "FEMALE" ? "FEMALE" : "MALE");
+
+    return {
+      name: cleanName,
+      gender: resolvedGender,
+      phone: sanitizeInput(phone).trim(),
+      location: sanitizeInput(location).trim(),
+    };
+  };
+
+  const handleAnalyzeSmartPaste = () => {
+    const lines = smartPasteRawText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    if (lines.length === 0) return;
+
+    const rosterPool = membersToList;
+    const norm = (s: string) =>
+      (s || "").toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+
+    const parsedItems = lines.map((line, idx) => {
+      const extracted = parseSmartPasteLine(line);
+      const qNorm = norm(extracted.name);
+      const qTokens = qNorm.split(" ").filter((t) => t.length >= 2);
+
+      // 1. Exact full name match
+      const exactMatches = rosterPool.filter((m) => norm(m.name) === qNorm);
+      if (exactMatches.length === 1) {
+        return {
+          id: `paste-${idx}-${Date.now()}`,
+          rawLine: line,
+          status: "EXACT" as const,
+          selectedMemberId: exactMatches[0].id,
+          candidates: exactMatches,
+          firstTimerName: extracted.name,
+          firstTimerGender: extracted.gender,
+          firstTimerPhone: extracted.phone,
+          firstTimerLocation: extracted.location,
+        };
+      }
+      if (exactMatches.length > 1) {
+        return {
+          id: `paste-${idx}-${Date.now()}`,
+          rawLine: line,
+          status: "CONFUSION" as const,
+          selectedMemberId: exactMatches[0].id,
+          candidates: exactMatches,
+          firstTimerName: extracted.name,
+          firstTimerGender: extracted.gender,
+          firstTimerPhone: extracted.phone,
+          firstTimerLocation: extracted.location,
+        };
+      }
+
+      // 2. Token / partial match
+      const scoredCandidates: { member: Member; score: number }[] = [];
+      for (const m of rosterPool) {
+        const mNorm = norm(m.name);
+        const mTokens = mNorm.split(" ").filter(Boolean);
+        if (mNorm.includes(qNorm) || qNorm.includes(mNorm)) {
+          scoredCandidates.push({ member: m, score: 3 });
+          continue;
+        }
+        let matchedTokens = 0;
+        for (const qt of qTokens) {
+          if (mTokens.some((mt) => mt === qt || (qt.length >= 4 && mt.startsWith(qt)))) {
+            matchedTokens++;
+          }
+        }
+        if (matchedTokens > 0) {
+          const score = matchedTokens / Math.max(qTokens.length, 1);
+          if (score >= 0.5 || matchedTokens >= 2) {
+            scoredCandidates.push({ member: m, score });
+          }
+        }
+      }
+
+      scoredCandidates.sort((a, b) => b.score - a.score);
+      const candidates = scoredCandidates.slice(0, 5).map((c) => c.member);
+
+      // Single unambiguous high-confidence token match (all query tokens matched, >= 2 tokens)
+      if (
+        scoredCandidates.length === 1 &&
+        scoredCandidates[0].score >= 1 &&
+        qTokens.length >= 2
+      ) {
+        return {
+          id: `paste-${idx}-${Date.now()}`,
+          rawLine: line,
+          status: "EXACT" as const,
+          selectedMemberId: scoredCandidates[0].member.id,
+          candidates,
+          firstTimerName: extracted.name,
+          firstTimerGender: extracted.gender,
+          firstTimerPhone: extracted.phone,
+          firstTimerLocation: extracted.location,
+        };
+      }
+
+      if (candidates.length > 0) {
+        return {
+          id: `paste-${idx}-${Date.now()}`,
+          rawLine: line,
+          status: "CONFUSION" as const,
+          selectedMemberId: candidates[0].id,
+          candidates,
+          firstTimerName: extracted.name,
+          firstTimerGender: extracted.gender,
+          firstTimerPhone: extracted.phone,
+          firstTimerLocation: extracted.location,
+        };
+      }
+
+      return {
+        id: `paste-${idx}-${Date.now()}`,
+        rawLine: line,
+        status: "FIRST_TIMER" as const,
+        selectedMemberId: undefined,
+        candidates: [],
+        firstTimerName: extracted.name,
+        firstTimerGender: extracted.gender,
+        firstTimerPhone: extracted.phone,
+        firstTimerLocation: extracted.location,
+      };
+    });
+
+    setSmartPasteItems(parsedItems);
+    setSmartPasteStep("REVIEW");
+  };
+
+  const handleConfirmSmartPaste = async () => {
+    if (isRecordingSmartPaste) return;
+    setIsRecordingSmartPaste(true);
+    try {
+      const targetChurch: Church =
+        fnfTargetChurch && availableChurches.includes(fnfTargetChurch)
+          ? fnfTargetChurch
+          : effectiveChurch && availableChurches.includes(effectiveChurch as Church)
+          ? (effectiveChurch as Church)
+          : currentUser?.assignedChurch &&
+            availableChurches.includes(currentUser.assignedChurch as Church)
+          ? (currentUser.assignedChurch as Church)
+          : "UJ";
+      const targetBranchId =
+        activeBranchId && activeBranchId !== "ALL"
+          ? activeBranchId
+          : currentUser?.branchId || "";
+      const targetZoneId = currentUser?.zoneId || "";
+      const shouldCombine = isFnfCombined(data.settings);
+      const joinDateIso = selectedDate
+        ? `${selectedDate}T${new Date().toISOString().split("T")[1] || "09:00:00.000Z"}`
+        : new Date().toISOString();
+
+      const nextPresent = new Set(presentIds);
+      const nextServiceMap = { ...serviceMap };
+      const createdFirstTimers: Member[] = [];
+
+      smartPasteItems.forEach((item) => {
+        if (item.status === "SKIP") return;
+        if (
+          (item.status === "EXACT" || item.status === "CONFUSION") &&
+          item.selectedMemberId
+        ) {
+          nextPresent.add(item.selectedMemberId);
+          nextServiceMap[item.selectedMemberId] = currentService;
+        } else if (item.status === "FIRST_TIMER" && item.firstTimerName.trim()) {
+          const cleanName = sanitizeInput(item.firstTimerName).trim();
+          const newFt: Member = {
+            id: crypto.randomUUID(),
+            name: cleanName,
+            type: shouldCombine ? MemberType.FNF : MemberType.VISITOR,
+            previousType: MemberType.VISITOR,
+            assignedChurch: targetChurch,
+            passcode: "",
+            status: MemberStatus.ACTIVE,
+            gender: item.firstTimerGender || determineGenderByName(cleanName),
+            parentPhone: sanitizeInput(item.firstTimerPhone).trim() || undefined,
+            phone: sanitizeInput(item.firstTimerPhone).trim() || undefined,
+            address: sanitizeInput(item.firstTimerLocation).trim() || undefined,
+            branchId: targetBranchId,
+            zoneId: targetZoneId,
+            assignedTeacherId: undefined,
+            joinedDate: joinDateIso,
+            addedAt: Date.now(),
+          };
+          createdFirstTimers.push(newFt);
+          nextPresent.add(newFt.id);
+          nextServiceMap[newFt.id] = currentService;
+        }
+      });
+
+      setPresentIds(nextPresent);
+      setServiceMap(nextServiceMap);
+      saveDraft(nextPresent, punctualIds, nextServiceMap);
+
+      setIsSmartPasteOpen(false);
+      setSmartPasteRawText("");
+      setSmartPasteItems([]);
+      setSmartPasteStep("INPUT");
+      setIsRecordingSmartPaste(false);
+
+      if (createdFirstTimers.length > 0) {
+        await addMembers(createdFirstTimers);
+      }
+      await confirmSave(nextPresent, nextServiceMap, createdFirstTimers);
+    } catch (err) {
+      console.error("Smart paste attendance error:", err);
+      setIsRecordingSmartPaste(false);
     }
   };
 
@@ -1144,14 +1448,27 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               )}
 
               {attendanceMode === "MEMBERS" && (
-                <button
-                  type="button"
-                  onClick={() => setIsAddingFNF(!isAddingFNF)}
-                  className="p-2 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-200 shrink-0"
-                  title="Add FNF"
-                >
-                  <UserPlus size={16} />
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSmartPasteStep("INPUT");
+                      setIsSmartPasteOpen(true);
+                    }}
+                    className="p-2 text-purple-600 bg-purple-50 rounded-xl hover:bg-purple-100 transition-colors border border-purple-200 shrink-0"
+                    title="Paste Attendance List"
+                  >
+                    <ClipboardPaste size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingFNF(!isAddingFNF)}
+                    className="p-2 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-200 shrink-0"
+                    title="Add First Timer / FNF"
+                  >
+                    <UserPlus size={16} />
+                  </button>
+                </>
               )}
 
               <button
@@ -1242,14 +1559,29 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               )}
 
               {attendanceMode === "MEMBERS" && (
-                <button
-                  type="button"
-                  onClick={() => setIsAddingFNF(!isAddingFNF)}
-                  className="p-2.5 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-200 shrink-0"
-                  title="Add FNF"
-                >
-                  <UserPlus size={18} />
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSmartPasteStep("INPUT");
+                      setIsSmartPasteOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold text-purple-700 bg-purple-50 rounded-xl hover:bg-purple-100 transition-colors border border-purple-200 shrink-0"
+                    title="Paste a list of children to match and record attendance"
+                  >
+                    <ClipboardPaste size={16} />
+                    <span>Paste List</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingFNF(!isAddingFNF)}
+                    className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold text-indigo-700 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-200 shrink-0"
+                    title="Add First Timer or FNF with contact, location & gender"
+                  >
+                    <UserPlus size={16} />
+                    <span>+ First Timer</span>
+                  </button>
+                </>
               )}
 
               <button
@@ -1410,7 +1742,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
       {isAddingFNF && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl p-6 animate-in zoom-in-95 relative border border-slate-100">
+          <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl p-6 animate-in zoom-in-95 relative border border-slate-100">
             <button
               onClick={() => setIsAddingFNF(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-full hover:bg-slate-100"
@@ -1421,82 +1753,187 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
 
             <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
               <UserPlus className="text-indigo-600" size={22} />
-              Add FNF(s)
+              Add First Timer / FNF
             </h3>
-            <p className="text-xs text-slate-500 mb-3">
-              Add one or multiple FNFs to directory and mark them present for this {isWednesdayCell ? "Wednesday" : "Sunday"} ({formatDateDDMMYYYY(selectedDate)}). Type or paste names separated by new lines or commas.
+            <p className="text-xs text-slate-500 mb-4">
+              Register First Timers (with Gender, Parent Contact Number &amp; Location for reporting) and mark them present for {formatDateDDMMYYYY(selectedDate)}.
             </p>
 
-            {newMemberNames.map((name, index) => (
-              <div key={index} className="flex gap-2 mb-2">
-                <input
-                  type="text"
-                  placeholder="Enter FNF full name"
-                  value={name}
-                  onChange={(e) => {
-                    const updated = [...newMemberNames];
-                    updated[index] = e.target.value;
-                    setNewMemberNames(updated);
-                  }}
-                  className="flex-1 p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium text-slate-700 bg-slate-50 placeholder:text-slate-400 text-sm"
-                  autoFocus={index === newMemberNames.length - 1}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                      e.preventDefault();
-                      handleAddFNF();
-                    }
-                  }}
-                />
-                {newMemberNames.length > 1 && (
-                  <button
-                    onClick={() => {
-                      const updated = newMemberNames.filter((_, i) => i !== index);
-                      setNewMemberNames(updated);
-                    }}
-                    className="p-3 text-red-500 hover:bg-red-50 rounded-xl transition-colors border border-transparent hover:border-red-100 flex items-center justify-center shrink-0"
-                  >
-                    <X size={18} />
-                  </button>
-                )}
-              </div>
-            ))}
+            <div className="space-y-3 mb-4">
+              {firstTimerEntries.map((entry, index) => (
+                <div
+                  key={index}
+                  className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2.5 relative"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600">
+                      Child #{index + 1}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = [...firstTimerEntries];
+                          updated[index] = {
+                            ...updated[index],
+                            roleType:
+                              updated[index].roleType === MemberType.VISITOR
+                                ? MemberType.FNF
+                                : MemberType.VISITOR,
+                          };
+                          setFirstTimerEntries(updated);
+                        }}
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-colors ${
+                          entry.roleType === MemberType.VISITOR
+                            ? "bg-orange-50 text-orange-700 border-orange-200"
+                            : "bg-teal-50 text-teal-700 border-teal-200"
+                        }`}
+                      >
+                        {entry.roleType === MemberType.VISITOR ? "First Timer" : "FNF"}
+                      </button>
+                      {firstTimerEntries.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFirstTimerEntries(
+                              firstTimerEntries.filter((_, i) => i !== index)
+                            );
+                          }}
+                          className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="Remove entry"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Name & Gender Row */}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Full Name *"
+                      value={entry.name}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const updated = [...firstTimerEntries];
+                        const inferred = determineGenderByName(val);
+                        updated[index] = {
+                          ...updated[index],
+                          name: val,
+                          gender:
+                            inferred === "FEMALE" || inferred === "MALE"
+                              ? inferred
+                              : updated[index].gender,
+                        };
+                        setFirstTimerEntries(updated);
+                      }}
+                      className="flex-1 p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none font-semibold text-slate-800 bg-white placeholder:text-slate-400 text-xs"
+                      autoFocus={index === firstTimerEntries.length - 1}
+                    />
+                    <div className="flex bg-white border border-slate-200 rounded-xl p-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = [...firstTimerEntries];
+                          updated[index] = { ...updated[index], gender: "MALE" };
+                          setFirstTimerEntries(updated);
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold transition-all ${
+                          entry.gender === "MALE"
+                            ? "bg-blue-600 text-white shadow-2xs"
+                            : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        Male
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = [...firstTimerEntries];
+                          updated[index] = { ...updated[index], gender: "FEMALE" };
+                          setFirstTimerEntries(updated);
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold transition-all ${
+                          entry.gender === "FEMALE"
+                            ? "bg-pink-600 text-white shadow-2xs"
+                            : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        Female
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Parent Contact & Location Row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="relative">
+                      <Phone
+                        size={13}
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                      <input
+                        type="tel"
+                        placeholder="Parent Contact Number"
+                        value={entry.parentPhone}
+                        onChange={(e) => {
+                          const updated = [...firstTimerEntries];
+                          updated[index] = {
+                            ...updated[index],
+                            parentPhone: e.target.value,
+                          };
+                          setFirstTimerEntries(updated);
+                        }}
+                        className="w-full pl-8 pr-2.5 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-xs font-medium text-slate-700 bg-white placeholder:text-slate-400"
+                      />
+                    </div>
+                    <div className="relative">
+                      <MapPin
+                        size={13}
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Location / Residence"
+                        value={entry.address}
+                        onChange={(e) => {
+                          const updated = [...firstTimerEntries];
+                          updated[index] = {
+                            ...updated[index],
+                            address: e.target.value,
+                          };
+                          setFirstTimerEntries(updated);
+                        }}
+                        className="w-full pl-8 pr-2.5 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-xs font-medium text-slate-700 bg-white placeholder:text-slate-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
 
             <button
-              onClick={() => setNewMemberNames([...newMemberNames, ""])}
-              className="w-full py-2.5 mb-4 text-sm font-semibold text-indigo-600 border border-indigo-100 border-dashed hover:bg-indigo-50 hover:border-indigo-200 rounded-xl transition-colors flex items-center justify-center gap-2"
+              type="button"
+              onClick={() =>
+                setFirstTimerEntries([
+                  ...firstTimerEntries,
+                  {
+                    name: "",
+                    gender: "MALE",
+                    parentPhone: "",
+                    address: "",
+                    roleType: MemberType.VISITOR,
+                  },
+                ])
+              }
+              className="w-full py-2.5 mb-4 text-xs font-bold text-indigo-600 border border-indigo-200 border-dashed hover:bg-indigo-50 rounded-xl transition-colors flex items-center justify-center gap-1.5"
             >
-              <UserPlus size={16} />
-              Add another entry
+              <Plus size={15} />
+              Add Another First Timer
             </button>
-
-            {parsedFirstTimerNames.length > 0 && (
-              <div className="mb-3 animate-in fade-in">
-                <div className="flex items-center justify-between text-[11px] text-slate-500 font-bold uppercase tracking-wider mb-1.5">
-                  <span>Detected Names ({parsedFirstTimerNames.length}):</span>
-                  {parsedFirstTimerNames.length > 1 && (
-                    <span className="text-indigo-600 font-semibold lowercase">all marked present</span>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-slate-50 border border-slate-200/80 rounded-xl">
-                  {parsedFirstTimerNames.map((name, idx) => (
-                    <span
-                      key={idx}
-                      className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 bg-white text-indigo-700 border border-indigo-200 rounded-lg shadow-2xs"
-                    >
-                      <UserPlus size={11} className="text-indigo-500 shrink-0" />
-                      {name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Auto-assigned Profile Details */}
             <div className="bg-indigo-50/70 border border-indigo-100/80 rounded-2xl p-3 mb-4 space-y-2 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-medium">Logged-in Shepherd:</span>
-                <span className="font-bold text-slate-800">{currentUser?.name || "Self"}</span>
-              </div>
               <div className="flex items-center justify-between">
                 <span className="text-slate-500 font-medium">Assigned Church:</span>
                 <select
@@ -1512,15 +1949,13 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                 </select>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-medium">Zone and Branch:</span>
-                <span className="font-semibold text-slate-700">
-                  {currentUser?.zoneId || "Central Zone"} &bull; {currentUser?.branchId || "Main Branch"}
-                </span>
+                <span className="text-slate-500 font-medium">Service Marked:</span>
+                <span className="font-bold text-indigo-700">{currentService}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-medium">Role Category:</span>
-                <span className="font-bold text-teal-700 bg-teal-100/90 px-2 py-0.5 rounded-lg">
-                  FNF
+                <span className="text-slate-500 font-medium">Auto-Promotion Rule:</span>
+                <span className="font-semibold text-emerald-700 text-[11px]">
+                  2nd attendance → Auto-changes to FNF
                 </span>
               </div>
             </div>
@@ -1534,17 +1969,405 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
               </button>
               <button
                 onClick={handleAddFNF}
-                disabled={parsedFirstTimerNames.length === 0 || isSubmittingVisitor}
+                disabled={validFirstTimerEntries.length === 0 || isSubmittingVisitor}
                 className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-colors shadow-lg shadow-indigo-100 flex items-center justify-center gap-1.5"
               >
                 {isSubmittingVisitor ? (
                   "Adding & Marking..."
-                ) : parsedFirstTimerNames.length > 1 ? (
-                  `Add & Mark ${parsedFirstTimerNames.length} Present`
+                ) : validFirstTimerEntries.length > 1 ? (
+                  `Add & Mark ${validFirstTimerEntries.length} Present`
                 ) : (
-                  "Add and Mark Present"
+                  "Add & Mark Present"
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SMART PASTE ATTENDANCE POP MODAL (For App Heads & Users) */}
+      {isSmartPasteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 border border-slate-100">
+            {/* Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/15 rounded-xl">
+                  <ClipboardPaste size={20} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base leading-tight">
+                    Smart Paste Attendance Recorder
+                  </h3>
+                  <p className="text-[11px] text-purple-100 font-medium">
+                    Paste a list of children for {formatDateDDMMYYYY(selectedDate)} ({currentService}) • Auto-match &amp; resolve confusions
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSmartPasteOpen(false)}
+                className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 overflow-y-auto flex-1 space-y-4">
+              {smartPasteStep === "INPUT" ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/70">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                        Target Church (for New First Timers)
+                      </label>
+                      <select
+                        value={fnfTargetChurch}
+                        onChange={(e) => setFnfTargetChurch(e.target.value as Church)}
+                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                      >
+                        {availableChurches.map((c) => (
+                          <option key={c} value={c}>
+                            {CHURCH_DISPLAY_NAMES[c] || c} Church
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                        Service Session
+                      </label>
+                      <select
+                        value={currentService}
+                        onChange={(e) => setCurrentService(e.target.value as ServiceType)}
+                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                      >
+                        <option value="JOY">Joy Service</option>
+                        <option value="ENLARGEMENT">Enlargement Service</option>
+                        <option value="SPECIAL">Special Service</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Paste Attendance List (One child per line)
+                    </label>
+                    <p className="text-[11px] text-slate-500 mb-2">
+                      Paste names from WhatsApp or notes. For First Timers, you can also include details on the same line (e.g. <code>John Mensah | Male | 0244123456 | Madina</code>) or fill them in the next step.
+                    </p>
+                    <textarea
+                      rows={9}
+                      value={smartPasteRawText}
+                      onChange={(e) => setSmartPasteRawText(e.target.value)}
+                      placeholder={"1. Beatrice Yeboah Adomako\n2. Jedidiah Oti-Boateng\n3. Kwame Boateng | Male | 0244112233 | Adenta"}
+                      className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none text-xs font-medium text-slate-800 resize-none"
+                      autoFocus
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Summary Pills */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200/80 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold">
+                        {smartPasteItems.filter((i) => i.status === "EXACT").length} Exact Match
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 font-bold">
+                        {smartPasteItems.filter((i) => i.status === "CONFUSION").length} Confusion / Resolve
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 font-bold">
+                        {smartPasteItems.filter((i) => i.status === "FIRST_TIMER").length} First Timer(s)
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSmartPasteStep("INPUT")}
+                      className="text-xs font-bold text-purple-600 hover:underline"
+                    >
+                      &larr; Edit Pasted Text
+                    </button>
+                  </div>
+
+                  {/* Items List */}
+                  <div className="space-y-3">
+                    {smartPasteItems.map((item, idx) => {
+                      const matchedMember = item.selectedMemberId
+                        ? data.members.find((m) => m.id === item.selectedMemberId)
+                        : null;
+
+                      return (
+                        <div
+                          key={item.id}
+                          className={`p-3.5 rounded-2xl border transition-all ${
+                            item.status === "EXACT"
+                              ? "bg-emerald-50/40 border-emerald-200"
+                              : item.status === "CONFUSION"
+                              ? "bg-amber-50/60 border-amber-300"
+                              : item.status === "FIRST_TIMER"
+                              ? "bg-indigo-50/40 border-indigo-200"
+                              : "bg-slate-50 border-slate-200 opacity-60"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-600">
+                                #{idx + 1}
+                              </span>
+                              <span className="text-xs font-bold text-slate-800">
+                                "{item.rawLine}"
+                              </span>
+                            </div>
+
+                            {/* Mode Switcher */}
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = [...smartPasteItems];
+                                  next[idx] = {
+                                    ...item,
+                                    status: item.candidates.length > 1 ? "CONFUSION" : "EXACT",
+                                    selectedMemberId:
+                                      item.selectedMemberId ||
+                                      item.candidates[0]?.id ||
+                                      membersToList[0]?.id,
+                                  };
+                                  setSmartPasteItems(next);
+                                }}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+                                  item.status === "EXACT" || item.status === "CONFUSION"
+                                    ? "bg-emerald-600 text-white"
+                                    : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                }`}
+                              >
+                                Existing Child
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = [...smartPasteItems];
+                                  next[idx] = {
+                                    ...item,
+                                    status: "FIRST_TIMER",
+                                  };
+                                  setSmartPasteItems(next);
+                                }}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+                                  item.status === "FIRST_TIMER"
+                                    ? "bg-indigo-600 text-white"
+                                    : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                }`}
+                              >
+                                New First Timer
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = [...smartPasteItems];
+                                  next[idx] = {
+                                    ...item,
+                                    status: item.status === "SKIP" ? "EXACT" : "SKIP",
+                                  };
+                                  setSmartPasteItems(next);
+                                }}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+                                  item.status === "SKIP"
+                                    ? "bg-rose-600 text-white"
+                                    : "bg-white border border-slate-200 text-slate-400 hover:text-rose-600"
+                                }`}
+                              >
+                                Skip
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* EXACT OR CONFUSION RESOLUTION */}
+                          {(item.status === "EXACT" || item.status === "CONFUSION") && (
+                            <div className="space-y-2">
+                              {item.status === "CONFUSION" && (
+                                <div className="text-[11px] font-bold text-amber-800 flex items-center gap-1.5">
+                                  <AlertCircle size={13} className="text-amber-600 shrink-0" />
+                                  <span>
+                                    Multiple or partial matches found — step in to confirm the right child:
+                                  </span>
+                                </div>
+                              )}
+
+                              {item.candidates.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {item.candidates.map((cand) => {
+                                    const isChosen = item.selectedMemberId === cand.id;
+                                    return (
+                                      <button
+                                        key={cand.id}
+                                        type="button"
+                                        onClick={() => {
+                                          const next = [...smartPasteItems];
+                                          next[idx] = {
+                                            ...item,
+                                            status: "EXACT",
+                                            selectedMemberId: cand.id,
+                                          };
+                                          setSmartPasteItems(next);
+                                        }}
+                                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                                          isChosen
+                                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                            : "bg-white text-slate-700 border-slate-200 hover:border-emerald-400"
+                                        }`}
+                                      >
+                                        <Check size={12} className={isChosen ? "opacity-100" : "opacity-0"} />
+                                        <span>{cand.name}</span>
+                                        <span className={`text-[10px] px-1.5 py-0.2 rounded ${isChosen ? "bg-emerald-700 text-emerald-100" : "bg-slate-100 text-slate-500"}`}>
+                                          {cand.assignedChurch}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {/* Full Roster Dropdown Fallback */}
+                              <div className="flex items-center gap-2 pt-1">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">
+                                  Selected Record:
+                                </span>
+                                <select
+                                  value={item.selectedMemberId || ""}
+                                  onChange={(e) => {
+                                    const next = [...smartPasteItems];
+                                    next[idx] = {
+                                      ...item,
+                                      status: "EXACT",
+                                      selectedMemberId: e.target.value,
+                                    };
+                                    setSmartPasteItems(next);
+                                  }}
+                                  className="flex-1 p-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                                >
+                                  <option value="">-- Choose from full roster --</option>
+                                  {membersToList.map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                      {m.name} ({m.assignedChurch} • {isVisitorMember(m, data.settings) ? "First Timer" : isFnfMember(m, data.settings) ? "FNF" : m.type})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* NEW FIRST TIMER INLINE REQUIREMENTS (Name, Gender, Parent Contact, Location) */}
+                          {item.status === "FIRST_TIMER" && (
+                            <div className="space-y-2 pt-1">
+                              <div className="text-[11px] font-bold text-indigo-700 flex items-center gap-1.5">
+                                <Sparkles size={13} className="text-indigo-600 shrink-0" />
+                                <span>
+                                  New First Timer — verify Name, Gender, Parent Contact &amp; Location:
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Full Name *"
+                                  value={item.firstTimerName}
+                                  onChange={(e) => {
+                                    const next = [...smartPasteItems];
+                                    next[idx] = {
+                                      ...item,
+                                      firstTimerName: e.target.value,
+                                    };
+                                    setSmartPasteItems(next);
+                                  }}
+                                  className="sm:col-span-4 p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                                />
+                                <select
+                                  value={item.firstTimerGender}
+                                  onChange={(e) => {
+                                    const next = [...smartPasteItems];
+                                    next[idx] = {
+                                      ...item,
+                                      firstTimerGender: e.target.value as "MALE" | "FEMALE",
+                                    };
+                                    setSmartPasteItems(next);
+                                  }}
+                                  className="sm:col-span-2 p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                                >
+                                  <option value="MALE">Male</option>
+                                  <option value="FEMALE">Female</option>
+                                </select>
+                                <input
+                                  type="tel"
+                                  placeholder="Parent Phone"
+                                  value={item.firstTimerPhone}
+                                  onChange={(e) => {
+                                    const next = [...smartPasteItems];
+                                    next[idx] = {
+                                      ...item,
+                                      firstTimerPhone: e.target.value,
+                                    };
+                                    setSmartPasteItems(next);
+                                  }}
+                                  className="sm:col-span-3 p-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Location / Address"
+                                  value={item.firstTimerLocation}
+                                  onChange={(e) => {
+                                    const next = [...smartPasteItems];
+                                    next[idx] = {
+                                      ...item,
+                                      firstTimerLocation: e.target.value,
+                                    };
+                                    setSmartPasteItems(next);
+                                  }}
+                                  className="sm:col-span-3 p-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsSmartPasteOpen(false)}
+                className="px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+              >
+                Cancel
+              </button>
+              {smartPasteStep === "INPUT" ? (
+                <button
+                  type="button"
+                  disabled={!smartPasteRawText.trim()}
+                  onClick={handleAnalyzeSmartPaste}
+                  className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-200 transition-all flex items-center gap-1.5"
+                >
+                  <CheckCircle2 size={15} />
+                  Match &amp; Review List
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isRecordingSmartPaste || smartPasteItems.every((i) => i.status === "SKIP")}
+                  onClick={handleConfirmSmartPaste}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-200 transition-all flex items-center gap-1.5"
+                >
+                  <Save size={15} />
+                  {isRecordingSmartPaste
+                    ? "Recording Attendance..."
+                    : `Confirm & Record (${smartPasteItems.filter((i) => i.status !== "SKIP").length})`}
+                </button>
+              )}
             </div>
           </div>
         </div>

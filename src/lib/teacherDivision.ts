@@ -195,8 +195,7 @@ export const getEligibleShepherdsForChurch = (
     const matchChurch =
       m.assignedChurch === church ||
       (m.assignedChurch === "All" && isStaffOrTeacher(m));
-    const matchBranch =
-      !branchFilter || branchFilter === "ALL" || m.branchId === branchFilter;
+    const matchBranch = matchesScope(m, branchFilter);
     return matchChurch && matchBranch && isStaffOrTeacher(m);
   });
 
@@ -230,8 +229,7 @@ export const autoAllocateChildrenForChurch = (
   const eligibleShepherds = getEligibleShepherdsForChurch(church, allMembers, branchFilter);
   const pureMembers = allMembers.filter((m) => {
     const matchChurch = m.assignedChurch === church;
-    const matchBranch =
-      !branchFilter || branchFilter === "ALL" || m.branchId === branchFilter;
+    const matchBranch = matchesScope(m, branchFilter);
     return (
       matchChurch &&
       matchBranch &&
@@ -316,8 +314,7 @@ export const calculateChurchDivisions = (
   for (const church of targetChurches) {
     const pureMembers = allMembers.filter((m) => {
       const matchChurch = m.assignedChurch === church;
-      const matchBranch =
-        !branchFilter || branchFilter === "ALL" || m.branchId === branchFilter;
+      const matchBranch = matchesScope(m, branchFilter);
       return (
         matchChurch &&
         matchBranch &&
@@ -337,8 +334,7 @@ export const calculateChurchDivisions = (
       const matchChurch =
         m.assignedChurch === church ||
         (m.assignedChurch === "All" && isStaffOrTeacher(m));
-      const matchBranch =
-        !branchFilter || branchFilter === "ALL" || m.branchId === branchFilter;
+      const matchBranch = matchesScope(m, branchFilter);
       return matchChurch && matchBranch && isStaffOrTeacher(m) && !eligibleTeachers.some((et) => et.id === m.id);
     });
 
@@ -376,8 +372,23 @@ export const calculateChurchDivisions = (
             targetAsg.members.push(m);
           });
         } else {
-          unassignedMembers.push(...cluster);
+          unassignedClusters.push(cluster);
         }
+      });
+
+      // Automatically balance any remaining unallocated Member clusters across eligible shepherds
+      // so every Member child is continuously included in shepherd care, visits, and prayers
+      unassignedClusters.sort((a, b) => b.length - a.length);
+      unassignedClusters.forEach((cluster) => {
+        assignments.sort(
+          (a, b) =>
+            a.members.length - b.members.length ||
+            a.teacher.name.localeCompare(b.teacher.name)
+        );
+        const targetAsg = assignments[0];
+        cluster.forEach((m) => {
+          targetAsg.members.push(m);
+        });
       });
 
       // Sort each teacher's assigned members alphabetically for clean display and sync count

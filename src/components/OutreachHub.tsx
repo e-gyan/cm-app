@@ -437,6 +437,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         if (activeChurch === "All" || activeChurch === "CM") {
           return true;
         }
+        if (s.teacherId && s.teacherId === currentUser.id) {
+          return true;
+        }
+        if (s.completedBy && (s.completedBy === currentUser.id || s.completedBy === currentUser.name)) {
+          return true;
+        }
         if (s.branchId && (s.branchId === activeChurch || s.branchId === "ALL" || s.branchId === "All")) {
           return true;
         }
@@ -453,10 +459,13 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
   }, [
     data.outreachSessions,
     data.prayerSchedule,
+    data.members,
     unsavedChanges.size,
     activeChurch,
     filterChurch,
     isAdmin,
+    currentUser.id,
+    currentUser.name,
   ]);
 
   // --- AUTO GENERATION FOR CURRENT WEEK ---
@@ -531,9 +540,9 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
     setSelectedDates(selectedDates.filter((d) => d !== date));
   };
 
-  const handleGenerateSchedule = async () => {
-    // Strictly filter to children assigned to the logged-in shepherd
-    const targetMembers = data.members.filter(
+  const getTargetMemberPoolForGeneration = (): Member[] => {
+    // 1. Primary: children allocated (manually or automatically via divisions) to the logged-in shepherd
+    const allocatedPool = data.members.filter(
       (m) =>
         shepherdAssignedChildIds.has(m.id) &&
         !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
@@ -541,9 +550,24 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         (m.type === MemberType.MEMBER || (m.type as string) === "Member") &&
         [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)
     );
+    if (allocatedPool.length > 0) return allocatedPool;
+
+    // 2. Fallback for leadership or church-scoped generation: all Member children in active church scope
+    return data.members.filter(
+      (m) =>
+        isMemberInActiveChurch(m) &&
+        !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+        !isStaffOrTeacher(m) &&
+        (m.type === MemberType.MEMBER || (m.type as string) === "Member") &&
+        [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status)
+    );
+  };
+
+  const handleGenerateSchedule = async () => {
+    const targetMembers = getTargetMemberPoolForGeneration();
 
     if (targetMembers.length === 0) {
-      setErrorMsg("No active, inconsistent, or not active children are currently assigned to you. Please allocate children to your care in Shepherd Allocation first.");
+      setErrorMsg("No active, inconsistent, or not active Member children found in this scope.");
       setTimeout(() => setErrorMsg(""), 5000);
       return;
     }
@@ -1054,20 +1078,12 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       return;
     }
 
-    // Strictly filter to children assigned to the logged-in shepherd
-    const targetMembers = data.members.filter(
-      (m) =>
-        shepherdAssignedChildIds.has(m.id) &&
-        !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
-        !isStaffOrTeacher(m) &&
-        (m.type === MemberType.MEMBER || (m.type as string) === "Member") &&
-        [MemberStatus.ACTIVE, MemberStatus.INCONSISTENT, MemberStatus.NOT_ACTIVE].includes(m.status),
-    );
+    const targetMembers = getTargetMemberPoolForGeneration();
 
     if (targetMembers.length === 0) {
       setGenMsg({
         type: "error",
-        text: "No active, inconsistent, or not active children are currently assigned to you. Please allocate children to your care in Shepherd Allocation first.",
+        text: "No active, inconsistent, or not active Member children found in this scope.",
       });
       setTimeout(() => setGenMsg(null), 5000);
       return;
@@ -1404,8 +1420,16 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
         : new Set<string>();
 
       slots = slots.filter((s) => {
-        if (s.teacherId) return s.teacherId === currentUser.id;
-        return (s.assignedMemberIds || []).some((id) => shepherdAssignedChildIds.has(id));
+        if (s.teacherId && s.teacherId === currentUser.id) return true;
+        if (
+          s.completedBy &&
+          (s.completedBy === currentUser.id || s.completedBy === currentUser.name)
+        ) {
+          return true;
+        }
+        return (s.assignedMemberIds || []).some(
+          (id) => shepherdAssignedChildIds.has(id) || assignedIds.has(id)
+        );
       });
     } else if (activeChurch !== "All" && activeChurch !== "CM") {
       const churchKidIds = new Set(
@@ -1419,7 +1443,7 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       });
     }
     return slots;
-  }, [localPrayerSlots, isAdmin, activeChurch, currentUser, divisions, data.members]);
+  }, [localPrayerSlots, isAdmin, activeChurch, currentUser, divisions, data.members, shepherdAssignedChildIds]);
 
   const prayerData = useMemo(() => {
     if (filteredLocalPrayerSlots.length === 0)
@@ -1442,7 +1466,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
       (s) => !s.date || new Date(s.date).getFullYear() === currentYear
     );
     const totalSessions = completed.length;
-    const totalDurationMins = completed.reduce((acc, s) => acc + (Number(s.durationMins) || 0), 0);
+    const totalDurationMins = completed.reduce(
+      (acc, s) => acc + (Number(s.durationMins) > 0 ? Number(s.durationMins) : 30),
+      0
+    );
     const uniqueKids = new Set<string>();
     completed.forEach((s) => {
       (s.assignedMemberIds || []).forEach((id) => uniqueKids.add(id));
@@ -2426,7 +2453,10 @@ const OutreachHub: React.FC<OutreachHubProps> = ({
               (s.branchId && s.branchId === focusChurchId)
             );
           });
-          const totalPrayerMins = churchPrayerSlots.reduce((acc, s) => acc + (Number(s.durationMins) || 0), 0);
+          const totalPrayerMins = churchPrayerSlots.reduce(
+            (acc, s) => acc + (Number(s.durationMins) > 0 ? Number(s.durationMins) : 30),
+            0
+          );
 
           return (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
@@ -4355,9 +4385,12 @@ const getMemberStats = (memberId: string, data: AppData) => {
   const now = new Date();
   const oneWeek = 7 * 24 * 60 * 60 * 1000;
 
-  // Helper to sum minutes
+  // Helper to sum minutes (fallback to 30m for completed slots with 0/missing duration)
   const sumMins = (slots: PrayerSlot[]) =>
-    slots.reduce((acc, s) => acc + (Number(s.durationMins) || 0), 0);
+    slots.reduce(
+      (acc, s) => acc + (Number(s.durationMins) > 0 ? Number(s.durationMins) : 30),
+      0
+    );
 
   return {
     visits,

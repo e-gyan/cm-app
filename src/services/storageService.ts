@@ -20,6 +20,14 @@ import {
 } from "../types";
 import { DEFAULT_SETTINGS } from "../constants";
 import { verifyPasscode as verifyHash, hashPasscode as createHash } from "./securityService";
+import { isSundayAttendance, isCellAttendance } from "../lib/dateUtils";
+import {
+  getEligibleShepherdsForChurch,
+  areMembersInSameHousehold,
+  isStaffOrTeacher,
+  isFnfOrVisitor,
+  setHookedTeacherId,
+} from "../lib/teacherDivision";
 
 enum OperationType {
   CREATE = 'create',
@@ -63,6 +71,316 @@ const CACHE_STORAGE_KEY = "cmd_app_cache_v2";
 const isThesaurusHQ = (name?: string): boolean => {
   if (!name) return false;
   return /^thesaurus\s*hq$/i.test(name.trim());
+};
+
+/**
+ * Automatically promotes any First Timer (MemberType.VISITOR) to FNF (MemberType.FNF)
+ * once they have been recorded present in 2 or more attendance sessions.
+ */
+export const autoPromoteSecondTimeVisitors = (
+  members: Member[],
+  attendance: AttendanceRecord[]
+): { members: Member[]; promotedCount: number; promotedNames: string[] } => {
+  const attendedDatesByMember = new Map<string, Set<string>>();
+  (attendance || []).forEach((rec) => {
+    const dateKey = rec.date || rec.id;
+    (rec.presentMemberIds || []).forEach((id) => {
+      if (!id) return;
+      if (!attendedDatesByMember.has(id)) {
+        attendedDatesByMember.set(id, new Set());
+      }
+      attendedDatesByMember.get(id)!.add(dateKey);
+    });
+  });
+
+  let promotedCount = 0;
+  const promotedNames: string[] = [];
+
+  const updated = (members || []).map((m) => {
+    const isVisitor =
+      m.type === MemberType.VISITOR || (m.type as string) === "Visitor";
+    if (!isVisitor) return m;
+
+    const attendedCount = attendedDatesByMember.get(m.id)?.size || 0;
+    if (attendedCount >= 2) {
+      promotedCount++;
+      promotedNames.push(m.name);
+      return {
+        ...m,
+        type: MemberType.FNF,
+        previousType: m.previousType || MemberType.VISITOR,
+      };
+    }
+    return m;
+  });
+
+  return { members: updated, promotedCount, promotedNames };
+};
+
+/**
+ * Ensures all active/inconsistent/not-active children whose role is Member (MemberType.MEMBER)
+ * are continuously included in shepherd allocations — either keeping their existing valid shepherd,
+ * inheriting their household sibling's shepherd, or automatically balancing onto the least-loaded
+ * eligible shepherd in their church.
+ */
+export const ensureContinuousMemberAllocations = (
+  members: Member[]
+): { members: Member[]; allocatedCount: number } => {
+  let allocatedCount = 0;
+  const churches = ["UJ", "LJ", "K", "I", "N"];
+  const workingMembers = [...(members || [])];
+
+  for (const church of churches) {
+    const eligibleShepherds = getEligibleShepherdsForChurch(church, workingMembers);
+    if (eligibleShepherds.length === 0) continue;
+
+    const shepherdIds = new Set(eligibleShepherds.map((s) => s.id));
+    const loadMap = new Map<string, number>();
+    eligibleShepherds.forEach((s) => loadMap.set(s.id, 0));
+
+    // Count existing valid allocations in this church
+    workingMembers.forEach((m) => {
+      if (
+        m.assignedChurch === church &&
+        m.status !== MemberStatus.ARCHIVED &&
+        m.status !== MemberStatus.TRANSFERRED &&
+        !isStaffOrTeacher(m) &&
+        !isFnfOrVisitor(m) &&
+        m.assignedTeacherId &&
+        shepherdIds.has(m.assignedTeacherId)
+      ) {
+        loadMap.set(m.assignedTeacherId, (loadMap.get(m.assignedTeacherId) || 0) + 1);
+      }
+    });
+
+    // Allocate any Member child who has no valid shepherd
+    for (let i = 0; i < workingMembers.length; i++) {
+      const m = workingMembers[i];
+      if (
+        m.assignedChurch !== church ||
+        m.status === MemberStatus.ARCHIVED ||
+        m.status === MemberStatus.TRANSFERRED ||
+        isStaffOrTeacher(m) ||
+        isFnfOrVisitor(m) ||
+        (m.type !== MemberType.MEMBER && (m.type as string) !== "Member")
+      ) {
+        continue;
+      }
+
+      if (m.assignedTeacherId && shepherdIds.has(m.assignedTeacherId)) {
+        continue;
+      }
+
+      // Check if a household sibling in the same church already has a valid shepherd
+      const householdMatch = workingMembers.find(
+        (other) =>
+          other.id !== m.id &&
+          other.assignedChurch === church &&
+          other.assignedTeacherId &&
+          shepherdIds.has(other.assignedTeacherId) &&
+          areMembersInSameHousehold(m, other)
+      );
+
+      let chosenShepherdId: string;
+      if (householdMatch && householdMatch.assignedTeacherId) {
+        chosenShepherdId = householdMatch.assignedTeacherId;
+      } else {
+        // Pick eligible shepherd with lowest load
+        const sorted = [...eligibleShepherds].sort(
+          (a, b) =>
+            (loadMap.get(a.id) || 0) - (loadMap.get(b.id) || 0) ||
+            a.name.localeCompare(b.name)
+        );
+        chosenShepherdId = sorted[0].id;
+      }
+
+      loadMap.set(chosenShepherdId, (loadMap.get(chosenShepherdId) || 0) + 1);
+      const updatedChild = { ...m, assignedTeacherId: chosenShepherdId };
+      setHookedTeacherId(updatedChild, chosenShepherdId);
+      workingMembers[i] = updatedChild;
+      allocatedCount++;
+    }
+  }
+
+  return { members: workingMembers, allocatedCount };
+};
+
+export interface ChildYearlyAttendanceSummary {
+  year: number;
+  firstRecordDate: string | null;
+  records: AttendanceRecord[];
+  allRecordsSinceFirst: AttendanceRecord[];
+  attendedSessions: number;
+  effectiveTotalSessions: number;
+  rawTotalSessions: number;
+  excusedSessions: number;
+  sundayAttended: number;
+  effectiveTotalSundays: number;
+  rawTotalSundays: number;
+  excusedSundays: number;
+  hasVacationConfigured: boolean;
+  hasExcusedBreak: boolean;
+  vacationStartDate?: string;
+  vacationEndDate?: string;
+  attendanceRate: number;
+}
+
+/**
+ * Robust backend computation of a child's yearly attendance from their first record of the year,
+ * accounting for excused/vacation breaks (pausing excused absences while reporting both active
+ * and raw totals as well as whether an excused break occurred).
+ */
+export const computeChildYearlyAttendance = (
+  member: Member,
+  attendance: AttendanceRecord[],
+  settings?: AppSettings,
+  year: number = new Date().getFullYear()
+): ChildYearlyAttendanceSummary => {
+  const startOfYear = new Date(year, 0, 1);
+  startOfYear.setHours(0, 0, 0, 0);
+  const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
+
+  const isIncludedSession = (r: AttendanceRecord) => {
+    const mode = settings?.attendanceCountMode || "SUNDAY_ONLY";
+    if (mode === "ALL_DAYS") return true;
+    if (mode === "SUNDAY_AND_WEDNESDAY") return isSundayAttendance(r) || isCellAttendance(r);
+    return isSundayAttendance(r);
+  };
+
+  // All sessions in the target year for this child's church or where the child was marked present
+  const yearMatching = (attendance || []).filter((r) => {
+    if (!isIncludedSession(r)) return false;
+    const recordDate = new Date(r.date);
+    recordDate.setHours(0, 0, 0, 0);
+    if (
+      recordDate.getTime() < startOfYear.getTime() ||
+      recordDate.getTime() > endOfYear.getTime()
+    ) {
+      return false;
+    }
+    const isPresent = (r.presentMemberIds || []).includes(member.id);
+    return r.churchId === member.assignedChurch || isPresent;
+  });
+
+  // Deduplicate by date (preferring record where child was present)
+  const byDate = new Map<string, AttendanceRecord>();
+  for (const r of yearMatching) {
+    const existing = byDate.get(r.date);
+    if (!existing) {
+      byDate.set(r.date, r);
+    } else if (
+      (r.presentMemberIds || []).includes(member.id) &&
+      !(existing.presentMemberIds || []).includes(member.id)
+    ) {
+      byDate.set(r.date, r);
+    }
+  }
+
+  const allYearChurchRecords = Array.from(byDate.values()).sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+
+  // Determine the child's first record for this year:
+  // 1. Earliest attendance session in this year where the child was recorded present.
+  // 2. If not yet marked present this year, check if their registration date (joinedDate/addedAt) is in this year.
+  const attendedInYear = allYearChurchRecords.filter((r) =>
+    (r.presentMemberIds || []).includes(member.id)
+  );
+
+  let effectiveStartDate: Date = startOfYear;
+  let firstRecordDateStr: string | null = null;
+
+  if (attendedInYear.length > 0) {
+    const firstAtt = new Date(attendedInYear[0].date);
+    firstAtt.setHours(0, 0, 0, 0);
+    effectiveStartDate = firstAtt;
+    firstRecordDateStr = attendedInYear[0].date;
+  } else {
+    const rawAdded =
+      member.joinedDate ||
+      (member.addedAt ? new Date(member.addedAt).toISOString() : undefined);
+    if (rawAdded) {
+      const parsed = new Date(rawAdded);
+      if (!isNaN(parsed.getTime())) {
+        parsed.setHours(0, 0, 0, 0);
+        if (parsed.getTime() > startOfYear.getTime()) {
+          effectiveStartDate = parsed;
+          firstRecordDateStr = parsed.toISOString().split("T")[0];
+        }
+      }
+    }
+    if (!firstRecordDateStr && allYearChurchRecords.length > 0) {
+      firstRecordDateStr = allYearChurchRecords[0].date;
+    }
+  }
+
+  const allRecordsSinceFirst = allYearChurchRecords.filter((r) => {
+    const d = new Date(r.date);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime() >= effectiveStartDate.getTime();
+  });
+
+  const hasVacationConfigured = Boolean(
+    member.vacationStartDate && member.vacationEndDate
+  );
+  const vStartMs = member.vacationStartDate
+    ? new Date(member.vacationStartDate).setHours(0, 0, 0, 0)
+    : 0;
+  const vEndMs = member.vacationEndDate
+    ? new Date(member.vacationEndDate).setHours(23, 59, 59, 999)
+    : 0;
+
+  const isExcusedSession = (r: AttendanceRecord): boolean => {
+    if (!hasVacationConfigured) return false;
+    if ((r.presentMemberIds || []).includes(member.id)) return false;
+    const rTime = new Date(r.date).getTime();
+    return rTime >= vStartMs && rTime <= vEndMs;
+  };
+
+  const excusedRecords = allRecordsSinceFirst.filter(isExcusedSession);
+  const activeRecords = allRecordsSinceFirst.filter((r) => !isExcusedSession(r));
+
+  const rawTotalSessions = allRecordsSinceFirst.length;
+  const excusedSessions = excusedRecords.length;
+  const effectiveTotalSessions = activeRecords.length;
+  const attendedSessions = activeRecords.filter((r) =>
+    (r.presentMemberIds || []).includes(member.id)
+  ).length;
+
+  const allSundayRecords = allRecordsSinceFirst.filter((r) =>
+    isSundayAttendance(r)
+  );
+  const rawTotalSundays = allSundayRecords.length;
+  const excusedSundays = allSundayRecords.filter(isExcusedSession).length;
+  const effectiveTotalSundays = rawTotalSundays - excusedSundays;
+  const sundayAttended = allSundayRecords.filter((r) =>
+    (r.presentMemberIds || []).includes(member.id)
+  ).length;
+
+  const attendanceRate =
+    effectiveTotalSessions > 0
+      ? Math.round((attendedSessions / effectiveTotalSessions) * 100)
+      : 0;
+
+  return {
+    year,
+    firstRecordDate: firstRecordDateStr,
+    records: activeRecords,
+    allRecordsSinceFirst,
+    attendedSessions,
+    effectiveTotalSessions,
+    rawTotalSessions,
+    excusedSessions,
+    sundayAttended,
+    effectiveTotalSundays,
+    rawTotalSundays,
+    excusedSundays,
+    hasVacationConfigured,
+    hasExcusedBreak: excusedSessions > 0,
+    vacationStartDate: member.vacationStartDate,
+    vacationEndDate: member.vacationEndDate,
+    attendanceRate,
+  };
 };
 
 const parseAppDataDoc = (docData: any): AppData => {
@@ -186,16 +504,30 @@ const parseAppDataDoc = (docData: any): AppData => {
     return n;
   });
 
+  // Automatic promotion of First Timers (Visitors) with 2+ attendances to FNF
+  const promoRes = autoPromoteSecondTimeVisitors(data.members, data.attendance);
+  if (promoRes.promotedCount > 0) {
+    data.members = promoRes.members;
+    hasVisitorMigrations = true;
+  }
+
+  // Ensure all Member children are continuously included in shepherd allocations
+  const allocRes = ensureContinuousMemberAllocations(data.members);
+  if (allocRes.allocatedCount > 0) {
+    data.members = allocRes.members;
+    hasVisitorMigrations = true;
+  }
+
   // If any records were migrated from Thesaurus HQ, Visitor to FNF, or prayer durations sanitized, queue persistence so cloud data is updated permanently
   if (hasThesaurusMigrations || hasVisitorMigrations || hasPrayerDurationMigrations) {
     setTimeout(() => {
       updateMainDoc({
         settings: data.settings,
-        members: data.members,
-        attendance: data.attendance,
+        members: JSON.parse(JSON.stringify(data.members)),
+        attendance: JSON.parse(JSON.stringify(data.attendance)),
         transactions: data.transactions,
-        outreachSessions: data.outreachSessions,
-        prayerSchedule: data.prayerSchedule,
+        outreachSessions: JSON.parse(JSON.stringify(data.outreachSessions || [])),
+        prayerSchedule: JSON.parse(JSON.stringify(data.prayerSchedule || [])),
         notifications: data.notifications,
       }).catch(console.error);
     }, 150);
@@ -532,7 +864,9 @@ export const addMember = async (member: Member) => {
     type: shouldCombine && isVisitor ? MemberType.FNF : member.type,
     previousType: member.previousType || (shouldCombine && isVisitor ? MemberType.VISITOR : undefined),
   };
-  const members = [...current.members, normalizedMember];
+  const rawMembers = [...current.members, normalizedMember];
+  const { members: allocatedMembers } = ensureContinuousMemberAllocations(rawMembers);
+  const members: Member[] = JSON.parse(JSON.stringify(allocatedMembers));
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
@@ -565,7 +899,9 @@ export const addMembers = async (newMembersList: Member[]) => {
       previousType: m.previousType || (shouldCombine && isVisitor ? MemberType.VISITOR : undefined),
     };
   });
-  const members = [...current.members, ...normalizedList];
+  const rawMembers = [...current.members, ...normalizedList];
+  const { members: allocatedMembers } = ensureContinuousMemberAllocations(rawMembers);
+  const members: Member[] = JSON.parse(JSON.stringify(allocatedMembers));
   memoryCache = { ...current, members };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
@@ -583,7 +919,8 @@ export const addMembers = async (newMembersList: Member[]) => {
 export const updateMember = async (id: string, updates: Partial<Member>) => {
   const current = memoryCache || (await loadData());
   const targetMember = current.members.find((m) => m.id === id);
-  const members = current.members.map((m) => {
+  const explicitUnassign = updates.assignedTeacherId === "UNASSIGNED";
+  let members = current.members.map((m) => {
     if (m.id === id) {
       const up = { ...m, ...updates };
       const isVisitor = (up.type as string) === "Visitor" || (up.type as any) === MemberType.VISITOR;
@@ -603,6 +940,9 @@ export const updateMember = async (id: string, updates: Partial<Member>) => {
     }
     return m;
   });
+  if (!explicitUnassign) {
+    members = ensureContinuousMemberAllocations(members).members;
+  }
   const sanitizedMembers: Member[] = JSON.parse(JSON.stringify(members));
   memoryCache = { ...current, members: sanitizedMembers };
   saveLocalCache(memoryCache);
@@ -671,15 +1011,50 @@ export const saveAttendance = async (id: string, records: AttendanceRecord[]) =>
   const current = memoryCache || (await loadData());
   let att = [...current.attendance];
   records.forEach((r) => {
-    const idx = att.findIndex((x) => x.id === r.id);
-    if (idx >= 0) att[idx] = r;
-    else att.push(r);
+    // Match by id OR by (date, churchId) to prevent duplicate records for the same date and church
+    const idx = att.findIndex(
+      (x) => x.id === r.id || (x.date === r.date && x.churchId === r.churchId)
+    );
+    const normalizedRecord: AttendanceRecord = {
+      ...r,
+      id: idx >= 0 ? att[idx].id : r.id || `${r.date}_${r.churchId}`,
+      presentMemberIds: Array.from(new Set(r.presentMemberIds || [])),
+      punctualMemberIds: Array.from(new Set(r.punctualMemberIds || [])),
+      lastUpdated: Date.now(),
+    };
+    if (idx >= 0) att[idx] = normalizedRecord;
+    else att.push(normalizedRecord);
   });
-  memoryCache = { ...current, attendance: att };
+
+  const sanitizedAtt: AttendanceRecord[] = JSON.parse(JSON.stringify(att));
+
+  // Automatically promote any First Timer (Visitor) recorded for their 2nd+ attendance to FNF
+  const promoRes = autoPromoteSecondTimeVisitors(current.members, sanitizedAtt);
+  let updatedMembers = promoRes.members;
+  const sanitizedMembers: Member[] = JSON.parse(JSON.stringify(updatedMembers));
+
+  memoryCache = {
+    ...current,
+    attendance: sanitizedAtt,
+    members: sanitizedMembers,
+  };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  pendingUpdates = { ...pendingUpdates, attendance: att };
+  pendingUpdates = {
+    ...pendingUpdates,
+    attendance: sanitizedAtt,
+    ...(promoRes.promotedCount > 0 ? { members: sanitizedMembers } : {}),
+  };
   await flushPendingWrites();
+
+  if (promoRes.promotedCount > 0) {
+    recordActivityNotification({
+      message: `Auto-promoted ${promoRes.promotedCount} First Timer(s) to FNF on 2nd attendance: ${promoRes.promotedNames.join(", ")}`,
+      type: "PROMOTION",
+      branchId: records[0]?.branchId || "ALL",
+      targetChurch: records[0]?.churchId || "ALL",
+    }).catch(console.error);
+  }
 
   if (records.length > 0) {
     const first = records[0];
@@ -1110,10 +1485,12 @@ export const saveOutreachSession = async (session: OutreachSession) => {
   if (idx >= 0) outreachSessions[idx] = session;
   else outreachSessions.push(session);
 
-  memoryCache = { ...current, outreachSessions };
+  const sanitized: OutreachSession[] = JSON.parse(JSON.stringify(outreachSessions));
+  memoryCache = { ...current, outreachSessions: sanitized };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ outreachSessions });
+  pendingUpdates = { ...pendingUpdates, outreachSessions: sanitized };
+  await flushPendingWrites();
 
   recordActivityNotification({
     message: isNew
@@ -1135,41 +1512,59 @@ export const saveOutreachSessions = async (sessions: OutreachSession[]) => {
     else outreachSessions.push(session);
   });
 
-  memoryCache = { ...current, outreachSessions };
+  const sanitized: OutreachSession[] = JSON.parse(JSON.stringify(outreachSessions));
+  memoryCache = { ...current, outreachSessions: sanitized };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ outreachSessions });
+  pendingUpdates = { ...pendingUpdates, outreachSessions: sanitized };
+  await flushPendingWrites();
 };
 
 export const deleteOutreachSession = async (id: string) => {
   const current = memoryCache || (await loadData());
   const outreachSessions = (current.outreachSessions || []).filter((s) => s.id !== id);
-  memoryCache = { ...current, outreachSessions };
+  const sanitized: OutreachSession[] = JSON.parse(JSON.stringify(outreachSessions));
+  memoryCache = { ...current, outreachSessions: sanitized };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ outreachSessions });
+  pendingUpdates = { ...pendingUpdates, outreachSessions: sanitized };
+  await flushPendingWrites();
 };
 
 export const savePrayerSlot = async (slot: PrayerSlot) => {
   const current = memoryCache || (await loadData());
   const prayerSchedule = [...(current.prayerSchedule || [])];
-  const idx = prayerSchedule.findIndex((x) => x.id === slot.id);
+  const normalizedSlot: PrayerSlot = {
+    ...slot,
+    isCompleted: Boolean(slot.isCompleted),
+    durationMins: slot.isCompleted
+      ? Number(slot.durationMins) > 0
+        ? Number(slot.durationMins)
+        : 30
+      : 0,
+    assignedMemberIds: Array.isArray(slot.assignedMemberIds)
+      ? slot.assignedMemberIds
+      : [],
+  };
+  const idx = prayerSchedule.findIndex((x) => x.id === normalizedSlot.id);
   const isNew = idx < 0;
-  if (idx >= 0) prayerSchedule[idx] = slot;
-  else prayerSchedule.push(slot);
+  if (idx >= 0) prayerSchedule[idx] = normalizedSlot;
+  else prayerSchedule.push(normalizedSlot);
 
-  memoryCache = { ...current, prayerSchedule };
+  const sanitized: PrayerSlot[] = JSON.parse(JSON.stringify(prayerSchedule));
+  memoryCache = { ...current, prayerSchedule: sanitized };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ prayerSchedule });
+  pendingUpdates = { ...pendingUpdates, prayerSchedule: sanitized };
+  await flushPendingWrites();
 
-  if (isNew || slot.isCompleted) {
+  if (isNew || normalizedSlot.isCompleted) {
     recordActivityNotification({
-      message: slot.isCompleted
-        ? `Prayer slot on ${slot.dayOfWeek || slot.date} marked completed`
-        : `Prayer slot scheduled for ${slot.dayOfWeek || slot.date}`,
+      message: normalizedSlot.isCompleted
+        ? `Prayer slot on ${normalizedSlot.dayOfWeek || normalizedSlot.date} marked completed (${normalizedSlot.durationMins}m)`
+        : `Prayer slot scheduled for ${normalizedSlot.dayOfWeek || normalizedSlot.date}`,
       type: "PRAYER",
-      branchId: slot.branchId || "ALL",
+      branchId: normalizedSlot.branchId || "ALL",
     }).catch(console.error);
   }
 };
@@ -1180,15 +1575,29 @@ export const savePrayerSlots = async (slots: PrayerSlot[]) => {
   const prayerSchedule = [...(current.prayerSchedule || [])];
 
   slots.forEach((slot) => {
-    const idx = prayerSchedule.findIndex((x) => x.id === slot.id);
-    if (idx >= 0) prayerSchedule[idx] = slot;
-    else prayerSchedule.push(slot);
+    const normalizedSlot: PrayerSlot = {
+      ...slot,
+      isCompleted: Boolean(slot.isCompleted),
+      durationMins: slot.isCompleted
+        ? Number(slot.durationMins) > 0
+          ? Number(slot.durationMins)
+          : 30
+        : 0,
+      assignedMemberIds: Array.isArray(slot.assignedMemberIds)
+        ? slot.assignedMemberIds
+        : [],
+    };
+    const idx = prayerSchedule.findIndex((x) => x.id === normalizedSlot.id);
+    if (idx >= 0) prayerSchedule[idx] = normalizedSlot;
+    else prayerSchedule.push(normalizedSlot);
   });
 
-  memoryCache = { ...current, prayerSchedule };
+  const sanitized: PrayerSlot[] = JSON.parse(JSON.stringify(prayerSchedule));
+  memoryCache = { ...current, prayerSchedule: sanitized };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ prayerSchedule });
+  pendingUpdates = { ...pendingUpdates, prayerSchedule: sanitized };
+  await flushPendingWrites();
 
   const completedCount = slots.filter((s) => s.isCompleted).length;
   if (completedCount > 0) {
@@ -1203,10 +1612,12 @@ export const savePrayerSlots = async (slots: PrayerSlot[]) => {
 export const deletePrayerSlot = async (id: string) => {
   const current = memoryCache || (await loadData());
   const prayerSchedule = (current.prayerSchedule || []).filter((s) => s.id !== id);
-  memoryCache = { ...current, prayerSchedule };
+  const sanitized: PrayerSlot[] = JSON.parse(JSON.stringify(prayerSchedule));
+  memoryCache = { ...current, prayerSchedule: sanitized };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ prayerSchedule });
+  pendingUpdates = { ...pendingUpdates, prayerSchedule: sanitized };
+  await flushPendingWrites();
 };
 
 export const clearAllData = async () => {
@@ -1262,10 +1673,12 @@ export const generateOutreachSchedule = async (targetMembers: any[], dates: stri
     const data = memoryCache || (await loadData());
     const existingSessions = data.outreachSessions || [];
 
-    // Strictly filter to active, inconsistent, and not active members only (no FNFs or First Timers/Visitors)
+    // Strictly filter to active, inconsistent, and not active members only (role = Member)
     const eligibleMembers = targetMembers.filter(
       (m) =>
-        m.type === MemberType.MEMBER &&
+        (m.type === MemberType.MEMBER || (m.type as string) === "Member") &&
+        !isStaffOrTeacher(m) &&
+        !isFnfOrVisitor(m) &&
         (m.status === MemberStatus.ACTIVE ||
           m.status === MemberStatus.INCONSISTENT ||
           m.status === MemberStatus.NOT_ACTIVE)
@@ -1278,12 +1691,14 @@ export const generateOutreachSchedule = async (targetMembers: any[], dates: stri
     const visitCounts = new Map<string, number>();
     eligibleMembers.forEach((m) => visitCounts.set(m.id, 0));
 
+    // Count both completed visits and pending scheduled assignments for continuous rotation
     existingSessions.forEach((s) => {
-      if (
-        s.status === "COMPLETED" &&
-        (s.sessionType === "VISITATION" || s.sessionType === "VISIT" || !s.sessionType)
-      ) {
-        s.visitedMemberIds?.forEach((id) => {
+      if (s.sessionType === "VISITATION" || s.sessionType === "VISIT" || !s.sessionType) {
+        const idsToCount =
+          s.status === "COMPLETED"
+            ? s.visitedMemberIds || []
+            : s.assignedMemberIds || [];
+        idsToCount.forEach((id) => {
           if (visitCounts.has(id)) {
             visitCounts.set(id, visitCounts.get(id)! + 1);
           }
@@ -1291,43 +1706,59 @@ export const generateOutreachSchedule = async (targetMembers: any[], dates: stri
       }
     });
 
-    const newSessions: any[] = [];
+    const usedInCycle = new Set<string>();
+    const newSessions: OutreachSession[] = [];
 
     for (const dateStr of dates) {
-      const shuffleAndSort = (membersList: any[]) => {
-        return membersList
-          .map((m) => ({ m, sortKey: (visitCounts.get(m.id) || 0) + Math.random() }))
-          .sort((a, b) => a.sortKey - b.sortKey)
-          .map((x) => x.m);
-      };
+      // Reset cycle if fewer than 4 unused members remain so everyone gets included before anyone repeats
+      const unusedCount = eligibleMembers.filter((m) => !usedInCycle.has(m.id)).length;
+      if (unusedCount === 0) {
+        usedInCycle.clear();
+      }
 
-      const sortedMembers = shuffleAndSort(eligibleMembers);
-      const selectedMembers = sortedMembers.slice(0, 4);
+      const sortedMembers = [...eligibleMembers].sort((a, b) => {
+        const aUsed = usedInCycle.has(a.id) ? 1 : 0;
+        const bUsed = usedInCycle.has(b.id) ? 1 : 0;
+        if (aUsed !== bUsed) return aUsed - bUsed;
+        const cDiff = (visitCounts.get(a.id) || 0) - (visitCounts.get(b.id) || 0);
+        if (cDiff !== 0) return cDiff;
+        return a.name.localeCompare(b.name);
+      });
+
+      const batchSize = Math.min(4, eligibleMembers.length);
+      const selectedMembers = sortedMembers.slice(0, batchSize);
       const selectedIds: string[] = selectedMembers.map((m) => m.id);
 
       selectedIds.forEach((id) => {
+        usedInCycle.add(id);
         visitCounts.set(id, (visitCounts.get(id) || 0) + 1);
       });
 
-      newSessions.push({
+      const sessionObj: OutreachSession = {
         id: crypto.randomUUID(),
         date: dateStr,
         status: "PENDING",
         sessionType: "VISITATION",
         assignedMemberIds: selectedIds,
         visitedMemberIds: [],
-        teacherId: teacherId || undefined,
-        completedBy: teacherId || undefined,
         branchId: eligibleMembers[0]?.branchId || eligibleMembers[0]?.assignedChurch || "ALL",
-      });
+      };
+      if (teacherId) {
+        sessionObj.teacherId = teacherId;
+        sessionObj.completedBy = teacherId;
+      }
+      newSessions.push(sessionObj);
     }
 
-    const updatedSessions = [...existingSessions, ...newSessions];
+    const updatedSessions: OutreachSession[] = JSON.parse(
+      JSON.stringify([...existingSessions, ...newSessions])
+    );
     const updated = { ...data, outreachSessions: updatedSessions };
     memoryCache = updated;
     saveLocalCache(updated);
     notifySubscribers(updated);
-    await updateMainDoc({ outreachSessions: updatedSessions });
+    pendingUpdates = { ...pendingUpdates, outreachSessions: updatedSessions };
+    await flushPendingWrites();
     return {
       success: true,
       data: updatedSessions,
@@ -1346,10 +1777,12 @@ export const generatePrayerSchedule = async (prayerWeek: Date, targetMembers: Me
 
     const newSlots: PrayerSlot[] = [];
 
-    // Strictly filter to active, inconsistent, and not active members only (no FNFs or First Timers/Visitors)
+    // Strictly filter to active, inconsistent, and not active members only (role = Member)
     const eligibleMembers = targetMembers.filter(
       (m) =>
-        m.type === MemberType.MEMBER &&
+        (m.type === MemberType.MEMBER || (m.type as string) === "Member") &&
+        !isStaffOrTeacher(m) &&
+        !isFnfOrVisitor(m) &&
         (m.status === MemberStatus.ACTIVE ||
           m.status === MemberStatus.INCONSISTENT ||
           m.status === MemberStatus.NOT_ACTIVE)
@@ -1362,55 +1795,71 @@ export const generatePrayerSchedule = async (prayerWeek: Date, targetMembers: Me
     const prayerCounts = new Map<string, number>();
     eligibleMembers.forEach((m) => prayerCounts.set(m.id, 0));
 
+    // Count both completed and pending scheduled appearances so every allocated Member child is continuously rotated
     existingSchedule.forEach((s) => {
-      if (s.isCompleted) {
-        s.assignedMemberIds?.forEach((id) => {
-          if (prayerCounts.has(id)) {
-            prayerCounts.set(id, prayerCounts.get(id)! + 1);
-          }
-        });
-      }
+      (s.assignedMemberIds || []).forEach((id) => {
+        if (prayerCounts.has(id)) {
+          const weight = s.isCompleted ? 2 : 1;
+          prayerCounts.set(id, (prayerCounts.get(id) || 0) + weight);
+        }
+      });
     });
+
+    const usedInCycle = new Set<string>();
 
     for (let i = 0; i < 5; i++) {
       const slotDate = new Date(prayerWeek);
       slotDate.setDate(slotDate.getDate() + i);
-      const dateStr = slotDate.toISOString().split('T')[0];
+      const dateStr = slotDate.toISOString().split("T")[0];
       const dayOfWeek = slotDate.toLocaleDateString("en-GB", { weekday: "long" });
 
-      const shuffleAndSort = (membersList: any[]) => {
-        return membersList
-          .map((m) => ({ m, sortKey: (prayerCounts.get(m.id) || 0) + Math.random() }))
-          .sort((a, b) => a.sortKey - b.sortKey)
-          .map((x) => x.m);
-      };
+      const unusedCount = eligibleMembers.filter((m) => !usedInCycle.has(m.id)).length;
+      if (unusedCount === 0) {
+        usedInCycle.clear();
+      }
 
-      const sortedMembers = shuffleAndSort(eligibleMembers);
-      const selectedMembers = sortedMembers.slice(0, 4);
+      const sortedMembers = [...eligibleMembers].sort((a, b) => {
+        const aUsed = usedInCycle.has(a.id) ? 1 : 0;
+        const bUsed = usedInCycle.has(b.id) ? 1 : 0;
+        if (aUsed !== bUsed) return aUsed - bUsed;
+        const cDiff = (prayerCounts.get(a.id) || 0) - (prayerCounts.get(b.id) || 0);
+        if (cDiff !== 0) return cDiff;
+        return a.name.localeCompare(b.name);
+      });
+
+      const batchSize = Math.min(4, eligibleMembers.length);
+      const selectedMembers = sortedMembers.slice(0, batchSize);
       const selectedIds: string[] = selectedMembers.map((m) => m.id);
 
       selectedIds.forEach((id) => {
+        usedInCycle.add(id);
         prayerCounts.set(id, (prayerCounts.get(id) || 0) + 1);
       });
 
-      newSlots.push({
+      const slotObj: PrayerSlot = {
         id: crypto.randomUUID(),
         date: dateStr,
         dayOfWeek: dayOfWeek,
         isCompleted: false,
         assignedMemberIds: selectedIds,
         durationMins: 0,
-        teacherId: teacherId || undefined,
         branchId: eligibleMembers[0]?.branchId || eligibleMembers[0]?.assignedChurch || "ALL",
-      });
+      };
+      if (teacherId) {
+        slotObj.teacherId = teacherId;
+      }
+      newSlots.push(slotObj);
     }
 
-    const updatedSchedule = [...existingSchedule, ...newSlots];
+    const updatedSchedule: PrayerSlot[] = JSON.parse(
+      JSON.stringify([...existingSchedule, ...newSlots])
+    );
     const updated = { ...data, prayerSchedule: updatedSchedule };
     memoryCache = updated;
     saveLocalCache(updated);
     notifySubscribers(updated);
-    await updateMainDoc({ prayerSchedule: updatedSchedule });
+    pendingUpdates = { ...pendingUpdates, prayerSchedule: updatedSchedule };
+    await flushPendingWrites();
 
     return {
       success: true,

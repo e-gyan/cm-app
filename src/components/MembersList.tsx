@@ -54,7 +54,7 @@ import {
   UserCheck,
   UserX,
 } from "lucide-react";
-import { updateMember, addMember, deleteMember, bulkArchiveMembers, bulkDeleteMembers } from "../services/storageService";
+import { updateMember, addMember, deleteMember, bulkArchiveMembers, bulkDeleteMembers, computeChildYearlyAttendance } from "../services/storageService";
 import { uploadMemberPhoto } from "../services/firebase";
 import { sanitizeInput } from "../services/securityService";
 import { matchesScope, getScopeDisplayLabel, setHookedTeacherId, isStaffOrTeacher } from "../lib/teacherDivision";
@@ -343,6 +343,7 @@ const MembersList: React.FC<MembersListProps> = ({
         assignedChurch: activeChurch === "CM" ? "UJ" : (activeChurch as Church),
         passcode: "",
         status: MemberStatus.ACTIVE,
+        joinedDate: new Date().toISOString(),
         addedAt: Date.now(),
         branchId: activeBranchId === "ALL" ? "" : activeBranchId,
         zoneId: currentUser.zoneId || "",
@@ -474,6 +475,7 @@ const MembersList: React.FC<MembersListProps> = ({
         status: formData.status || MemberStatus.ACTIVE,
         birthDate: formData.birthDate,
         passcode: formData.birthDate || "",
+        joinedDate: new Date().toISOString(),
         addedAt: Date.now(),
         ...formData,
         assignedTeacherId: assignedShepherd,
@@ -840,121 +842,36 @@ const MembersList: React.FC<MembersListProps> = ({
   };
 
   const getMemberAttendanceCount = (member: Member) => {
-    const currentYear = new Date().getFullYear();
-    const startOfYear = new Date(currentYear, 0, 1);
-    startOfYear.setHours(0, 0, 0, 0);
-
-    const isIncludedSession = (r: AttendanceRecord) => {
-      const mode = data.settings?.attendanceCountMode || "SUNDAY_ONLY";
-      if (mode === "ALL_DAYS") return true;
-      if (mode === "SUNDAY_AND_WEDNESDAY") return isSundayAttendance(r) || isCellAttendance(r);
-      return isSundayAttendance(r);
-    };
-
-    const churchAttendance = data.attendance.filter((r) => {
-      if (!isIncludedSession(r)) return false;
-      const recordDate = new Date(r.date);
-      recordDate.setHours(0, 0, 0, 0);
-
-      // Check if on vacation during this record
-      let isVacation = false;
-      if (member.vacationStartDate && member.vacationEndDate) {
-        const vStart = new Date(member.vacationStartDate).getTime();
-        const vEnd = new Date(member.vacationEndDate).getTime();
-        const rTime = recordDate.getTime();
-        if (rTime >= vStart && rTime <= vEnd) {
-          isVacation = true;
-        }
-      }
-
-      const isPresent = r.presentMemberIds.includes(member.id);
-      return (
-        recordDate.getTime() >= startOfYear.getTime() &&
-        (r.churchId === member.assignedChurch || isPresent) &&
-        (!isVacation || isPresent)
-      );
-    });
-
-    return churchAttendance.filter((r) =>
-      r.presentMemberIds.includes(member.id),
-    ).length;
+    const summary = computeChildYearlyAttendance(
+      member,
+      data.attendance,
+      data.settings,
+    );
+    return summary.attendedSessions;
   };
 
   const renderAttendanceBadge = (member: Member) => {
-    // Attendance evaluated from the beginning of the current calendar year
-    const currentYear = new Date().getFullYear();
-    const startOfYear = new Date(currentYear, 0, 1);
-    startOfYear.setHours(0, 0, 0, 0);
-
-    const isIncludedSession = (r: AttendanceRecord) => {
-      const mode = data.settings?.attendanceCountMode || "SUNDAY_ONLY";
-      if (mode === "ALL_DAYS") return true;
-      if (mode === "SUNDAY_AND_WEDNESDAY") return isSundayAttendance(r) || isCellAttendance(r);
-      return isSundayAttendance(r);
-    };
-
-    const churchAttendance = data.attendance.filter((r) => {
-      if (!isIncludedSession(r)) return false;
-      const recordDate = new Date(r.date);
-      recordDate.setHours(0, 0, 0, 0);
-
-      // Check if on vacation during this record
-      let isVacation = false;
-      if (member.vacationStartDate && member.vacationEndDate) {
-        const vStart = new Date(member.vacationStartDate).getTime();
-        const vEnd = new Date(member.vacationEndDate).getTime();
-        const rTime = recordDate.getTime();
-        if (rTime >= vStart && rTime <= vEnd) {
-          isVacation = true;
-        }
-      }
-
-      const isPresent = r.presentMemberIds.includes(member.id);
-      return (
-        recordDate.getTime() >= startOfYear.getTime() &&
-        (r.churchId === member.assignedChurch || isPresent) &&
-        (!isVacation || isPresent)
-      );
-    });
-
-    // Specifically calculate Sunday count from the beginning of the year for this child
-    const yearSundayRecords = data.attendance.filter((r) => {
-      if (!isSundayAttendance(r)) return false;
-      const recordDate = new Date(r.date);
-      recordDate.setHours(0, 0, 0, 0);
-      return recordDate.getTime() >= startOfYear.getTime();
-    });
-
-    // Unique Sundays held for member's assigned church (or all unique Sunday dates this year)
-    const churchSundayDates = new Set(
-      yearSundayRecords
-        .filter((r) => r.churchId === member.assignedChurch)
-        .map((r) => r.date)
+    const summary = computeChildYearlyAttendance(
+      member,
+      data.attendance,
+      data.settings,
     );
-    const totalSundayDates = churchSundayDates.size > 0
-      ? churchSundayDates
-      : new Set(yearSundayRecords.map((r) => r.date));
-    const totalSundays = totalSundayDates.size;
 
-    // Distinct Sunday dates this year that the member attended
-    const attendedSundayDates = new Set(
-      yearSundayRecords
-        .filter((r) => r.presentMemberIds?.includes(member.id))
-        .map((r) => r.date)
-    );
-    const sundayAttended = attendedSundayDates.size;
-
-    const totalSessions = churchAttendance.length;
-    const attendedSessions = churchAttendance.filter((r) =>
-      r.presentMemberIds.includes(member.id),
-    ).length;
-    const attendanceRate =
-      totalSessions > 0
-        ? Math.round((attendedSessions / totalSessions) * 100)
-        : 0;
+    const {
+      records: churchAttendance,
+      attendedSessions,
+      effectiveTotalSessions: totalSessions,
+      rawTotalSessions,
+      excusedSessions,
+      sundayAttended,
+      effectiveTotalSundays: totalSundays,
+      hasExcusedBreak,
+      firstRecordDate,
+      attendanceRate,
+    } = summary;
 
     // Newly added child with 0 sessions recorded since joining
-    if (totalSessions === 0) {
+    if (totalSessions === 0 && rawTotalSessions === 0) {
       return (
         <div
           className="w-full max-w-[145px] cursor-pointer group flex items-center gap-2"
@@ -1054,10 +971,16 @@ const MembersList: React.FC<MembersListProps> = ({
     }
 
     const showSundayCount = data.settings?.showSundayAttendanceCountOnChildRecord !== false;
+    const breakNote = hasExcusedBreak
+      ? `Excused Break: ${excusedSessions} paused (${rawTotalSessions} raw total)`
+      : `No Excused Break`;
+    const firstRecNote = firstRecordDate
+      ? `First Record: ${formatDateDDMMYYYY(firstRecordDate)}`
+      : "";
 
     return (
       <div
-        className="w-full max-w-[150px] cursor-pointer group flex items-center gap-2"
+        className="w-full max-w-[155px] cursor-pointer group flex items-center gap-2"
         onClick={() => setHistoryMemberId(member.id)}
       >
         <div className="flex-1">
@@ -1065,20 +988,31 @@ const MembersList: React.FC<MembersListProps> = ({
             className={`flex items-center justify-between mb-1 px-2 py-1 rounded-md border ${styles.bg} ${styles.border} group-hover:shadow-sm transition-all`}
             title={
               alertMsg
-                ? `${alertMsg} (${attendanceRate}% overall • ${sundayAttended}/${totalSundays} Sundays)`
-                : `${attendanceRate}% overall attendance • ${sundayAttended}/${totalSundays} Sundays attended`
+                ? `${alertMsg} (${attendanceRate}% • ${sundayAttended}/${totalSundays} Sundays • ${breakNote}${firstRecNote ? ` • ${firstRecNote}` : ""})`
+                : `${attendanceRate}% attendance • ${sundayAttended}/${totalSundays} Sundays • ${breakNote}${firstRecNote ? ` • ${firstRecNote}` : ""}`
             }
           >
-            <span
-              className={`text-xs font-bold flex items-center gap-1 ${styles.text}`}
-            >
-              {alertMsg && (
-                <div
-                  className={`w-2 h-2 rounded-full animate-pulse ${alertColor.split(" ")[1]}`}
-                />
+            <div className="flex flex-col items-start">
+              <span
+                className={`text-xs font-bold flex items-center gap-1 ${styles.text}`}
+              >
+                {alertMsg && (
+                  <div
+                    className={`w-2 h-2 rounded-full animate-pulse ${alertColor.split(" ")[1]}`}
+                  />
+                )}
+                {attendanceRate}%
+              </span>
+              {hasExcusedBreak ? (
+                <span className="text-[8px] font-extrabold text-amber-600 bg-amber-50 border border-amber-200 px-1 rounded mt-0.5 leading-tight">
+                  {excusedSessions} Excused
+                </span>
+              ) : (
+                <span className="text-[8px] font-semibold text-slate-400 leading-tight mt-0.5">
+                  No Break
+                </span>
               )}
-              {attendanceRate}%
-            </span>
+            </div>
             <div className="flex flex-col items-end">
               <span
                 className={`text-[10px] font-medium ${styles.text} opacity-80 flex items-center gap-0.5`}
@@ -1087,7 +1021,7 @@ const MembersList: React.FC<MembersListProps> = ({
                 {attendedSessions}/{totalSessions}
               </span>
               {showSundayCount && (
-                <span className="text-[9px] font-bold text-slate-500" title="Sunday attendance this year / total Sundays this year">
+                <span className="text-[9px] font-bold text-slate-500" title="Sunday attendance this year / active Sundays since first record">
                   {sundayAttended}/{totalSundays}
                 </span>
               )}
@@ -3157,6 +3091,16 @@ const MembersList: React.FC<MembersListProps> = ({
                 );
                 if (!member) return null;
 
+                const summary = computeChildYearlyAttendance(
+                  member,
+                  data.attendance,
+                  data.settings,
+                );
+                const firstRecDateObj = summary.firstRecordDate
+                  ? new Date(summary.firstRecordDate)
+                  : null;
+                if (firstRecDateObj) firstRecDateObj.setHours(0, 0, 0, 0);
+
                 const history = data.attendance
                   .filter((r) => {
                     // Exclude Wednesday records (Wednesday is exclusively LC Live / midweek staff meeting)
@@ -3164,6 +3108,13 @@ const MembersList: React.FC<MembersListProps> = ({
                       return false;
                     }
                     const recordDate = new Date(r.date);
+                    recordDate.setHours(0, 0, 0, 0);
+                    if (
+                      firstRecDateObj &&
+                      recordDate.getTime() < firstRecDateObj.getTime()
+                    ) {
+                      return false;
+                    }
                     const isPresent = r.presentMemberIds.includes(member.id);
                     if (isPresent) return true;
 
@@ -3287,6 +3238,32 @@ const MembersList: React.FC<MembersListProps> = ({
 
                 return (
                   <>
+                    {/* Yearly First-Record & Excused Break Summary Card */}
+                    <div className="mb-4 grid grid-cols-3 gap-2">
+                      <div className="p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-100 text-center">
+                        <div className="text-[9px] font-bold text-indigo-500 uppercase">First Record ({summary.year})</div>
+                        <div className="text-xs font-extrabold text-indigo-900 mt-0.5">
+                          {summary.firstRecordDate ? formatDateDDMMYYYY(summary.firstRecordDate) : "—"}
+                        </div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-100 text-center">
+                        <div className="text-[9px] font-bold text-emerald-600 uppercase">Active Count</div>
+                        <div className="text-xs font-extrabold text-emerald-900 mt-0.5">
+                          {summary.attendedSessions} / {summary.effectiveTotalSessions} ({summary.attendanceRate}%)
+                        </div>
+                      </div>
+                      <div className={`p-2.5 rounded-xl border text-center ${summary.hasExcusedBreak ? "bg-amber-50/80 border-amber-200" : "bg-slate-50 border-slate-100"}`}>
+                        <div className={`text-[9px] font-bold uppercase ${summary.hasExcusedBreak ? "text-amber-700" : "text-slate-400"}`}>
+                          Excused Break
+                        </div>
+                        <div className={`text-xs font-extrabold mt-0.5 ${summary.hasExcusedBreak ? "text-amber-900" : "text-slate-600"}`}>
+                          {summary.hasExcusedBreak
+                            ? `${summary.excusedSessions} paused (of ${summary.rawTotalSessions})`
+                            : "None (0 paused)"}
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="mb-6 h-56 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                       <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
                         6-Month Frequency vs Church Avg

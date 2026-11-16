@@ -153,6 +153,26 @@ export interface AppOrganization {
   zones: OrgZone[];
 }
 
+export interface NotificationAlertConfig {
+  enabled?: boolean;
+  prayerAlertsEnabled?: boolean;
+  prayerAlertEnabled?: boolean;
+  prayerReminderTime?: string;
+  prayerAlertTime?: string;
+  outreachAlertsEnabled?: boolean;
+  outreachAlertEnabled?: boolean;
+  outreachReminderDay?: string;
+  outreachAlertDay?: string;
+  outreachReminderTime?: string;
+  outreachAlertTime?: string;
+  reportingAlertsEnabled?: boolean;
+  reportingAlertEnabled?: boolean;
+  reportingReminderTime?: string;
+  reportingAlertTime?: string;
+  promotionAlertsEnabled?: boolean;
+  promotionsAlertEnabled?: boolean;
+}
+
 export interface AppSettings {
   organization?: AppOrganization;
   churches?: any;
@@ -163,6 +183,7 @@ export interface AppSettings {
   attendanceCountMode?: "SUNDAY_ONLY" | "SUNDAY_AND_WEDNESDAY" | "ALL_DAYS";
   attendanceDays?: string[];
   showSundayAttendanceCountOnChildRecord?: boolean;
+  notificationConfig?: NotificationAlertConfig;
 }
 
 export interface AttendanceRecord {

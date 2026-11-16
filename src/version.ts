@@ -16,16 +16,34 @@ export interface ReleaseLog {
   changes: string[];
 }
 
-export const APP_VERSION = "1.7.23";
-export const APP_RELEASE_NAME = "Prayer Duration Accounting, Age Demographics Redesign & Intelligent Shepherd UX";
-export const APP_BUILD_DATE = "2026-10-14";
+export const APP_VERSION = "1.8.0";
+export const APP_RELEASE_NAME = "PWA & Alerts, Smart Paste Attendance, Due Soon Transitions, First Timer Details & Prayer Sync";
+export const APP_BUILD_DATE = "2026-11-16";
 
 export const CHANGELOG: ReleaseLog[] = [
+  {
+    version: "1.8.0",
+    date: "2026-11-16",
+    title: "PWA & Alerts, Smart Paste Attendance, Due Soon Transitions, First Timer Details & Prayer Sync",
+    badge: "Current Release",
+    changes: [
+      "Added Android/iPhone PWA support with configurable accountability alerts, smart paste attendance matching, a Due Soon church transition report tab (< 3 months), First Timer contact/gender/location capture with automatic FNF promotion on second attendance, excused-break yearly attendance counts from each child's first record, and reliable prayer saving with continuous member allocation.",
+    ],
+  },
+  {
+    version: "1.7.24",
+    date: "2026-11-06",
+    title: "Child Attendance Count From Registration Date",
+    badge: "Previous Release",
+    changes: [
+      "Updated each child's attendance total count in People to start from when their data was added this year and continue yearly.",
+    ],
+  },
   {
     version: "1.7.23",
     date: "2026-10-14",
     title: "Prayer Duration Accounting, Age Demographics Redesign & Intelligent Shepherd UX",
-    badge: "Current Release",
+    badge: "Previous Release",
     changes: [
       "Prayer Schedule Duration Accounting & DB Migration: Clicking a prayer schedule item opens the duration selector; user-selected minutes are recorded, persisted to Firestore, and totaled across all metrics. Migrated and normalized legacy completed slots with 0 duration to standard 30 minutes",
       "Clean FNF Terminology: Removed 'recurring' prefix from FNF across the app (Dashboard, Settings, Analytics), standardizing on 'FNFs' and 'FNF'",
@@ -67,7 +85,7 @@ export const CHANGELOG: ReleaseLog[] = [
     version: "1.7.20",
     date: "2026-10-05",
     title: "People Hub Revamp, Shepherd Church Scoping & Label Cleanups",
-    badge: "Current Release",
+    badge: "Previous Release",
     changes: [
       "Terminology Refinement: Standardized on 'First Timer' (and plural 'First Timers') without using 'Visitor', and standardized dropdown and filter labels on 'FNF' (and 'FNFs') rather than 'Friends & Family'",
       "People Hub Revamp - Comprehensive Fuzzy Search: Search now matches across member full names, assigned church, branch ID, phone and parent phone numbers, physical address, household names, assigned shepherd names, and calculated ages",

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
-import { subscribeToData, loadData, getInstantData, markNotificationRead, clearNotifications } from "./services/storageService";
+import { subscribeToData, loadData, getInstantData, markNotificationRead, clearNotifications, recordActivityNotification } from "./services/storageService";
 import { verifyPasscode } from "./services/storageService";
-import { AppData, Church, Member, Role, Notification as AppNotification } from "./types";
+import { AppData, Church, Member, MemberStatus, MemberType, Role, Notification as AppNotification } from "./types";
 import Dashboard from "./components/Dashboard";
 import AttendanceTaker from "./components/AttendanceTaker";
 import ReportExport from "./components/ReportExport";
@@ -38,6 +38,8 @@ import {
   Maximize,
   Minimize,
   Tag,
+  Smartphone,
+  Download,
 } from "lucide-react";
 import { DEFAULT_SETTINGS } from "./constants";
 import { matchesScope, getScopeDisplayLabel } from "./lib/teacherDivision";
@@ -105,6 +107,60 @@ const App: React.FC = () => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+  const [deferredPwaPrompt, setDeferredPwaPrompt] = useState<any>(null);
+  const [isPwaInstalled, setIsPwaInstalled] = useState<boolean>(false);
+  const [showIosInstallModal, setShowIosInstallModal] = useState<boolean>(false);
+
+  const isIosDevice = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+  }, []);
+
+  // Register PWA Service Worker & Install Prompt Listener
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const isStandalone =
+      window.matchMedia?.("(display-mode: standalone)")?.matches ||
+      (window.navigator as any).standalone === true;
+    setIsPwaInstalled(isStandalone);
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .catch((err) => console.warn("SW registration skipped:", err));
+    }
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPwaPrompt(e);
+    };
+
+    const handleAppInstalled = () => {
+      setIsPwaInstalled(true);
+      setDeferredPwaPrompt(null);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstallPwaClick = async () => {
+    if (deferredPwaPrompt) {
+      deferredPwaPrompt.prompt();
+      const choice = await deferredPwaPrompt.userChoice;
+      if (choice.outcome === "accepted") {
+        setDeferredPwaPrompt(null);
+      }
+    } else if (isIosDevice && !isPwaInstalled) {
+      setShowIosInstallModal(true);
+    }
+  };
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -452,6 +508,173 @@ const App: React.FC = () => {
 
     prevNotificationIds.current = new Set(myNotifications.map((n) => n.id));
   }, [myNotifications, currentUser]);
+
+  // Scheduled Accountability Notification Engine (Prayer, Outreach, Sunday Reporting, Promotions)
+  useEffect(() => {
+    if (!currentUser) return;
+    const cfg = data.settings.notificationConfig || DEFAULT_SETTINGS.notificationConfig;
+    if (!cfg || !cfg.enabled) return;
+
+    const dispatchDeviceNotification = async (title: string, body: string) => {
+      if (typeof window === "undefined" || !("Notification" in window)) return;
+      if (Notification.permission !== "granted") return;
+      try {
+        if ("serviceWorker" in navigator) {
+          const reg = await navigator.serviceWorker.ready;
+          await reg.showNotification(title, {
+            body,
+            icon: "/icon-192.svg",
+            badge: "/icon-192.svg",
+          });
+          return;
+        }
+        new Notification(title, { body, icon: "/icon-192.svg" });
+      } catch (e) {
+        console.warn("Failed to show device notification:", e);
+      }
+    };
+
+    const runAccountabilityCheck = () => {
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      const dayOfWeek = now.getDay(); // 0 = Sun, 1..5 = Mon..Fri, 6 = Sat
+      const dayNames = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+
+      const parseTimeMinutes = (timeStr?: string, fallback = 18 * 60) => {
+        if (!timeStr || !timeStr.includes(":")) return fallback;
+        const [h, m] = timeStr.split(":").map((n) => parseInt(n, 10));
+        if (isNaN(h) || isNaN(m)) return fallback;
+        return h * 60 + m;
+      };
+
+      const targetChurch =
+        activeChurch !== "All" && activeChurch !== "CM"
+          ? activeChurch
+          : currentUser.assignedChurch || "ALL";
+
+      // 1. Daily Prayer Schedule Alert (Mon–Fri)
+      if ((cfg.prayerAlertEnabled ?? cfg.prayerAlertsEnabled) && dayOfWeek >= 1 && dayOfWeek <= 5) {
+        const alertMins = parseTimeMinutes(cfg.prayerAlertTime || cfg.prayerReminderTime, 18 * 60);
+        const storageKey = `cm_alert_prayer_${todayStr}_${currentUser.id}`;
+        if (currentMinutes >= alertMins && !localStorage.getItem(storageKey)) {
+          const pendingTodayPrayers = (data.prayerSchedule || []).filter(
+            (p) =>
+              p.date === todayStr &&
+              !p.isCompleted &&
+              (targetChurch === "ALL" || p.teacherId === currentUser.id)
+          );
+          if (pendingTodayPrayers.length > 0) {
+            localStorage.setItem(storageKey, "1");
+            const msg = `Prayer Accountability: ${pendingTodayPrayers.length} scheduled prayer slot(s) for today (${todayStr}) are awaiting completion and duration logging.`;
+            dispatchDeviceNotification("Prayer Schedule Reminder", msg);
+            recordActivityNotification({
+              type: "PRAYER",
+              message: msg,
+              targetChurch,
+              actorName: "System Accountability",
+              branchId: activeBranchId || "ALL",
+            }).catch(console.error);
+          }
+        }
+      }
+
+      // 2. Weekly Outreach & Follow-Up Alert
+      if (cfg.outreachAlertEnabled ?? cfg.outreachAlertsEnabled) {
+        const alertDayName = (cfg.outreachAlertDay || cfg.outreachReminderDay || "SATURDAY").toUpperCase();
+        const alertMins = parseTimeMinutes(cfg.outreachAlertTime || cfg.outreachReminderTime, 9 * 60);
+        const storageKey = `cm_alert_outreach_${todayStr}_${currentUser.id}`;
+        if (dayNames[dayOfWeek] === alertDayName && currentMinutes >= alertMins && !localStorage.getItem(storageKey)) {
+          const pendingOutreach = (data.outreachSessions || []).filter(
+            (s) =>
+              s.status === "PLANNED" &&
+              (targetChurch === "ALL" || s.teacherId === currentUser.id)
+          );
+          if (pendingOutreach.length > 0) {
+            localStorage.setItem(storageKey, "1");
+            const msg = `Outreach Accountability: You have ${pendingOutreach.length} scheduled visit/call follow-up session(s) pending completion.`;
+            dispatchDeviceNotification("Outreach & Visitation Reminder", msg);
+            recordActivityNotification({
+              type: "OUTREACH",
+              message: msg,
+              targetChurch,
+              actorName: "System Accountability",
+              branchId: activeBranchId || "ALL",
+            }).catch(console.error);
+          }
+        }
+      }
+
+      // 3. Sunday Attendance & Reporting Accountability Alert
+      if ((cfg.reportingAlertEnabled ?? cfg.reportingAlertsEnabled) && dayOfWeek === 0) {
+        const alertMins = parseTimeMinutes(cfg.reportingAlertTime || cfg.reportingReminderTime, 13 * 60);
+        const storageKey = `cm_alert_reporting_${todayStr}_${targetChurch}`;
+        if (currentMinutes >= alertMins && !localStorage.getItem(storageKey)) {
+          const hasRecordedToday = (data.attendance || []).some(
+            (r) =>
+              r.date === todayStr &&
+              (targetChurch === "ALL" || r.churchId === targetChurch) &&
+              r.presentMemberIds.length > 0
+          );
+          if (!hasRecordedToday) {
+            localStorage.setItem(storageKey, "1");
+            const msg = `Reporting Accountability: Sunday attendance & report for ${targetChurch === "ALL" ? "your branch" : `${targetChurch} Church`} (${todayStr}) has not been submitted yet.`;
+            dispatchDeviceNotification("Sunday Reporting Accountability", msg);
+            recordActivityNotification({
+              type: "ATTENDANCE",
+              message: msg,
+              targetChurch,
+              actorName: "System Accountability",
+              branchId: activeBranchId || "ALL",
+            }).catch(console.error);
+          }
+        }
+      }
+
+      // 4. Church Transition / Due Soon Alert (< 3 Months to Age Limit)
+      if (cfg.promotionsAlertEnabled ?? cfg.promotionAlertsEnabled) {
+        const weekKey = `cm_alert_promotions_${now.getFullYear()}_w${Math.ceil(now.getDate() / 7)}_${targetChurch}`;
+        if (!localStorage.getItem(weekKey)) {
+          const ageLimits: Record<string, { to: string; age: number }> = {
+            I: { to: "K", age: 2 },
+            K: { to: "LJ", age: 6 },
+            LJ: { to: "UJ", age: 9 },
+            UJ: { to: "Teens", age: 13 },
+          };
+          const dueSoonKids = (data.members || []).filter((m) => {
+            const rawDob = m.birthDate || (m as any).dob;
+            if (!rawDob || m.status === MemberStatus.ARCHIVED || m.status === MemberStatus.TRANSFERRED) return false;
+            if (["Teacher", "Helper", "Volunteer"].includes(m.type) || m.type === MemberType.TEACHER || (m.role && m.role !== "NONE")) return false;
+            const memberChurch = m.assignedChurch || "";
+            if (targetChurch !== "ALL" && memberChurch !== targetChurch) return false;
+            const rule = ageLimits[memberChurch];
+            if (!rule) return false;
+            const dob = new Date(rawDob);
+            if (isNaN(dob.getTime())) return false;
+            const limitDate = new Date(dob.getFullYear() + rule.age, dob.getMonth(), dob.getDate());
+            const diffDays = Math.ceil((limitDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            return diffDays >= 0 && diffDays <= 92;
+          });
+          if (dueSoonKids.length > 0) {
+            localStorage.setItem(weekKey, "1");
+            const msg = `Transition Notice: ${dueSoonKids.length} child(ren) in ${targetChurch === "ALL" ? "your scope" : `${targetChurch} Church`} are less than 3 months away from moving to the next church. Check Reports → Due Soon.`;
+            dispatchDeviceNotification("Upcoming Church Transitions", msg);
+            recordActivityNotification({
+              type: "PROMOTION",
+              message: msg,
+              targetChurch,
+              actorName: "System Accountability",
+              branchId: activeBranchId || "ALL",
+            }).catch(console.error);
+          }
+        }
+      }
+    };
+
+    runAccountabilityCheck();
+    const timer = setInterval(runAccountabilityCheck, 120000);
+    return () => clearInterval(timer);
+  }, [currentUser, data.settings.notificationConfig, data.prayerSchedule, data.outreachSessions, data.attendance, data.members, activeChurch, activeBranchId]);
 
   const branchTrendData = useMemo(() => {
     if (!data.attendance || data.attendance.length === 0) return [];
@@ -875,8 +1098,17 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Mobile Header Actions (Notification & Logout) */}
+          {/* Mobile Header Actions (PWA Install, Notification & Logout) */}
           <div className="flex items-center gap-1">
+            {!isPwaInstalled && (deferredPwaPrompt || isIosDevice) && (
+              <button
+                onClick={handleInstallPwaClick}
+                className="px-2.5 py-1.5 bg-indigo-600 text-white rounded-xl text-[10px] font-extrabold flex items-center gap-1 shadow-sm"
+                title="Install App on Phone"
+              >
+                <Download size={13} /> Install
+              </button>
+            )}
             <button
               onClick={toggleFullscreen}
               className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-full transition-colors"
@@ -1081,6 +1313,15 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-4">
+                {!isPwaInstalled && (deferredPwaPrompt || isIosDevice) && (
+                  <button
+                    onClick={handleInstallPwaClick}
+                    className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
+                    title="Install CM App on your device"
+                  >
+                    <Smartphone size={15} /> Install App
+                  </button>
+                )}
                 <button
                   onClick={toggleFullscreen}
                   className="p-2.5 rounded-xl border bg-white border-slate-200 text-slate-400 hover:text-indigo-600 hover:border-indigo-200 transition-all"
@@ -1309,6 +1550,50 @@ const App: React.FC = () => {
         isOpen={isChangelogOpen}
         onClose={() => setIsChangelogOpen(false)}
       />
+
+      {/* iOS / iPhone Add to Home Screen Guide Modal */}
+      {showIosInstallModal && (
+        <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-2xl">
+                  <Smartphone size={20} />
+                </div>
+                <h3 className="font-extrabold text-slate-800 text-base">
+                  Install on iPhone / iPad
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowIosInstallModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Install <strong>CM Ministry</strong> on your iPhone home screen for instant full-screen access and accountability notifications:
+            </p>
+            <ol className="text-xs text-slate-700 space-y-2.5 bg-slate-50 p-4 rounded-2xl border border-slate-200 font-medium">
+              <li>
+                1. Tap the <strong>Share</strong> button <span className="inline-block px-1.5 py-0.5 bg-white border rounded font-bold">↑</span> at the bottom of Safari.
+              </li>
+              <li>
+                2. Scroll down and tap <strong>"Add to Home Screen"</strong>.
+              </li>
+              <li>
+                3. Tap <strong>"Add"</strong> in the top-right corner, then open the app from your Home Screen and enable Phone Alerts in <strong>Settings</strong>.
+              </li>
+            </ol>
+            <button
+              onClick={() => setShowIosInstallModal(false)}
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm"
+            >
+              Got It
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

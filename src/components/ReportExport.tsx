@@ -45,12 +45,13 @@ import {
   Clock,
   DollarSign,
   Flame,
+  GraduationCap,
+  Sparkles,
 } from "lucide-react";
 import { getSundaysInYear } from "../constants";
 import {
   importData,
-
-
+  updateMember,
 } from "../services/storageService";
 import {
   calculateChurchDivisions,
@@ -361,6 +362,31 @@ const ReportExport: React.FC<ReportExportProps> = ({
     return { offering, tithes, partnerships, firstFruits, total };
   }, [data.transactions, selectedDate, activeBranchId, branchObj.id, data.settings?.organization]);
 
+  // Helper to identify whether a child is a First Timer on a given date
+  // (1st attendance session or joined on that date, or explicitly MemberType.VISITOR)
+  const isFirstTimerOnDate = (m: Member, dateStr: string): boolean => {
+    if (isVisitorMember(m, data.settings)) return true;
+    const isGuestCategory =
+      isFnfMember(m, data.settings) ||
+      m.previousType === MemberType.VISITOR ||
+      (m.previousType as string) === "Visitor";
+    if (!isGuestCategory) return false;
+    if (m.joinedDate && m.joinedDate.startsWith(dateStr)) return true;
+    // Count how many distinct attendance dates (up to dateStr) this child has been marked present
+    const attendedDates = new Set<string>();
+    data.attendance.forEach((r) => {
+      if (r.date <= dateStr && (r.presentMemberIds || []).includes(m.id)) {
+        attendedDates.add(r.date);
+      }
+    });
+    return attendedDates.size <= 1 && m.previousType === MemberType.VISITOR;
+  };
+
+  const isFnfOnDate = (m: Member, dateStr: string): boolean => {
+    if (isFirstTimerOnDate(m, dateStr)) return false;
+    return isFnfMember(m, data.settings) || isVisitorMember(m, data.settings);
+  };
+
   // Aggregate attendance: Pastors, Shepherds, Members per church, First Timers, FNF, Total
   const serviceAttendance = useMemo(() => {
     if (!selectedDate) {
@@ -375,6 +401,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
         firstTimers: 0,
         fnf: 0,
         totalAttendance: 0,
+        firstTimersList: [] as Member[],
       };
     }
 
@@ -425,18 +452,20 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
     // Count regular members per church (not teachers/pastors)
     const getChurchMembersCount = (cKey: string) => {
-      const rec = branchRecords.find((r) => r.churchId === cKey);
-      if (!rec) return 0;
-      let c = 0;
-      rec.presentMemberIds.forEach((id) => {
-        const m = data.members.find((mem) => mem.id === id);
-        if (m && (!m.branchId || matchesScope(m, activeBranchId || branchObj.id, data.settings?.organization))) {
-          if (!isPastor(m) && !isShepherd(m) && m.type === MemberType.MEMBER) {
-            c++;
+      const recs = branchRecords.filter((r) => r.churchId === cKey);
+      if (recs.length === 0) return 0;
+      const seen = new Set<string>();
+      recs.forEach((rec) => {
+        (rec.presentMemberIds || []).forEach((id) => {
+          const m = data.members.find((mem) => mem.id === id);
+          if (m && (!m.branchId || matchesScope(m, activeBranchId || branchObj.id, data.settings?.organization))) {
+            if (!isPastor(m) && !isShepherd(m) && m.type === MemberType.MEMBER) {
+              seen.add(id);
+            }
           }
-        }
+        });
       });
-      return c;
+      return seen.size;
     };
 
     const countI = getChurchMembersCount("I");
@@ -447,11 +476,13 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
     let firstTimers = 0;
     let fnf = 0;
+    const firstTimersList: Member[] = [];
     presentMembersList.forEach((m) => {
       if (!isPastor(m) && !isShepherd(m)) {
-        if (isVisitorMember(m, data.settings)) {
+        if (isFirstTimerOnDate(m, selectedDate)) {
           firstTimers++;
-        } else if (isFnfMember(m, data.settings)) {
+          firstTimersList.push(m);
+        } else if (isFnfOnDate(m, selectedDate)) {
           fnf++;
         }
       }
@@ -470,15 +501,25 @@ const ReportExport: React.FC<ReportExportProps> = ({
       firstTimers,
       fnf,
       totalAttendance,
+      firstTimersList,
     };
   }, [data.attendance, data.members, selectedDate, activeBranchId, branchObj.id, data.settings]);
 
+  // Listen to real-time dataUpdated events so reports always stay in sync with attendance
+  useEffect(() => {
+    const handleSync = () => {
+      onUpdate();
+    };
+    window.addEventListener("dataUpdated", handleSync);
+    return () => window.removeEventListener("dataUpdated", handleSync);
+  }, [onUpdate]);
+
   const [activeTab, setActiveTab] = useState<
-    "WHATSAPP" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL"
+    "WHATSAPP" | "PROMOTIONS" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL"
   >(() => {
     return (
       (sessionStorage.getItem("reports_activeTab") as
-        "WHATSAPP" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE") || "WHATSAPP"
+        "WHATSAPP" | "PROMOTIONS" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL") || "WHATSAPP"
     );
   });
 
@@ -520,8 +561,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
   const isSuperAdmin = isSuperAdminUser(currentUser);
 
   const visibleTabs = useMemo(() => {
-    const all: { id: "WHATSAPP" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL"; icon: any; label: string }[] = [
+    const all: { id: "WHATSAPP" | "PROMOTIONS" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL"; icon: any; label: string }[] = [
       { id: "WHATSAPP", icon: MessageCircle, label: "Report" },
+      { id: "PROMOTIONS", icon: GraduationCap, label: "Due Soon" },
       { id: "KPI", icon: Target, label: "KPIs" },
       { id: "DIVISION", icon: Users, label: "Shepherd Division" },
       { id: "EXECUTIVE", icon: Briefcase, label: "Executive" },
@@ -529,7 +571,11 @@ const ReportExport: React.FC<ReportExportProps> = ({
       { id: "ANNUAL", icon: Calendar, label: "Annual Record" },
     ];
     if (isSuperAdmin || currentUser.role === "ADMIN") return all;
-    return all.filter((tab) => hasRoleSubfeature(data, currentUser.role || "", "Reports", tab.id));
+    return all.filter(
+      (tab) =>
+        tab.id === "PROMOTIONS" ||
+        hasRoleSubfeature(data, currentUser.role || "", "Reports", tab.id)
+    );
   }, [data, currentUser.role, isSuperAdmin]);
 
   useEffect(() => {
@@ -857,6 +903,17 @@ const ReportExport: React.FC<ReportExportProps> = ({
       });
       return out + `\n`;
     };
+
+    const renderFirstTimersListWithDetails = (members: Member[], title: string = "FIRST TIMERS") => {
+      let out = `*${title} (${members.length})*\n`;
+      members.forEach((m, idx) => {
+        const gender = m.gender === "MALE" ? "Male" : m.gender === "FEMALE" ? "Female" : "N/A";
+        const parentContact = (m.parentPhone || m.phone || "").trim() || "N/A";
+        const location = (m.address || "").trim() || "N/A";
+        out += `${idx + 1}. ${m.name} |${gender} | ${parentContact} | ${location}\n`;
+      });
+      return out + `\n`;
+    };
     if (activeTab === "DIVISION") {
       return formatDivisionReportText(divisions);
     }
@@ -865,10 +922,20 @@ const ReportExport: React.FC<ReportExportProps> = ({
       ? data.settings?.churches
       : ["UJ", "LJ", "K", "I"];
 
-    // Helper for outreach stats on selectedDate
+    // 7-day window ending on selectedDate for weekly outreach & prayer accountability
+    const selectedEndTs = new Date(`${selectedDate}T23:59:59`).getTime();
+    const selectedStartTs = selectedEndTs - 7 * 24 * 60 * 60 * 1000;
+    const isInReportWeek = (dateStr?: string) => {
+      if (!dateStr) return false;
+      if (dateStr === selectedDate) return true;
+      const ts = new Date(`${dateStr}T12:00:00`).getTime();
+      return !isNaN(ts) && ts >= selectedStartTs && ts <= selectedEndTs;
+    };
+
+    // Helper for outreach stats in report week
     const getOutreachCounts = (filterFn: (item: any) => boolean) => {
       const sessions = (data.outreachSessions || []).filter(
-        (s) => s.date === selectedDate && s.status === "COMPLETED" && filterFn(s)
+        (s) => isInReportWeek(s.date) && s.status === "COMPLETED" && filterFn(s)
       );
       const visits = sessions
         .filter((s) => s.sessionType === "VISIT" || !s.sessionType)
@@ -879,10 +946,10 @@ const ReportExport: React.FC<ReportExportProps> = ({
       return { visits, calls };
     };
 
-    // Helper for completed prayer count on selectedDate
+    // Helper for completed prayer count in report week
     const getPrayerCount = (filterFn: (item: any) => boolean) => {
       const prayers = (data.prayerSchedule || []).filter(
-        (p) => p.date === selectedDate && p.isCompleted && filterFn(p)
+        (p) => isInReportWeek(p.date) && p.isCompleted && filterFn(p)
       );
       return prayers.length;
     };
@@ -1181,7 +1248,12 @@ const ReportExport: React.FC<ReportExportProps> = ({
         r += `FIRST TIMERS - ${serviceAttendance.firstTimers}\n`;
         r += `FNFS - ${serviceAttendance.fnf}\n\n`;
       } else {
+        r += `FIRST TIMERS - ${serviceAttendance.firstTimers}\n`;
         r += `FNFS - ${serviceAttendance.fnf}\n\n`;
+      }
+
+      if (serviceAttendance.firstTimersList && serviceAttendance.firstTimersList.length > 0) {
+        r += renderFirstTimersListWithDetails(serviceAttendance.firstTimersList, "FIRST TIMERS DETAILS");
       }
 
       r += `TOTAL ATTENDANCE : ${serviceAttendance.totalAttendance}\n\n`;
@@ -1316,19 +1388,15 @@ const ReportExport: React.FC<ReportExportProps> = ({
         report += `==============================\n`;
 
         const members = cMembers.filter((m) => m.type === MemberType.MEMBER);
-        const firstTimers = cMembers.filter((m) => isVisitorMember(m, data.settings));
-        const fnfs = cMembers.filter((m) => isFnfMember(m, data.settings));
+        const firstTimers = cMembers.filter((m) => isFirstTimerOnDate(m, selectedDate));
+        const fnfs = cMembers.filter((m) => isFnfOnDate(m, selectedDate));
         const notMembers = cMembers.filter((m) => m.type === MemberType.NOT_MEMBER);
 
         if (members.length > 0) report += renderListWithServices(members, "MEMBERS", cRec);
         else report += `*MEMBERS (0)*\n_None_\n\n`;
 
-        if (!isFnfCombined(data.settings)) {
-          if (firstTimers.length > 0) report += renderListWithServices(firstTimers, "FIRST TIMERS", cRec);
-          if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNFS", cRec);
-        } else {
-          if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNFS", cRec);
-        }
+        if (firstTimers.length > 0) report += renderFirstTimersListWithDetails(firstTimers, "FIRST TIMERS");
+        if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNFS", cRec);
         if (notMembers.length > 0) report += renderListWithServices(notMembers, "NOT A MEMBER", cRec);
 
         if (cTeachers.length > 0) {
@@ -1396,19 +1464,15 @@ const ReportExport: React.FC<ReportExportProps> = ({
       }
 
       const members = allChildren.filter((m) => m.type === MemberType.MEMBER);
-      const firstTimers = allChildren.filter((m) => isVisitorMember(m, data.settings));
-      const fnfs = allChildren.filter((m) => isFnfMember(m, data.settings));
+      const firstTimers = allChildren.filter((m) => isFirstTimerOnDate(m, selectedDate));
+      const fnfs = allChildren.filter((m) => isFnfOnDate(m, selectedDate));
       const notMembers = allChildren.filter((m) => m.type === MemberType.NOT_MEMBER);
 
       if (members.length > 0) report += renderListWithServices(members, "MEMBERS", record);
       else report += `*MEMBERS (0)*\n_None_\n\n`;
 
-      if (!isFnfCombined(data.settings)) {
-        if (firstTimers.length > 0) report += renderListWithServices(firstTimers, "FIRST TIMERS", record);
-        if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNFS", record);
-      } else {
-        if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNFS", record);
-      }
+      if (firstTimers.length > 0) report += renderFirstTimersListWithDetails(firstTimers, "FIRST TIMERS");
+      if (fnfs.length > 0) report += renderListWithServices(fnfs, "FNFS", record);
       if (notMembers.length > 0) report += renderListWithServices(notMembers, "NOT A MEMBER", record);
 
       if (teachers.length > 0) {
@@ -1887,6 +1951,490 @@ const ReportExport: React.FC<ReportExportProps> = ({
       )}
     </div>
   );
+
+  // =========================================================================
+  // DUE SOON / CHURCH TRANSITION PROMOTIONS VIEW (I -> K, K -> LJ, LJ -> UJ, UJ -> Teens)
+  // =========================================================================
+  const [promotionChurchFilter, setPromotionChurchFilter] = useState<string>(
+    activeChurch !== "All" && activeChurch !== "CM" ? activeChurch : "ALL"
+  );
+  const [includeOverduePromotions, setIncludeOverduePromotions] = useState<boolean>(true);
+  const [promotingMemberId, setPromotingMemberId] = useState<string | null>(null);
+  const [copiedPromotionReport, setCopiedPromotionReport] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (activeChurch !== "All" && activeChurch !== "CM") {
+      setPromotionChurchFilter(activeChurch);
+    }
+  }, [activeChurch]);
+
+  const TRANSITION_RULES: Record<
+    string,
+    { from: string; to: string; targetAge: number; label: string; badgeColor: string }
+  > = {
+    I: {
+      from: "I",
+      to: "K",
+      targetAge: 2,
+      label: "I Church → K Church (Turns 2)",
+      badgeColor: "bg-pink-100 text-pink-700 border-pink-200",
+    },
+    K: {
+      from: "K",
+      to: "LJ",
+      targetAge: 6,
+      label: "K Church → LJ Church (Turns 6)",
+      badgeColor: "bg-amber-100 text-amber-700 border-amber-200",
+    },
+    LJ: {
+      from: "LJ",
+      to: "UJ",
+      targetAge: 9,
+      label: "LJ Church → UJ Church (Turns 9)",
+      badgeColor: "bg-blue-100 text-blue-700 border-blue-200",
+    },
+    UJ: {
+      from: "UJ",
+      to: "Teens",
+      targetAge: 13,
+      label: "UJ Church → Teens Ministry (Turns 13)",
+      badgeColor: "bg-purple-100 text-purple-700 border-purple-200",
+    },
+  };
+
+  const promotionsDueList = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const effectiveChurchScope =
+      activeChurch !== "All" && activeChurch !== "CM"
+        ? activeChurch
+        : promotionChurchFilter;
+
+    const candidates: Array<{
+      member: Member;
+      fromChurch: string;
+      toChurch: string;
+      targetAge: number;
+      transitionLabel: string;
+      badgeColor: string;
+      transitionDate: Date;
+      transitionDateStr: string;
+      daysRemaining: number;
+      monthsRemainingText: string;
+      isOverdue: boolean;
+      isWithinThreeMonths: boolean;
+      currentAgeText: string;
+    }> = [];
+
+    (data.members || []).forEach((m) => {
+      // Only active children (exclude teachers/shepherds & graduated/archived)
+      if (
+        ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
+        m.type === MemberType.TEACHER ||
+        (m.role && m.role !== "NONE")
+      ) {
+        return;
+      }
+      if (m.status === MemberStatus.ARCHIVED || m.status === MemberStatus.TRANSFERRED) {
+        return;
+      }
+      if (!matchesScope(m, activeBranchId, data.settings?.organization, data.members)) {
+        return;
+      }
+      const rawDob = m.birthDate || (m as any).dob;
+      if (!rawDob) return;
+
+      const memberChurch = m.assignedChurch || (m as any).church || "";
+      const rule = TRANSITION_RULES[memberChurch];
+      if (!rule) return;
+
+      if (effectiveChurchScope !== "ALL" && memberChurch !== effectiveChurchScope) {
+        return;
+      }
+
+      const dobDate = new Date(rawDob);
+      if (isNaN(dobDate.getTime())) return;
+
+      // Exact date the child reaches the church age limit (targetAge birthday)
+      const transitionDate = new Date(
+        dobDate.getFullYear() + rule.targetAge,
+        dobDate.getMonth(),
+        dobDate.getDate()
+      );
+      transitionDate.setHours(0, 0, 0, 0);
+
+      const diffMs = transitionDate.getTime() - today.getTime();
+      const daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+      // Less than 3 months to church age limit (<= 92 days)
+      const isWithinThreeMonths = daysRemaining >= 0 && daysRemaining <= 92;
+      const isOverdue = daysRemaining < 0;
+
+      if (!isWithinThreeMonths && !(includeOverduePromotions && isOverdue)) {
+        return;
+      }
+
+      // Compute current age text
+      const ageDiffMs = today.getTime() - dobDate.getTime();
+      const totalMonths = Math.max(0, Math.floor(ageDiffMs / (1000 * 60 * 60 * 24 * 30.4375)));
+      const yrs = Math.floor(totalMonths / 12);
+      const mos = totalMonths % 12;
+      const currentAgeText = yrs > 0 ? `${yrs}y ${mos}m` : `${mos}m`;
+
+      let monthsRemainingText = "";
+      if (daysRemaining === 0) {
+        monthsRemainingText = "Turns " + rule.targetAge + " Today!";
+      } else if (daysRemaining > 0) {
+        if (daysRemaining <= 30) {
+          monthsRemainingText = `In ${daysRemaining} day${daysRemaining === 1 ? "" : "s"}`;
+        } else {
+          const approxMonths = (daysRemaining / 30.4375).toFixed(1);
+          monthsRemainingText = `In ~${approxMonths} mos (${daysRemaining}d)`;
+        }
+      } else {
+        const overdueDays = Math.abs(daysRemaining);
+        if (overdueDays <= 60) {
+          monthsRemainingText = `Due ${overdueDays}d ago`;
+        } else {
+          const overdueMos = Math.floor(overdueDays / 30.4375);
+          monthsRemainingText = `Due ${overdueMos}m ago`;
+        }
+      }
+
+      candidates.push({
+        member: m,
+        fromChurch: rule.from,
+        toChurch: rule.to,
+        targetAge: rule.targetAge,
+        transitionLabel: rule.label,
+        badgeColor: rule.badgeColor,
+        transitionDate,
+        transitionDateStr: transitionDate.toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }),
+        daysRemaining,
+        monthsRemainingText,
+        isOverdue,
+        isWithinThreeMonths,
+        currentAgeText,
+      });
+    });
+
+    // Sort so children due soonest (0..92 days) appear first, followed by overdue
+    candidates.sort((a, b) => {
+      if (a.isWithinThreeMonths && !b.isWithinThreeMonths) return -1;
+      if (!a.isWithinThreeMonths && b.isWithinThreeMonths) return 1;
+      return a.daysRemaining - b.daysRemaining;
+    });
+
+    return candidates;
+  }, [data.members, activeBranchId, data.settings?.organization, activeChurch, promotionChurchFilter, includeOverduePromotions]);
+
+  const handlePromoteChildNow = async (candidate: (typeof promotionsDueList)[0]) => {
+    setPromotingMemberId(candidate.member.id);
+    try {
+      const m = candidate.member;
+      const todayIso = new Date().toISOString().split("T")[0];
+      const nextHistory = [
+        ...(m.promotionHistory || []),
+        {
+          date: todayIso,
+          fromChurch: candidate.fromChurch,
+          toChurch: candidate.toChurch,
+        },
+      ];
+      if (candidate.toChurch === "Teens") {
+        await updateMember(m.id, {
+          status: MemberStatus.ARCHIVED,
+          promotionHistory: nextHistory,
+        });
+        setImportMsg({
+          type: "success",
+          text: `${m.name} has been graduated from UJ to Teens Ministry!`,
+        });
+      } else {
+        await updateMember(m.id, {
+          assignedChurch: candidate.toChurch,
+          promotionHistory: nextHistory,
+        });
+        setImportMsg({
+          type: "success",
+          text: `${m.name} has been promoted from ${candidate.fromChurch} Church to ${candidate.toChurch} Church!`,
+        });
+      }
+      setTimeout(() => setImportMsg(null), 4000);
+    } catch (err) {
+      setImportMsg({
+        type: "error",
+        text: "Failed to promote child. Please try again.",
+      });
+    } finally {
+      setPromotingMemberId(null);
+    }
+  };
+
+  const generatePromotionsWhatsappText = () => {
+    const scopeTitle =
+      activeChurch !== "All" && activeChurch !== "CM"
+        ? `${activeChurch} CHURCH`
+        : promotionChurchFilter !== "ALL"
+          ? `${promotionChurchFilter} CHURCH`
+          : "ALL CHURCHES";
+
+    let text = `*CHURCH TRANSITION / DUE SOON REPORT (${scopeTitle})*\n`;
+    text += `_Children < 3 Months to Next Church Age Limit_\n`;
+    text += `==============================\n\n`;
+
+    if (promotionsDueList.length === 0) {
+      text += `_No children currently within 3 months of church promotion._`;
+      return text;
+    }
+
+    const grouped: Record<string, typeof promotionsDueList> = {};
+    promotionsDueList.forEach((c) => {
+      const key = `${c.fromChurch}->${c.toChurch}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(c);
+    });
+
+    Object.entries(grouped).forEach(([, list]) => {
+      if (list.length === 0) return;
+      text += `*${list[0].transitionLabel.toUpperCase()} (${list.length})*\n`;
+      list.forEach((item, idx) => {
+        const parentPhone = item.member.parentPhone || item.member.phone || "No Contact";
+        text += `${idx + 1}. *${item.member.name}* (${item.currentAgeText}) — ${item.monthsRemainingText} [Turns ${item.targetAge}: ${item.transitionDateStr}] | Parent: ${parentPhone}\n`;
+      });
+      text += `\n`;
+    });
+
+    return text.trim();
+  };
+
+  const renderPromotionsDueView = () => {
+    const dueWithin3MosCount = promotionsDueList.filter((c) => c.isWithinThreeMonths).length;
+    const overdueCount = promotionsDueList.filter((c) => c.isOverdue).length;
+    const isSingleChurchUser = activeChurch !== "All" && activeChurch !== "CM";
+
+    return (
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+        {/* Banner */}
+        <div className="bg-gradient-to-r from-indigo-900 via-violet-900 to-purple-900 text-white p-6 rounded-3xl shadow-lg">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 text-indigo-100 text-xs font-bold mb-2">
+                <GraduationCap size={14} /> Church Age Limit Tracker (&lt; 3 Months Notice)
+              </div>
+              <h3 className="text-xl md:text-2xl font-extrabold tracking-tight">
+                Children Due Soon for Church Transition
+              </h3>
+              <p className="text-indigo-200 text-xs md:text-sm mt-1">
+                Tracks children less than 3 months away from moving to the next church:{" "}
+                <span className="font-bold text-white">I → K (2 yrs)</span> •{" "}
+                <span className="font-bold text-white">K → LJ (6 yrs)</span> •{" "}
+                <span className="font-bold text-white">LJ → UJ (9 yrs)</span> •{" "}
+                <span className="font-bold text-white">UJ → Teens (13 yrs)</span>
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(generatePromotionsWhatsappText());
+                  setCopiedPromotionReport(true);
+                  setTimeout(() => setCopiedPromotionReport(false), 2500);
+                }}
+                className="px-3.5 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all"
+              >
+                {copiedPromotionReport ? <CheckCircle size={15} /> : <Copy size={15} />}
+                {copiedPromotionReport ? "Copied!" : "Copy List"}
+              </button>
+              <button
+                onClick={() => {
+                  const url = `https://wa.me/?text=${encodeURIComponent(generatePromotionsWhatsappText())}`;
+                  window.open(url, "_blank");
+                }}
+                className="px-3.5 py-2.5 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md transition-all"
+              >
+                <MessageCircle size={15} /> Share on WhatsApp
+              </button>
+            </div>
+          </div>
+
+          {/* Summary KPI Pills */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-5">
+            <div className="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl border border-white/15">
+              <div className="text-[11px] uppercase font-bold text-amber-300">Due &lt; 3 Months</div>
+              <div className="text-2xl font-black mt-0.5">{dueWithin3MosCount}</div>
+              <div className="text-[10px] text-indigo-200">Upcoming within 92 days</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl border border-white/15">
+              <div className="text-[11px] uppercase font-bold text-pink-200">I → K (Age 2)</div>
+              <div className="text-2xl font-black mt-0.5">
+                {promotionsDueList.filter((c) => c.fromChurch === "I").length}
+              </div>
+              <div className="text-[10px] text-indigo-200">Infant to Kindergarten</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl border border-white/15">
+              <div className="text-[11px] uppercase font-bold text-amber-200">K → LJ (Age 6)</div>
+              <div className="text-2xl font-black mt-0.5">
+                {promotionsDueList.filter((c) => c.fromChurch === "K").length}
+              </div>
+              <div className="text-[10px] text-indigo-200">Kindergarten to Lower Jnr</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl border border-white/15">
+              <div className="text-[11px] uppercase font-bold text-blue-200">LJ → UJ (Age 9)</div>
+              <div className="text-2xl font-black mt-0.5">
+                {promotionsDueList.filter((c) => c.fromChurch === "LJ").length}
+              </div>
+              <div className="text-[10px] text-indigo-200">Lower Jnr to Upper Jnr</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl border border-white/15 col-span-2 md:col-span-1">
+              <div className="text-[11px] uppercase font-bold text-purple-200">UJ → Teens (Age 13)</div>
+              <div className="text-2xl font-black mt-0.5">
+                {promotionsDueList.filter((c) => c.fromChurch === "UJ").length}
+              </div>
+              <div className="text-[10px] text-indigo-200">Upper Jnr to Teens</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Filter Bar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {isSingleChurchUser ? (
+              <span className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-extrabold">
+                Scoped to Your Church: {TRANSITION_RULES[activeChurch]?.label || `${activeChurch} Church`}
+              </span>
+            ) : (
+              <>
+                {[
+                  { id: "ALL", label: "All Churches" },
+                  { id: "I", label: "I → K (2 yrs)" },
+                  { id: "K", label: "K → LJ (6 yrs)" },
+                  { id: "LJ", label: "LJ → UJ (9 yrs)" },
+                  { id: "UJ", label: "UJ → Teens (13 yrs)" },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setPromotionChurchFilter(tab.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                      promotionChurchFilter === tab.id
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+
+          <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none bg-white px-3 py-2 rounded-xl border border-slate-200">
+            <input
+              type="checkbox"
+              checked={includeOverduePromotions}
+              onChange={(e) => setIncludeOverduePromotions(e.target.checked)}
+              className="rounded text-indigo-600 focus:ring-indigo-500"
+            />
+            <span>Also Show Already Due ({overdueCount})</span>
+          </label>
+        </div>
+
+        {/* Candidate List */}
+        {promotionsDueList.length === 0 ? (
+          <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-10 text-center">
+            <GraduationCap size={36} className="mx-auto text-slate-300 mb-3" />
+            <h4 className="font-extrabold text-slate-700 text-base">
+              No Children Due Within 3 Months
+            </h4>
+            <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+              All children with recorded dates of birth in this church scope are more than 3 months away from their church age limit.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {promotionsDueList.map((item) => (
+              <div
+                key={item.member.id}
+                className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                  item.isWithinThreeMonths
+                    ? "bg-amber-50/50 border-amber-200 shadow-sm"
+                    : "bg-white border-slate-200"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                      <span
+                        className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${item.badgeColor}`}
+                      >
+                        {item.fromChurch} → {item.toChurch}
+                      </span>
+                      <span
+                        className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                          item.isWithinThreeMonths
+                            ? "bg-amber-500 text-white"
+                            : "bg-rose-100 text-rose-700"
+                        }`}
+                      >
+                        {item.isWithinThreeMonths ? "Due < 3 Months" : "Already Reached Age Limit"}
+                      </span>
+                    </div>
+                    <h4 className="font-extrabold text-slate-800 text-sm md:text-base">
+                      {item.member.name}
+                    </h4>
+                    <div className="text-xs text-slate-500 font-medium mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span>Current Age: <strong className="text-slate-700">{item.currentAgeText}</strong></span>
+                      <span>•</span>
+                      <span>Turns {item.targetAge}: <strong className="text-indigo-700">{item.transitionDateStr}</strong></span>
+                    </div>
+                    {(item.member.householdName || item.member.parentPhone || item.member.phone) && (
+                      <div className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1.5">
+                        <Phone size={12} className="text-slate-400" />
+                        <span>
+                          {item.member.householdName ? `${item.member.householdName}: ` : "Parent Contact: "}
+                          <strong className="text-slate-700">
+                            {item.member.parentPhone || item.member.phone || "N/A"}
+                          </strong>
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="inline-block text-xs font-extrabold text-indigo-900 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-xl">
+                      {item.monthsRemainingText}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2.5 border-t border-slate-200/70 flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Target Move: <strong>{item.toChurch === "Teens" ? "Graduate to Teens" : `${item.toChurch} Church`}</strong>
+                  </span>
+                  <button
+                    onClick={() => handlePromoteChildNow(item)}
+                    disabled={promotingMemberId === item.member.id}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
+                  >
+                    <ArrowRight size={13} />
+                    {promotingMemberId === item.member.id
+                      ? "Moving..."
+                      : item.toChurch === "Teens"
+                        ? "Move to Teens"
+                        : `Move to ${item.toChurch}`}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
 
 
@@ -2471,6 +3019,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
         {/* 2. KPI VIEW */}
         {activeTab === "KPI" && renderKPIView()}
+
+        {/* 2B. DUE SOON / PROMOTIONS VIEW */}
+        {activeTab === "PROMOTIONS" && renderPromotionsDueView()}
 
         {/* 3. TEACHER DIVISION VIEW */}
         {activeTab === "DIVISION" && renderDivisionView()}

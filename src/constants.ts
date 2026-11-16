@@ -107,6 +107,7 @@ export const APP_FEATURES_REGISTRY: FeatureDef[] = [
     iconName: "Share2",
     subfeatures: [
       { id: "WHATSAPP", name: "Report", description: "Consolidated Sunday service attendance report with role-based aggregation and WhatsApp share." },
+      { id: "PROMOTIONS", name: "Due Soon (Transitions)", description: "Children within 3 months of their church age limit due to move to the next church." },
       { id: "KPI", name: "KPIs", description: "Key performance indicator metrics and Sunday attendance targets." },
       { id: "DIVISION", name: "Shepherd Division", description: "Automated distribution and allocation of children to shepherds." },
       { id: "EXECUTIVE", name: "Executive", description: "Executive summary and high-level leadership overview." },
@@ -139,6 +140,25 @@ export const DEFAULT_SETTINGS = {
   attendanceCountMode: "SUNDAY_ONLY" as const,
   attendanceDays: ["SUNDAY"],
   showSundayAttendanceCountOnChildRecord: true,
+  notificationConfig: {
+    enabled: true,
+    prayerAlertsEnabled: true,
+    prayerAlertEnabled: true,
+    prayerReminderTime: "06:00",
+    prayerAlertTime: "18:00",
+    outreachAlertsEnabled: true,
+    outreachAlertEnabled: true,
+    outreachReminderDay: "SATURDAY",
+    outreachAlertDay: "SATURDAY",
+    outreachReminderTime: "09:00",
+    outreachAlertTime: "09:00",
+    reportingAlertsEnabled: true,
+    reportingAlertEnabled: true,
+    reportingReminderTime: "13:00",
+    reportingAlertTime: "13:00",
+    promotionAlertsEnabled: true,
+    promotionsAlertEnabled: true,
+  },
   organization: {
     directorate: "Central Children's Ministry Directorate",
     zones: [
@@ -165,7 +185,7 @@ export const DEFAULT_SETTINGS = {
       "Dashboard", "People Hub", "Attendance", "Outreach", "Analytics", "Reports"
     ],
     TEACHER: [
-      "Dashboard", "People Hub", "Attendance", "Outreach", "Analytics"
+      "Dashboard", "People Hub", "Attendance", "Outreach", "Analytics", "Reports"
     ],
     VOLUNTEER: [
       "Attendance"
