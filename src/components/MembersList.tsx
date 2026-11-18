@@ -186,6 +186,17 @@ const MembersList: React.FC<MembersListProps> = ({
 
   // HISTORY MODAL STATE
   const [historyMemberId, setHistoryMemberId] = useState<string | null>(null);
+  const [selectedHistoryMonth, setSelectedHistoryMonth] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    setSelectedHistoryMonth(null);
+  }, [historyMemberId]);
+
+  // BULK ROLE & STATUS STATE
+  const [isBulkModifyModalOpen, setIsBulkModifyModalOpen] = useState(false);
+  const [bulkModifyRole, setBulkModifyRole] = useState<string>("");
+  const [bulkModifyStatus, setBulkModifyStatus] = useState<string>("");
+  const [isBulkModifying, setIsBulkModifying] = useState(false);
 
   // BULK ADD STATE
   const [isBulkAddModalOpen, setIsBulkAddModalOpen] = useState(false);
@@ -404,6 +415,41 @@ const MembersList: React.FC<MembersListProps> = ({
     onUpdate();
     setToastMessage({ title: "Gender Update Complete", message: `Successfully updated gender for ${updatedCount} members.` });
     setTimeout(() => setToastMessage(null), 5000);
+  };
+
+  const handleBulkModifySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedIds.size === 0 || (!bulkModifyRole && !bulkModifyStatus)) return;
+    setIsBulkModifying(true);
+    const idsToUpdate = Array.from(selectedIds);
+    setSelectedIds(new Set());
+    setIsBulkModifyModalOpen(false);
+    setIsBulkModifying(false);
+
+    let updatedCount = 0;
+    for (const id of idsToUpdate) {
+      const m = data.members.find((mem) => mem.id === id);
+      if (m) {
+        const updates: Partial<Member> = {};
+        if (bulkModifyRole) {
+          updates.type = bulkModifyRole as MemberType;
+        }
+        if (bulkModifyStatus) {
+          updates.status = bulkModifyStatus as MemberStatus;
+          if (m.status === MemberStatus.INCONSISTENT && bulkModifyStatus === MemberStatus.ACTIVE) {
+            updates.lastActivationDate = new Date().toISOString();
+          }
+        }
+        await updateMember(id, updates);
+        updatedCount++;
+      }
+    }
+    onUpdate();
+    setToastMessage({
+      title: "Bulk Update Complete",
+      message: `Updated ${updatedCount} selected record${updatedCount === 1 ? "" : "s"}.`,
+    });
+    setTimeout(() => setToastMessage(null), 4000);
   };
 
   const handleSave = async () => {
@@ -2924,6 +2970,17 @@ const MembersList: React.FC<MembersListProps> = ({
             {selectedIds.size} selected
           </span>
           <div className="h-4 w-px bg-gray-700 shrink-0"></div>
+          <button
+            onClick={() => {
+              setBulkModifyRole("");
+              setBulkModifyStatus("");
+              setIsBulkModifyModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 hover:text-emerald-300 transition-colors font-medium text-emerald-200 whitespace-nowrap shrink-0"
+          >
+            <Edit2 size={16} /> Modify Role / Status
+          </button>
+          <div className="h-4 w-px bg-gray-700 shrink-0"></div>
           {isAdmin && (
             <>
               <button
@@ -3096,62 +3153,19 @@ const MembersList: React.FC<MembersListProps> = ({
                   data.attendance,
                   data.settings,
                 );
-                const firstRecDateObj = summary.firstRecordDate
-                  ? new Date(summary.firstRecordDate)
-                  : null;
-                if (firstRecDateObj) firstRecDateObj.setHours(0, 0, 0, 0);
 
-                const history = data.attendance
-                  .filter((r) => {
-                    // Exclude Wednesday records (Wednesday is exclusively LC Live / midweek staff meeting)
-                    if (isWednesday(r.date) || r.attendanceType === "CELL") {
-                      return false;
-                    }
-                    const recordDate = new Date(r.date);
-                    recordDate.setHours(0, 0, 0, 0);
-                    if (
-                      firstRecDateObj &&
-                      recordDate.getTime() < firstRecDateObj.getTime()
-                    ) {
-                      return false;
-                    }
-                    const isPresent = r.presentMemberIds.includes(member.id);
-                    if (isPresent) return true;
+                // All attendance records from the child's first record (newest first)
+                const history = [...(summary.allRecordsSinceFirst || [])].sort(
+                  (a, b) => b.date.localeCompare(a.date),
+                );
 
-                    // Determine assigned church at recordDate
-                    let assignedAtDate = member.assignedChurch;
-
-                    if (
-                      member.promotionHistory &&
-                      member.promotionHistory.length > 0
-                    ) {
-                      const promoHistory = [...member.promotionHistory].sort(
-                        (a, b) =>
-                          new Date(b.date).getTime() -
-                          new Date(a.date).getTime(),
-                      );
-                      const activePromo = promoHistory.find(
-                        (p) => recordDate >= new Date(p.date),
-                      );
-
-                      if (activePromo) {
-                        assignedAtDate = activePromo.toChurch;
-                      } else {
-                        // Before first recorded promotion, use the 'from' of the earliest promotion
-                        const earliest = promoHistory[promoHistory.length - 1];
-                        assignedAtDate = earliest.fromChurch;
-                      }
-                    }
-
-                    return r.churchId === assignedAtDate;
-                  })
-                  .sort(
-                    (a, b) =>
-                      new Date(b.date).getTime() - new Date(a.date).getTime(),
-                  );
-
-                // Calculate chart data (last 6 months)
-                const chartData = [];
+                // Build monthly attendance bars covering all months from the child's first record
+                const chartData: Array<{
+                  name: string;
+                  monthKey: string;
+                  personalFreq: number;
+                  totalInMonth: number;
+                }> = [];
                 const monthNames = [
                   "Jan",
                   "Feb",
@@ -3167,74 +3181,33 @@ const MembersList: React.FC<MembersListProps> = ({
                   "Dec",
                 ];
                 const today = new Date();
+                const currentYear = summary.year || today.getFullYear();
+                const startMonthIdx = summary.firstRecordDate
+                  ? Math.max(0, parseInt(summary.firstRecordDate.split("-")[1], 10) - 1)
+                  : Math.max(0, today.getMonth() - 5);
+                const endMonthIdx =
+                  currentYear === today.getFullYear() ? today.getMonth() : 11;
 
-                // Simplified current church size (for average denominator)
-                const currentChurchMembersCount =
-                  data.members.filter(
-                    (m) =>
-                      m.assignedChurch === member.assignedChurch &&
-                      (m.type === MemberType.MEMBER || isFnfMember(m)) &&
-                      ["Active", "Inconsistent", "Not Active"].includes(m.status),
-                  ).length || 1;
-
-                for (let i = 5; i >= 0; i--) {
-                  const targetDate = new Date(
-                    today.getFullYear(),
-                    today.getMonth() - i,
-                    1,
+                for (let mIdx = startMonthIdx; mIdx <= endMonthIdx; mIdx++) {
+                  const monthKey = `${currentYear}-${String(mIdx + 1).padStart(2, "0")}`;
+                  const recordsInMonth = history.filter((r) =>
+                    r.date.startsWith(monthKey),
                   );
-                  const targetMonth = targetDate.getMonth();
-                  const targetYear = targetDate.getFullYear();
-
-                  const recordsInMonth = history.filter((r) => {
-                    if (isWednesday(r.date) || r.attendanceType === "CELL") return false;
-                    const d = new Date(r.date);
-                    return (
-                      d.getMonth() === targetMonth &&
-                      d.getFullYear() === targetYear
-                    );
-                  });
-
                   const attendedCount = recordsInMonth.filter((r) =>
                     r.presentMemberIds.includes(member.id),
                   ).length;
 
-                  const churchRecordsInMonth = data.attendance.filter((r) => {
-                    if (isWednesday(r.date) || r.attendanceType === "CELL") return false;
-                    const d = new Date(r.date);
-                    return (
-                      r.churchId === member.assignedChurch &&
-                      d.getMonth() === targetMonth &&
-                      d.getFullYear() === targetYear
-                    );
-                  });
-
-                  const totalAttendances = churchRecordsInMonth.reduce(
-                    (acc, r) => {
-                      return (
-                        acc +
-                        r.presentMemberIds.filter((id) => {
-                          const m = data.members.find((x) => x.id === id);
-                          return (
-                            m &&
-                            (m.type === MemberType.MEMBER || isFnfMember(m))
-                          );
-                        }).length
-                      );
-                    },
-                    0,
-                  );
-
-                  const avgAttended = parseFloat(
-                    (totalAttendances / currentChurchMembersCount).toFixed(1),
-                  );
-
                   chartData.push({
-                    name: `${monthNames[targetMonth]}`,
+                    name: monthNames[mIdx],
+                    monthKey,
                     personalFreq: attendedCount,
-                    avgFreq: avgAttended,
+                    totalInMonth: recordsInMonth.length,
                   });
                 }
+
+                const displayedHistory = selectedHistoryMonth
+                  ? history.filter((r) => r.date.startsWith(selectedHistoryMonth))
+                  : history;
 
                 return (
                   <>
@@ -3243,13 +3216,15 @@ const MembersList: React.FC<MembersListProps> = ({
                       <div className="p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-100 text-center">
                         <div className="text-[9px] font-bold text-indigo-500 uppercase">First Record ({summary.year})</div>
                         <div className="text-xs font-extrabold text-indigo-900 mt-0.5">
-                          {summary.firstRecordDate ? formatDateDDMMYYYY(summary.firstRecordDate) : "—"}
+                          {summary.firstRecordDate ? formatDateDDMMYYYY(summary.firstRecordDate) : "No Record Yet"}
                         </div>
                       </div>
                       <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-100 text-center">
                         <div className="text-[9px] font-bold text-emerald-600 uppercase">Active Count</div>
                         <div className="text-xs font-extrabold text-emerald-900 mt-0.5">
-                          {summary.attendedSessions} / {summary.effectiveTotalSessions} ({summary.attendanceRate}%)
+                          {summary.firstRecordDate
+                            ? `${summary.attendedSessions} / ${summary.effectiveTotalSessions} (${summary.attendanceRate}%)`
+                            : "0 / 0"}
                         </div>
                       </div>
                       <div className={`p-2.5 rounded-xl border text-center ${summary.hasExcusedBreak ? "bg-amber-50/80 border-amber-200" : "bg-slate-50 border-slate-100"}`}>
@@ -3264,75 +3239,138 @@ const MembersList: React.FC<MembersListProps> = ({
                       </div>
                     </div>
 
-                    <div className="mb-6 h-56 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
-                        6-Month Frequency vs Church Avg
-                      </h4>
-                      <ResponsiveContainer width="100%" height="80%">
-                        <BarChart
-                          data={chartData}
-                          margin={{ top: 0, right: 0, left: -25, bottom: 0 }}
-                        >
-                          <CartesianGrid
-                            strokeDasharray="3 3"
-                            vertical={false}
-                            stroke="#E2E8F0"
-                          />
-                          <XAxis
-                            dataKey="name"
-                            axisLine={false}
-                            tickLine={false}
-                            tick={{ fontSize: 10, fill: "#64748B" }}
-                            dy={10}
-                          />
-                          <YAxis
-                            axisLine={false}
-                            tickLine={false}
-                            tick={{ fontSize: 10, fill: "#64748B" }}
-                            dx={-10}
-                            allowDecimals={false}
-                          />
-                          <RechartsTooltip
-                            cursor={{ fill: "#F1F5F9" }}
-                            contentStyle={{
-                              borderRadius: "12px",
-                              border: "1px solid #E2E8F0",
-                              boxShadow:
-                                "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+                    <div className="mb-5 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                          Monthly Attendance (Tap a Month Bar to Filter)
+                        </h4>
+                        {selectedHistoryMonth && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedHistoryMonth(null)}
+                            className="text-[10px] font-extrabold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded-lg"
+                          >
+                            Show All Months
+                          </button>
+                        )}
+                      </div>
+                      <div className="h-40">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={chartData}
+                            margin={{ top: 4, right: 4, left: -25, bottom: 0 }}
+                            onClick={(state: any) => {
+                              const payload = state?.activePayload?.[0]?.payload;
+                              if (payload?.monthKey) {
+                                setSelectedHistoryMonth((prev) =>
+                                  prev === payload.monthKey ? null : payload.monthKey
+                                );
+                              }
                             }}
-                          />
-                          <Legend
-                            wrapperStyle={{ fontSize: "10px" }}
-                            iconType="circle"
-                          />
-                          <Bar
-                            dataKey="personalFreq"
-                            name="This Member"
-                            fill="#6366f1"
-                            radius={[4, 4, 0, 0]}
-                            maxBarSize={20}
-                          />
-                          <Bar
-                            dataKey="avgFreq"
-                            name={`${member.assignedChurch} Avg`}
-                            fill="#cbd5e1"
-                            radius={[4, 4, 0, 0]}
-                            maxBarSize={20}
-                          />
-                        </BarChart>
-                      </ResponsiveContainer>
+                          >
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              vertical={false}
+                              stroke="#E2E8F0"
+                            />
+                            <XAxis
+                              dataKey="name"
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fontSize: 10, fill: "#64748B", fontWeight: 700 }}
+                              dy={8}
+                            />
+                            <YAxis
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fontSize: 10, fill: "#64748B" }}
+                              dx={-10}
+                              allowDecimals={false}
+                            />
+                            <RechartsTooltip
+                              cursor={{ fill: "#EEF2FF" }}
+                              contentStyle={{
+                                borderRadius: "12px",
+                                border: "1px solid #E2E8F0",
+                                fontSize: "11px",
+                                fontWeight: 700,
+                              }}
+                              formatter={(value: any, _name: any, props: any) => [
+                                `${value} / ${props?.payload?.totalInMonth || 0} sessions`,
+                                "Attended",
+                              ]}
+                            />
+                            <Bar
+                              dataKey="personalFreq"
+                              name="Attended"
+                              fill="#4f46e5"
+                              radius={[6, 6, 0, 0]}
+                              maxBarSize={28}
+                              className="cursor-pointer"
+                              onClick={(barData: any) => {
+                                const mk = barData?.monthKey || barData?.payload?.monthKey;
+                                if (mk) {
+                                  setSelectedHistoryMonth((prev) =>
+                                    prev === mk ? null : mk
+                                  );
+                                }
+                              }}
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {/* Quick Clickable Month Filter Pills */}
+                      <div className="flex items-center gap-1.5 mt-3 pt-2.5 border-t border-slate-200/70 overflow-x-auto hide-scrollbar">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedHistoryMonth(null)}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all ${
+                            !selectedHistoryMonth
+                              ? "bg-indigo-600 text-white shadow-2xs"
+                              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          All ({history.length})
+                        </button>
+                        {chartData.map((mItem) => {
+                          const isSel = selectedHistoryMonth === mItem.monthKey;
+                          return (
+                            <button
+                              key={mItem.monthKey}
+                              type="button"
+                              onClick={() =>
+                                setSelectedHistoryMonth((prev) =>
+                                  prev === mItem.monthKey ? null : mItem.monthKey
+                                )
+                              }
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all ${
+                                isSel
+                                  ? "bg-indigo-600 text-white shadow-2xs"
+                                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                              }`}
+                            >
+                              {mItem.name} ({mItem.personalFreq}/{mItem.totalInMonth})
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
 
-                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">
-                      Recent Records
-                    </h4>
+                    <div className="flex items-center justify-between mb-3 px-1">
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        {selectedHistoryMonth
+                          ? `Records for ${chartData.find((c) => c.monthKey === selectedHistoryMonth)?.name || selectedHistoryMonth} (${displayedHistory.length})`
+                          : `Session Records (${displayedHistory.length})`}
+                      </h4>
+                    </div>
                     <div className="space-y-2">
-                      {history.length === 0 ? (
-                        <div className="text-center py-10 text-slate-400">
-                          No attendance records found.
+                      {displayedHistory.length === 0 ? (
+                        <div className="text-center py-10 text-slate-400 text-xs font-medium">
+                          No attendance records found for this selection.
                         </div>
                       ) : (
-                        history.slice(0, 20).map((record, index) => {
+                        displayedHistory.map((record, index) => {
                           const isPresent = record.presentMemberIds.includes(
                             member.id,
                           );
@@ -3708,6 +3746,80 @@ const MembersList: React.FC<MembersListProps> = ({
                   ) : (
                     "Apply Update"
                   )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* BULK MODIFY ROLE / STATUS MODAL */}
+      {isBulkModifyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-indigo-100 text-indigo-600 mb-3 mx-auto">
+              <Edit2 size={22} />
+            </div>
+            <h3 className="text-lg font-extrabold text-gray-900 text-center mb-1">
+              Modify {selectedIds.size} Selected
+            </h3>
+            <p className="text-gray-500 text-xs text-center mb-5">
+              Update role and/or status for all selected records.
+            </p>
+
+            <form onSubmit={handleBulkModifySubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1.5">
+                  Role / Category
+                </label>
+                <select
+                  value={bulkModifyRole}
+                  onChange={(e) => setBulkModifyRole(e.target.value)}
+                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                >
+                  <option value="">— Keep Current Role —</option>
+                  <option value={MemberType.MEMBER}>Member</option>
+                  <option value={MemberType.FNF}>FNF</option>
+                  {!isFnfCombined(data.settings) && (
+                    <option value={MemberType.VISITOR}>First Timer</option>
+                  )}
+                  <option value={MemberType.NOT_MEMBER}>Not Member</option>
+                  <option value={MemberType.TEACHER}>Shepherd</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1.5">
+                  Status
+                </label>
+                <select
+                  value={bulkModifyStatus}
+                  onChange={(e) => setBulkModifyStatus(e.target.value)}
+                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                >
+                  <option value="">— Keep Current Status —</option>
+                  <option value={MemberStatus.ACTIVE}>Active</option>
+                  <option value={MemberStatus.INCONSISTENT}>Inconsistent</option>
+                  <option value={MemberStatus.NOT_ACTIVE}>Not Active</option>
+                  <option value={MemberStatus.VACATION}>Vacation</option>
+                  <option value={MemberStatus.ARCHIVED}>Archived</option>
+                </select>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBulkModifyModalOpen(false)}
+                  className="flex-1 py-2.5 bg-gray-100 text-gray-700 font-bold text-xs rounded-xl hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isBulkModifying || (!bulkModifyRole && !bulkModifyStatus)}
+                  className="flex-1 py-2.5 bg-indigo-600 text-white font-bold text-xs rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                >
+                  {isBulkModifying ? "Updating..." : "Apply Changes"}
                 </button>
               </div>
             </form>

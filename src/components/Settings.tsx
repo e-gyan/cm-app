@@ -283,13 +283,13 @@ const Settings: React.FC<SettingsProps> = ({
   };
 
   const ROLES_LIST = [
-    { id: "SUPER_ADMIN", label: "Super Admin", color: "purple", desc: "Full unrestricted platform control" },
-    { id: "ADMIN", label: "Administrator", color: "indigo", desc: "Full administrative and settings control" },
-    { id: "DIRECTORATE_HEAD", label: "Directorate Head", color: "blue", desc: "Directorate-wide oversight and reporting" },
-    { id: "ZONAL_HEAD", label: "Zonal Head", color: "emerald", desc: "Zonal oversight and campus coordination" },
-    { id: "BRANCH_COORDINATOR", label: "Branch Coordinator", color: "teal", desc: "Branch operations, attendance and roster" },
-    { id: "TEACHER", label: "Shepherd", color: "amber", desc: "Attendance taking, outreach and visits" },
-    { id: "VOLUNTEER", label: "Volunteer / Helper", color: "slate", desc: "Basic attendance check-in assistance" },
+    { id: "SUPER_ADMIN", label: "Super Admin", color: "purple", desc: "Full platform access" },
+    { id: "ADMIN", label: "Administrator", color: "indigo", desc: "Full administrative access" },
+    { id: "DIRECTORATE_HEAD", label: "Directorate Head", color: "blue", desc: "Directorate oversight and reports" },
+    { id: "ZONAL_HEAD", label: "Zonal Head", color: "emerald", desc: "Zonal oversight and branch coordination" },
+    { id: "BRANCH_COORDINATOR", label: "Branch Coordinator", color: "teal", desc: "Branch operations and reporting" },
+    { id: "TEACHER", label: "Shepherd", color: "amber", desc: "Attendance, outreach, and prayer logs" },
+    { id: "VOLUNTEER", label: "Volunteer / Helper", color: "slate", desc: "Attendance check-in support" },
   ];
 
   const getFeatureIconComponent = (iconName: string) => {
@@ -489,12 +489,12 @@ const Settings: React.FC<SettingsProps> = ({
       if (shouldCombine) {
         setStatusMsg({
           type: "success",
-          text: `Combined successfully! Merged ${res.fnfCount} children into FNFs.`,
+          text: `Merged ${res.fnfCount} records into FNFs.`,
         });
       } else {
         setStatusMsg({
           type: "success",
-          text: `Intelligently regrouped! ${res.firstTimersCount} assigned to First Timers (1 or fewer sessions) and ${res.fnfCount} assigned to FNFs (2+ sessions).`,
+          text: `Separated: ${res.firstTimersCount} First Timers, ${res.fnfCount} FNFs.`,
         });
       }
       setTimeout(() => setStatusMsg(null), 5000);
@@ -503,7 +503,7 @@ const Settings: React.FC<SettingsProps> = ({
       console.error("Regroup FNF error:", e);
       setStatusMsg({
         type: "error",
-        text: "Failed to regroup members: " + (e.message || String(e)),
+        text: "Failed to regroup records.",
       });
     } finally {
       setIsRegrouping(false);
@@ -524,7 +524,7 @@ const Settings: React.FC<SettingsProps> = ({
       await updateSettings(updated);
       setStatusMsg({
         type: "success",
-        text: "Configuration saved! Changes are now active across the application.",
+        text: "Settings saved.",
       });
       setTimeout(() => setStatusMsg(null), 3500);
       onUpdate();
@@ -532,7 +532,7 @@ const Settings: React.FC<SettingsProps> = ({
       console.error("Save component settings error:", e);
       setStatusMsg({
         type: "error",
-        text: "Failed to update configuration: " + (e.message || String(e)),
+        text: "Failed to save settings.",
       });
     }
   };
@@ -544,10 +544,10 @@ const Settings: React.FC<SettingsProps> = ({
     const showSundayCount = localSettings.showSundayAttendanceCountOnChildRecord !== false;
 
     const availableWeekDays = [
-      { id: "SUNDAY", label: "Sunday", desc: "Main Sunday service" },
-      { id: "WEDNESDAY", label: "Wednesday", desc: "Midweek service / Cell meeting" },
-      { id: "FRIDAY", label: "Friday", desc: "Friday fellowship / Prayer" },
-      { id: "SATURDAY", label: "Saturday", desc: "Saturday outreach / Rehearsals" },
+      { id: "SUNDAY", label: "Sunday", desc: "Sunday service" },
+      { id: "WEDNESDAY", label: "Wednesday", desc: "Midweek service" },
+      { id: "FRIDAY", label: "Friday", desc: "Friday prayer" },
+      { id: "SATURDAY", label: "Saturday", desc: "Saturday outreach" },
     ];
 
     const toggleDay = (dayId: string) => {
@@ -568,10 +568,10 @@ const Settings: React.FC<SettingsProps> = ({
         <div className="border-b border-slate-100 pb-4">
           <h3 className="font-extrabold text-lg text-slate-800 flex items-center gap-2">
             <Layers className="text-indigo-600" size={22} />
-            Component & Attendance Configuration
+            Components &amp; Attendance
           </h3>
           <p className="text-xs text-slate-500 font-medium mt-1">
-            Configure how components classify First Timers vs FNFs, which days count in annual attendance, and child record displays.
+            Set FNF rules, attendance days, badge display, and alerts.
           </p>
         </div>
 
@@ -580,13 +580,13 @@ const Settings: React.FC<SettingsProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <span className="text-xs font-black uppercase tracking-wider text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-200/50 inline-block mb-1.5">
-                Component Policy #1
+                Policy 1
               </span>
               <h4 className="font-bold text-base text-slate-800">
-                First Timers & FNFs Classification
+                First Timers &amp; FNFs
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Choose whether First Timers and FNFs are combined together as FNFs or maintained as separate member categories.
+                Combine First Timers and FNFs, or keep them separate.
               </p>
             </div>
             <div className="shrink-0 flex items-center gap-2">
@@ -623,10 +623,10 @@ const Settings: React.FC<SettingsProps> = ({
                 <div>
                   <div className="font-bold text-sm text-slate-800 flex items-center gap-2">
                     <Users size={16} className={isCombined ? "text-indigo-600" : "text-slate-400"} />
-                    Combine into "FNF"
+                    Combine as FNF
                   </div>
                   <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    First Timers are merged into the unified <strong>FNF</strong> category across Attendance, People Hub, Outreach, Reports, and Dashboard.
+                    Group First Timers and FNFs together as <strong>FNF</strong> across all views.
                   </p>
                 </div>
                 {isCombined && <CheckCircle size={18} className="text-indigo-600 shrink-0 mt-0.5" />}
@@ -645,10 +645,10 @@ const Settings: React.FC<SettingsProps> = ({
                 <div>
                   <div className="font-bold text-sm text-slate-800 flex items-center gap-2">
                     <UserCheck size={16} className={!isCombined ? "text-indigo-600" : "text-slate-400"} />
-                    Separate First Timers and FNFs
+                    Separate First Timers &amp; FNFs
                   </div>
                   <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    Intelligently categorizes members: children with <strong>1 or fewer sessions</strong> are assigned as <strong>First Timers</strong>, while those with <strong>2+ sessions</strong> become <strong>FNFs</strong>.
+                    1 session = <strong>First Timer</strong>; 2+ sessions = <strong>FNF</strong>.
                   </p>
                 </div>
                 {!isCombined && <CheckCircle size={18} className="text-indigo-600 shrink-0 mt-0.5" />}
@@ -662,9 +662,9 @@ const Settings: React.FC<SettingsProps> = ({
               <div className="flex items-start gap-2">
                 <Sparkles size={16} className="text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-bold text-amber-950">Intelligent Attendance Auto-Regrouping Active</div>
+                  <div className="font-bold text-amber-950">Auto-Regrouping Active</div>
                   <div className="text-amber-800 mt-0.5">
-                    Separation utilizes empirical attendance history: children with 1 or fewer sessions are assigned to First Timers, and children with 2+ sessions are assigned to FNFs.
+                    First Timers automatically move to FNF on their second attendance.
                   </div>
                 </div>
               </div>
@@ -675,14 +675,14 @@ const Settings: React.FC<SettingsProps> = ({
                 className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-colors shadow-sm text-xs self-start sm:self-auto disabled:opacity-50 cursor-pointer"
               >
                 <RefreshCw size={13} className={isRegrouping ? "animate-spin" : ""} />
-                {isRegrouping ? "Regrouping..." : "Re-Analyze & Regroup"}
+                {isRegrouping ? "Regrouping..." : "Re-Group Now"}
               </button>
             </div>
           )}
 
           <div className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5 pt-1">
             <Info size={13} className="text-indigo-500 shrink-0" />
-            Changes take effect immediately across all application components upon selection.
+            Updates apply immediately across the app.
           </div>
         </div>
 
@@ -690,14 +690,14 @@ const Settings: React.FC<SettingsProps> = ({
         <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200/70 space-y-4">
           <div>
             <span className="text-xs font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200/50 inline-block mb-1.5">
-              Attendance Policy #2
+              Policy 2
             </span>
             <h4 className="font-bold text-base text-slate-800 flex items-center gap-2">
               <CalendarCheck size={18} className="text-emerald-600" />
-              Annual Attendance Inclusion Days
+              Attendance Days
             </h4>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Specify which service days are counted towards annual attendance calculations, attendance rates, and absence streaks.
+              Select which service days count toward yearly attendance.
             </p>
           </div>
 
@@ -705,18 +705,18 @@ const Settings: React.FC<SettingsProps> = ({
             {[
               {
                 id: "SUNDAY_ONLY",
-                title: "Sundays Only (Standard)",
-                desc: "Only Sunday service attendance counts toward the annual record and child rates.",
+                title: "Sundays Only",
+                desc: "Count only Sunday services.",
               },
               {
                 id: "SUNDAY_AND_WEDNESDAY",
                 title: "Sundays & Wednesdays",
-                desc: "Includes Sunday services and Wednesday midweek cell meetings in annual attendance.",
+                desc: "Count Sunday and Wednesday services.",
               },
               {
                 id: "ALL_DAYS",
-                title: "All Logged Sessions",
-                desc: "Every logged attendance session is included in annual calculations.",
+                title: "All Sessions",
+                desc: "Count every logged session.",
               },
             ].map((opt) => {
               const isSel = currentMode === opt.id;
@@ -748,7 +748,7 @@ const Settings: React.FC<SettingsProps> = ({
                         isSel ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
                       }`}
                     >
-                      {isSel ? "Active Policy" : "Click to Select"}
+                      {isSel ? "Active" : "Select"}
                     </span>
                   </div>
                 </div>
@@ -759,7 +759,7 @@ const Settings: React.FC<SettingsProps> = ({
           {/* Granular Days Checkboxes */}
           <div className="pt-2 border-t border-slate-200/60 mt-3">
             <span className="text-xs font-bold text-slate-700 block mb-2">
-              Specific Included Days of the Week:
+              Included Days:
             </span>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               {availableWeekDays.map((d) => {
@@ -795,24 +795,24 @@ const Settings: React.FC<SettingsProps> = ({
         <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200/70 space-y-4">
           <div>
             <span className="text-xs font-black uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-200/50 inline-block mb-1.5">
-              Child Record Display #3
+              Policy 3
             </span>
             <h4 className="font-bold text-base text-slate-800 flex items-center gap-2">
               <Calendar size={18} className="text-blue-600" />
-              Child Attendance Record & Sunday Breakdown
+              Child Record Badge
             </h4>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Configure what is displayed on a child's directory badge and profile.
+              Choose what appears on child attendance badges.
             </p>
           </div>
 
           <label className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 cursor-pointer hover:border-slate-300 transition-all">
             <div className="space-y-0.5 pr-4">
               <span className="font-bold text-sm text-slate-800 block">
-                Show Sunday Attendance Count on Child Record
+                Show Sunday Count on Badge
               </span>
               <p className="text-xs text-slate-500 font-medium">
-                Displays the child's explicit Sunday attendance count (e.g. <code>Sun: 12/15</code>) alongside their overall attendance percentage on roster badges and profile modals.
+                Displays Sunday attendance (e.g. <code>12/15</code>) beside the percentage.
               </p>
             </div>
             <input
@@ -832,10 +832,10 @@ const Settings: React.FC<SettingsProps> = ({
             <Sparkles className="text-blue-600 shrink-0 mt-0.5" size={18} />
             <div className="space-y-1">
               <span className="font-bold text-xs uppercase tracking-wider text-blue-800 block">
-                New Child Attendance Protection (Active)
+                First-Record Attendance Protection
               </span>
               <p className="text-xs leading-relaxed text-blue-800/90 font-medium">
-                Newly registered children now receive initial registration grace: their attendance safely initializes with their joined date and displays as <strong>New Member (0 sessions)</strong> instead of showing 0% with premature absence alerts or risk of deactivation.
+                Yearly counts start from each child's first attended session of the year.
               </p>
             </div>
           </div>
@@ -855,22 +855,22 @@ const Settings: React.FC<SettingsProps> = ({
 
           const handleRequestDevicePermission = async () => {
             if (!("Notification" in window)) {
-              setStatusMsg({ type: "error", text: "Browser/Device notifications are not supported on this device." });
+              setStatusMsg({ type: "error", text: "Notifications are not supported on this device." });
               return;
             }
             const perm = await Notification.requestPermission();
             if (perm === "granted") {
-              setStatusMsg({ type: "success", text: "Phone/Browser Notification Alerts Activated!" });
+              setStatusMsg({ type: "success", text: "Phone alerts enabled." });
               if ("serviceWorker" in navigator) {
                 const reg = await navigator.serviceWorker.ready;
-                reg.showNotification("CM Ministry Accountability Active", {
-                  body: "Prayer, Outreach, and Reporting alerts are now enabled on your device.",
+                reg.showNotification("CM Ministry Alerts Enabled", {
+                  body: "Prayer, outreach, and reporting reminders are active.",
                   icon: "/icon-192.svg",
                   badge: "/icon-192.svg",
                 });
               }
             } else {
-              setStatusMsg({ type: "error", text: "Notification permission was not granted. Please enable it in your browser settings." });
+              setStatusMsg({ type: "error", text: "Enable notifications in your browser settings." });
             }
             setTimeout(() => setStatusMsg(null), 4000);
           };
@@ -879,17 +879,17 @@ const Settings: React.FC<SettingsProps> = ({
             if ("Notification" in window && Notification.permission === "granted") {
               if ("serviceWorker" in navigator) {
                 const reg = await navigator.serviceWorker.ready;
-                await reg.showNotification("CM Ministry Accountability Reminder", {
-                  body: `Prayer (${notifCfg.prayerAlertTime}), Outreach (${notifCfg.outreachAlertDay} ${notifCfg.outreachAlertTime}), & Sunday Reporting (${notifCfg.reportingAlertTime}) alerts are active!`,
+                await reg.showNotification("CM Ministry Test Alert", {
+                  body: `Prayer (${notifCfg.prayerAlertTime}), Outreach (${notifCfg.outreachAlertDay} ${notifCfg.outreachAlertTime}), Reporting (${notifCfg.reportingAlertTime}).`,
                   icon: "/icon-192.svg",
                   badge: "/icon-192.svg",
                 });
               } else {
-                new Notification("CM Ministry Accountability Reminder", {
-                  body: "Prayer, Outreach, and Reporting alerts are active on your device!",
+                new Notification("CM Ministry Test Alert", {
+                  body: "Alerts are active on this device.",
                 });
               }
-              setStatusMsg({ type: "success", text: "Test notification sent to your device!" });
+              setStatusMsg({ type: "success", text: "Test alert sent." });
             } else {
               await handleRequestDevicePermission();
             }
@@ -901,14 +901,14 @@ const Settings: React.FC<SettingsProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <span className="text-xs font-black uppercase tracking-wider text-purple-700 bg-purple-50 px-2.5 py-1 rounded-md border border-purple-200/50 inline-block mb-1.5">
-                    PWA & Accountability Alerts #4
+                    Policy 4
                   </span>
                   <h4 className="font-bold text-base text-slate-800 flex items-center gap-2">
                     <Bell size={18} className="text-purple-600" />
-                    Prayer, Outreach & Reporting Notification Parameters
+                    Notification Alerts
                   </h4>
                   <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    Configure scheduled reminder parameters for Android, iPhone (PWA), and desktop browsers so shepherds and coordinators stay on course for reporting and accountability.
+                    Set reminder times for prayer, outreach, reporting, and transitions.
                   </p>
                 </div>
 
@@ -918,7 +918,7 @@ const Settings: React.FC<SettingsProps> = ({
                     onClick={handleRequestDevicePermission}
                     className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
                   >
-                    <Smartphone size={14} /> Enable Phone Alerts
+                    <Smartphone size={14} /> Enable Alerts
                   </button>
                   <button
                     type="button"
@@ -934,10 +934,10 @@ const Settings: React.FC<SettingsProps> = ({
               <label className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 cursor-pointer">
                 <div>
                   <span className="font-bold text-sm text-slate-800 block">
-                    Enable Accountability Notification System
+                    Enable Notification Alerts
                   </span>
                   <span className="text-xs text-slate-500">
-                    Activates automated reminders for Prayer Schedule, Weekly Outreach, Sunday Attendance Reporting, and Age Promotions.
+                    Turn all scheduled reminders on or off.
                   </span>
                 </div>
                 <input
@@ -954,7 +954,7 @@ const Settings: React.FC<SettingsProps> = ({
                 <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-xs uppercase text-indigo-900">
-                      1. Daily Prayer Schedule Alert (Mon–Fri)
+                      1. Prayer Alert (Mon–Fri)
                     </span>
                     <input
                       type="checkbox"
@@ -964,10 +964,10 @@ const Settings: React.FC<SettingsProps> = ({
                     />
                   </div>
                   <p className="text-[11px] text-slate-500">
-                    Reminds shepherds to pray for their assigned children and log completion duration.
+                    Daily reminder to complete prayer slots.
                   </p>
                   <div className="flex items-center justify-between pt-1">
-                    <label className="text-xs font-bold text-slate-600">Reminder Time:</label>
+                    <label className="text-xs font-bold text-slate-600">Time:</label>
                     <input
                       type="time"
                       value={notifCfg.prayerAlertTime || "18:00"}
@@ -981,7 +981,7 @@ const Settings: React.FC<SettingsProps> = ({
                 <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-xs uppercase text-emerald-900">
-                      2. Outreach & Visitation Alert
+                      2. Outreach Alert
                     </span>
                     <input
                       type="checkbox"
@@ -991,7 +991,7 @@ const Settings: React.FC<SettingsProps> = ({
                     />
                   </div>
                   <p className="text-[11px] text-slate-500">
-                    Prompts shepherds & leaders to complete home visits and phone follow-ups.
+                    Weekly reminder for visits and calls.
                   </p>
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <div>
@@ -1023,7 +1023,7 @@ const Settings: React.FC<SettingsProps> = ({
                 <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-xs uppercase text-amber-900">
-                      3. Sunday Reporting Accountability Alert
+                      3. Sunday Reporting Alert
                     </span>
                     <input
                       type="checkbox"
@@ -1033,10 +1033,10 @@ const Settings: React.FC<SettingsProps> = ({
                     />
                   </div>
                   <p className="text-[11px] text-slate-500">
-                    Alerts church heads & coordinators on Sunday if attendance or report submission is pending.
+                    Sunday reminder if attendance is not yet logged.
                   </p>
                   <div className="flex items-center justify-between pt-1">
-                    <label className="text-xs font-bold text-slate-600">Sunday Cutoff Time:</label>
+                    <label className="text-xs font-bold text-slate-600">Cutoff:</label>
                     <input
                       type="time"
                       value={notifCfg.reportingAlertTime || "13:00"}
@@ -1050,7 +1050,7 @@ const Settings: React.FC<SettingsProps> = ({
                 <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-xs uppercase text-purple-900">
-                      4. Age Limit / Church Promotion Alert (&lt; 3 Mos)
+                      4. Age Transition Alert (&lt; 3 Mos)
                     </span>
                     <input
                       type="checkbox"
@@ -1060,7 +1060,7 @@ const Settings: React.FC<SettingsProps> = ({
                     />
                   </div>
                   <p className="text-[11px] text-slate-500">
-                    Notifies church teachers when children in their church are within 3 months of moving to the next church (I→K, K→LJ, LJ→UJ, UJ→Teens).
+                    Alerts when children are within 3 months of church promotion.
                   </p>
                 </div>
               </div>
@@ -1929,15 +1929,11 @@ const Settings: React.FC<SettingsProps> = ({
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                 <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                  <Palette size={20} className="text-indigo-600" /> Theme
-                  Customization
+                  <Palette size={20} className="text-indigo-600" /> Theme Colors
                 </h3>
               </div>
               <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl text-indigo-800 text-sm">
-                <p>
-                  Select a primary brand color for the interface. This changes
-                  the accent color dynamically.
-                </p>
+                <p>Select an accent color for the selected church.</p>
               </div>
               {isAdmin && (
                 <div className="flex flex-col gap-2">
@@ -2005,9 +2001,9 @@ const Settings: React.FC<SettingsProps> = ({
               </div>
 
               <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
-                <h4 className="font-bold text-red-800 mb-2">Duplicate Attendance Records</h4>
+                <h4 className="font-bold text-red-800 mb-2">Duplicate Attendance</h4>
                 <p className="text-sm text-red-700 mb-4">
-                  Identify and remove duplicate attendance entries for the same date and church.
+                  Scan and remove duplicate attendance records.
                 </p>
                 
                 <button
@@ -2055,10 +2051,10 @@ const Settings: React.FC<SettingsProps> = ({
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-5">
                 <div>
                   <h3 className="font-extrabold text-xl text-slate-800 flex items-center gap-2">
-                    <ShieldCheck size={22} className="text-indigo-600" /> Role Permissions and Access Control
+                    <ShieldCheck size={22} className="text-indigo-600" /> Role Permissions
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Manage granular access to all 8 core features and {APP_FEATURES_REGISTRY.reduce((acc, f) => acc + f.subfeatures.length, 0)} subfeatures across ministry roles.
+                    Manage feature access for each role.
                   </p>
                 </div>
 
@@ -2548,15 +2544,11 @@ const Settings: React.FC<SettingsProps> = ({
           {activeTab === "CLOUD"&& (
             <div className="space-y-6">
               <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                <Cloud size={20} className="text-indigo-600" /> Firebase Sync
-                Configuration
+                <Cloud size={20} className="text-indigo-600" /> Cloud Sync
               </h3>
 
               <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl text-blue-800 text-sm">
-                <p>
-                  Data is synchronized securely with Firebase. Ensure you are
-                  signed in with the authorized Google Account.
-                </p>
+                <p>Sign in with Google to manage manual Firebase sync.</p>
               </div>
 
               <div className="space-y-4">

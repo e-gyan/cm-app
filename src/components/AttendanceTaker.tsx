@@ -1248,8 +1248,22 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
       ? membersToList.filter((m) => serviceMap[m.id] === "JOY").length
       : 0;
 
-  // Total present in state (including hidden)
-  const totalSavedInState = presentIds.size;
+  // Helper to check if a member matches a specific status/type tab
+  const matchesStatusFilter = (m: Member, targetFilter: MemberType | string) => {
+    if (targetFilter === "All") return true;
+    if (targetFilter === MemberType.FNF) return isFnfMember(m, data.settings);
+    if (targetFilter === MemberType.VISITOR) return isVisitorMember(m, data.settings);
+    return m.type === targetFilter;
+  };
+
+  // Exact count recorded for the active status filter (or total attendance when 'All' is selected)
+  const totalSavedInState = useMemo(() => {
+    const presentInCurrentScope = membersToList.filter((m) => presentIds.has(m.id));
+    if (filterType === "All") {
+      return presentInCurrentScope.length;
+    }
+    return presentInCurrentScope.filter((m) => matchesStatusFilter(m, filterType)).length;
+  }, [membersToList, presentIds, filterType, data.settings]);
 
   // Total punctual for current service
   const punctualForCurrentService = [...punctualIds].filter(
@@ -1672,7 +1686,7 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                 onClick={() => setFilterType("All")}
                 className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${filterType === "All" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
               >
-                All Status
+                All Status ({membersToList.filter((m) => presentIds.has(m.id)).length})
               </button>
               {(attendanceMode === "STAFF"
                 ? [MemberType.TEACHER, MemberType.HELPER, MemberType.VOLUNTEER]
@@ -1686,15 +1700,28 @@ const AttendanceTaker: React.FC<AttendanceTakerProps> = ({
                     MemberType.FNF,
                     MemberType.VISITOR,
                   ]
-              ).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setFilterType(type)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterType === type ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
-                >
-                  {type === MemberType.FNF ? "FNF" : type === MemberType.VISITOR ? "First Timers" : type === MemberType.TEACHER ? "Shepherd" : type}
-                </button>
-              ))}
+              ).map((type) => {
+                const statusPresentCount = membersToList.filter(
+                  (m) => presentIds.has(m.id) && matchesStatusFilter(m, type)
+                ).length;
+                const label =
+                  type === MemberType.FNF
+                    ? "FNF"
+                    : type === MemberType.VISITOR
+                    ? "First Timers"
+                    : type === MemberType.TEACHER
+                    ? "Shepherd"
+                    : type;
+                return (
+                  <button
+                    key={type}
+                    onClick={() => setFilterType(type)}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterType === type ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
+                  >
+                    {label} ({statusPresentCount})
+                  </button>
+                );
+              })}
 
               {attendanceMode === "MEMBERS" && (
                 <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-200 px-3 py-1 rounded-full text-xs font-bold text-purple-900 shadow-2xs">

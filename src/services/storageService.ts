@@ -223,10 +223,11 @@ export interface ChildYearlyAttendanceSummary {
   vacationStartDate?: string;
   vacationEndDate?: string;
   attendanceRate: number;
+  churchYearTotalSessions: number;
 }
 
 /**
- * Robust backend computation of a child's yearly attendance from their first record of the year,
+ * Robust backend computation of a child's yearly attendance strictly from their first attendance record of the year,
  * accounting for excused/vacation breaks (pausing excused absences while reporting both active
  * and raw totals as well as whether an excused break occurred).
  */
@@ -236,9 +237,8 @@ export const computeChildYearlyAttendance = (
   settings?: AppSettings,
   year: number = new Date().getFullYear()
 ): ChildYearlyAttendanceSummary => {
-  const startOfYear = new Date(year, 0, 1);
-  startOfYear.setHours(0, 0, 0, 0);
-  const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
+  const yearStartStr = `${year}-01-01`;
+  const yearEndStr = `${year}-12-31`;
 
   const isIncludedSession = (r: AttendanceRecord) => {
     const mode = settings?.attendanceCountMode || "SUNDAY_ONLY";
@@ -247,22 +247,38 @@ export const computeChildYearlyAttendance = (
     return isSundayAttendance(r);
   };
 
-  // All sessions in the target year for this child's church or where the child was marked present
+  const getMemberChurchOnDate = (dateStr: string): string | undefined => {
+    if (member.promotionHistory && member.promotionHistory.length > 0) {
+      const sortedPromos = [...member.promotionHistory].sort((a, b) =>
+        b.date.localeCompare(a.date)
+      );
+      const activePromo = sortedPromos.find((p) => dateStr >= p.date);
+      if (activePromo) return activePromo.toChurch;
+      return sortedPromos[sortedPromos.length - 1].fromChurch || member.assignedChurch;
+    }
+    return member.assignedChurch;
+  };
+
+  // All included sessions in the target year for this child's church (or where the child was marked present)
   const yearMatching = (attendance || []).filter((r) => {
+    if (!r.date || r.date < yearStartStr || r.date > yearEndStr) return false;
     if (!isIncludedSession(r)) return false;
-    const recordDate = new Date(r.date);
-    recordDate.setHours(0, 0, 0, 0);
+    const isPresent = (r.presentMemberIds || []).includes(member.id);
+    if (isPresent) return true;
+    const expectedChurch = getMemberChurchOnDate(r.date);
+    if (r.churchId !== expectedChurch) return false;
     if (
-      recordDate.getTime() < startOfYear.getTime() ||
-      recordDate.getTime() > endOfYear.getTime()
+      member.branchId &&
+      r.branchId &&
+      r.branchId !== "ALL" &&
+      r.branchId.trim().toLowerCase() !== member.branchId.trim().toLowerCase()
     ) {
       return false;
     }
-    const isPresent = (r.presentMemberIds || []).includes(member.id);
-    return r.churchId === member.assignedChurch || isPresent;
+    return true;
   });
 
-  // Deduplicate by date (preferring record where child was present)
+  // Deduplicate by date (always preferring the record where the child was marked present)
   const byDate = new Map<string, AttendanceRecord>();
   for (const r of yearMatching) {
     const existing = byDate.get(r.date);
@@ -276,65 +292,58 @@ export const computeChildYearlyAttendance = (
     }
   }
 
-  const allYearChurchRecords = Array.from(byDate.values()).sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  const allYearChurchRecords = Array.from(byDate.values()).sort((a, b) =>
+    a.date.localeCompare(b.date)
   );
 
-  // Determine the child's first record for this year:
-  // 1. Earliest attendance session in this year where the child was recorded present.
-  // 2. If not yet marked present this year, check if their registration date (joinedDate/addedAt) is in this year.
+  // Find all sessions in the year where this child was actually marked present
   const attendedInYear = allYearChurchRecords.filter((r) =>
     (r.presentMemberIds || []).includes(member.id)
   );
 
-  let effectiveStartDate: Date = startOfYear;
-  let firstRecordDateStr: string | null = null;
-
-  if (attendedInYear.length > 0) {
-    const firstAtt = new Date(attendedInYear[0].date);
-    firstAtt.setHours(0, 0, 0, 0);
-    effectiveStartDate = firstAtt;
-    firstRecordDateStr = attendedInYear[0].date;
-  } else {
-    const rawAdded =
-      member.joinedDate ||
-      (member.addedAt ? new Date(member.addedAt).toISOString() : undefined);
-    if (rawAdded) {
-      const parsed = new Date(rawAdded);
-      if (!isNaN(parsed.getTime())) {
-        parsed.setHours(0, 0, 0, 0);
-        if (parsed.getTime() > startOfYear.getTime()) {
-          effectiveStartDate = parsed;
-          firstRecordDateStr = parsed.toISOString().split("T")[0];
-        }
-      }
-    }
-    if (!firstRecordDateStr && allYearChurchRecords.length > 0) {
-      firstRecordDateStr = allYearChurchRecords[0].date;
-    }
-  }
-
-  const allRecordsSinceFirst = allYearChurchRecords.filter((r) => {
-    const d = new Date(r.date);
-    d.setHours(0, 0, 0, 0);
-    return d.getTime() >= effectiveStartDate.getTime();
-  });
-
   const hasVacationConfigured = Boolean(
     member.vacationStartDate && member.vacationEndDate
   );
-  const vStartMs = member.vacationStartDate
-    ? new Date(member.vacationStartDate).setHours(0, 0, 0, 0)
-    : 0;
-  const vEndMs = member.vacationEndDate
-    ? new Date(member.vacationEndDate).setHours(23, 59, 59, 999)
-    : 0;
+
+  // If the child has not yet been recorded present in any session this year,
+  // they have no first attendance record for the year yet.
+  if (attendedInYear.length === 0) {
+    return {
+      year,
+      firstRecordDate: null,
+      records: [],
+      allRecordsSinceFirst: [],
+      attendedSessions: 0,
+      effectiveTotalSessions: 0,
+      rawTotalSessions: 0,
+      excusedSessions: 0,
+      sundayAttended: 0,
+      effectiveTotalSundays: 0,
+      rawTotalSundays: 0,
+      excusedSundays: 0,
+      hasVacationConfigured,
+      hasExcusedBreak: false,
+      vacationStartDate: member.vacationStartDate,
+      vacationEndDate: member.vacationEndDate,
+      attendanceRate: 0,
+      churchYearTotalSessions: allYearChurchRecords.length,
+    };
+  }
+
+  // Anchor strictly at the child's first attendance record of the year
+  const firstRecordDateStr = attendedInYear[0].date;
+
+  const allRecordsSinceFirst = allYearChurchRecords.filter(
+    (r) => r.date >= firstRecordDateStr
+  );
+
+  const vStartStr = member.vacationStartDate || "";
+  const vEndStr = member.vacationEndDate || "";
 
   const isExcusedSession = (r: AttendanceRecord): boolean => {
     if (!hasVacationConfigured) return false;
     if ((r.presentMemberIds || []).includes(member.id)) return false;
-    const rTime = new Date(r.date).getTime();
-    return rTime >= vStartMs && rTime <= vEndMs;
+    return r.date >= vStartStr && r.date <= vEndStr;
   };
 
   const excusedRecords = allRecordsSinceFirst.filter(isExcusedSession);
@@ -360,7 +369,7 @@ export const computeChildYearlyAttendance = (
   const attendanceRate =
     effectiveTotalSessions > 0
       ? Math.round((attendedSessions / effectiveTotalSessions) * 100)
-      : 0;
+      : 100;
 
   return {
     year,
@@ -380,6 +389,7 @@ export const computeChildYearlyAttendance = (
     vacationStartDate: member.vacationStartDate,
     vacationEndDate: member.vacationEndDate,
     attendanceRate,
+    churchYearTotalSessions: allYearChurchRecords.length,
   };
 };
 
@@ -604,10 +614,18 @@ const fetchFromCloud = async (): Promise<AppData> => {
   try {
     const docSnap = await getDoc(getAppDataRef());
     if (docSnap.exists()) {
-      const data = parseAppDataDoc(docSnap.data());
+      const queued = getOfflineQueue();
+      const mergedRaw =
+        Object.keys(queued).length > 0
+          ? { ...docSnap.data(), ...queued }
+          : docSnap.data();
+      const data = parseAppDataDoc(mergedRaw);
       memoryCache = data;
       saveLocalCache(data);
       notifySubscribers(data);
+      if (Object.keys(queued).length > 0) {
+        flushPendingWrites().catch(console.warn);
+      }
       return data;
     } else {
       const emptyData = parseAppDataDoc({});
@@ -622,8 +640,7 @@ const fetchFromCloud = async (): Promise<AppData> => {
       memoryCache = local;
       return local;
     }
-    handleFirestoreError(error, OperationType.GET, "appData/main");
-    throw error;
+    return parseAppDataDoc({});
   }
 };
 
@@ -631,6 +648,16 @@ export const loadData = async (forceCloudRefresh: boolean = false): Promise<AppD
   // If memory cache exists and no forced cloud refresh, return immediately
   if (memoryCache && !forceCloudRefresh) {
     return memoryCache;
+  }
+
+  // If offline, return local cache immediately without waiting for network timeout
+  if (typeof window !== "undefined" && navigator.onLine === false) {
+    if (memoryCache) return memoryCache;
+    const local = loadLocalCache();
+    if (local) {
+      memoryCache = local;
+      return local;
+    }
   }
 
   // If memory cache is null, populate from localStorage first for instant initial render
@@ -673,7 +700,12 @@ export const subscribeToData = (callback: (data: AppData) => void) => {
     getAppDataRef(),
     (docSnap) => {
       if (docSnap.exists()) {
-        const freshData = parseAppDataDoc(docSnap.data());
+        const queued = getOfflineQueue();
+        const mergedRaw =
+          Object.keys(queued).length > 0
+            ? { ...docSnap.data(), ...queued }
+            : docSnap.data();
+        const freshData = parseAppDataDoc(mergedRaw);
         memoryCache = freshData;
         saveLocalCache(freshData);
         notifySubscribers(freshData);
@@ -699,13 +731,20 @@ export const flushPendingWrites = async () => {
     clearTimeout(writeTimeout);
     writeTimeout = null;
   }
-  const payload = { ...pendingUpdates };
+  const offlineQueue = getOfflineQueue();
+  const payload = { ...offlineQueue, ...pendingUpdates };
   pendingUpdates = {};
   if (Object.keys(payload).length > 0) {
+    if (typeof window !== "undefined" && navigator.onLine === false) {
+      saveOfflineQueue(payload);
+      return;
+    }
     try {
       await setDoc(getAppDataRef(), payload, { merge: true });
+      saveOfflineQueue({});
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, "appData/main");
+      saveOfflineQueue(payload);
+      console.warn("[Offline Sync] Queued updates locally until connection returns:", error);
     }
   }
 };
@@ -826,10 +865,118 @@ export const recordActivityNotification = async (payload: {
   return newNotif;
 };
 
+/**
+ * When a marked child's church is changed from oldChurch to newChurch,
+ * transfers their attendance for that day (today and/or the latest active attendance date)
+ * from oldChurch to newChurch and rectifies oldChurch's attendance record.
+ */
+const reconcileAttendanceOnChurchTransfer = (
+  memberId: string,
+  oldChurch: string | undefined,
+  newChurch: string | undefined,
+  branchId: string | undefined,
+  attendance: AttendanceRecord[]
+): { attendance: AttendanceRecord[]; changed: boolean } => {
+  if (
+    !oldChurch ||
+    !newChurch ||
+    oldChurch === newChurch ||
+    newChurch === "Archive" ||
+    newChurch === "All" ||
+    newChurch === "CM"
+  ) {
+    return { attendance, changed: false };
+  }
+
+  const todayStr = new Date().toISOString().split("T")[0];
+  // Find all attendance dates to rectify: today's date, plus the latest session date if the child was marked present in oldChurch
+  const allDatesSorted = Array.from(
+    new Set((attendance || []).map((r) => r.date).filter(Boolean))
+  ).sort((a, b) => b.localeCompare(a));
+  const latestSystemDate = allDatesSorted[0] || todayStr;
+
+  const targetDates = new Set<string>([todayStr, latestSystemDate]);
+  let workingAttendance = [...(attendance || [])];
+  let changed = false;
+
+  targetDates.forEach((targetDate) => {
+    const oldIdx = workingAttendance.findIndex(
+      (r) =>
+        r.date === targetDate &&
+        r.churchId === oldChurch &&
+        (r.presentMemberIds || []).includes(memberId)
+    );
+    if (oldIdx < 0) return;
+
+    changed = true;
+    const oldRecord = workingAttendance[oldIdx];
+    const preservedService = oldRecord.serviceMap?.[memberId] || "JOY";
+    const wasPunctual = (oldRecord.punctualMemberIds || []).includes(memberId);
+
+    const updatedOldServiceMap = { ...(oldRecord.serviceMap || {}) };
+    delete updatedOldServiceMap[memberId];
+
+    workingAttendance[oldIdx] = {
+      ...oldRecord,
+      presentMemberIds: (oldRecord.presentMemberIds || []).filter((id) => id !== memberId),
+      punctualMemberIds: (oldRecord.punctualMemberIds || []).filter((id) => id !== memberId),
+      serviceMap: updatedOldServiceMap,
+      lastUpdated: Date.now(),
+    };
+
+    // Add to newChurch attendance record for that same date & branch
+    const targetBranch = branchId || oldRecord.branchId || "ALL";
+    const newIdx = workingAttendance.findIndex(
+      (r) =>
+        r.date === targetDate &&
+        r.churchId === newChurch &&
+        (!r.branchId || !targetBranch || r.branchId === targetBranch)
+    );
+
+    if (newIdx >= 0) {
+      const existingNew = workingAttendance[newIdx];
+      const nextPresent = Array.from(
+        new Set([...(existingNew.presentMemberIds || []), memberId])
+      );
+      const nextPunctual = wasPunctual
+        ? Array.from(new Set([...(existingNew.punctualMemberIds || []), memberId]))
+        : existingNew.punctualMemberIds || [];
+      workingAttendance[newIdx] = {
+        ...existingNew,
+        presentMemberIds: nextPresent,
+        punctualMemberIds: nextPunctual,
+        serviceMap: {
+          ...(existingNew.serviceMap || {}),
+          [memberId]: preservedService,
+        },
+        lastUpdated: Date.now(),
+      };
+    } else {
+      workingAttendance.push({
+        id: crypto.randomUUID ? crypto.randomUUID() : `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        date: targetDate,
+        churchId: newChurch,
+        branchId: targetBranch,
+        eventName: oldRecord.eventName,
+        attendanceType: oldRecord.attendanceType,
+        presentMemberIds: [memberId],
+        punctualMemberIds: wasPunctual ? [memberId] : [],
+        serviceMap: { [memberId]: preservedService },
+        lastUpdated: Date.now(),
+      });
+    }
+  });
+
+  return { attendance: workingAttendance, changed };
+};
+
 // Optimistic Member Operations
 export const saveMembers = async (members: Member[]) => {
   const current = memoryCache || (await loadData());
   const newMembers = [...current.members];
+  let currentAttendance = [...(current.attendance || [])];
+  let attendanceChanged = false;
+
   members.forEach((m) => {
     const updated = { ...m };
     if (!updated.assignedTeacherId || updated.assignedTeacherId === "UNASSIGNED") {
@@ -841,16 +988,40 @@ export const saveMembers = async (members: Member[]) => {
       }
     }
     const idx = newMembers.findIndex((x) => x.id === m.id);
-    if (idx >= 0) newMembers[idx] = updated;
-    else newMembers.push(updated);
+    if (idx >= 0) {
+      const prev = newMembers[idx];
+      if (updated.assignedChurch && prev.assignedChurch && updated.assignedChurch !== prev.assignedChurch) {
+        const rec = reconcileAttendanceOnChurchTransfer(
+          m.id,
+          prev.assignedChurch,
+          updated.assignedChurch,
+          updated.branchId || prev.branchId,
+          currentAttendance
+        );
+        if (rec.changed) {
+          currentAttendance = rec.attendance;
+          attendanceChanged = true;
+        }
+      }
+      newMembers[idx] = updated;
+    } else {
+      newMembers.push(updated);
+    }
   });
 
   // Strip undefined properties for safe Firestore array serialization
   const sanitizedMembers: Member[] = JSON.parse(JSON.stringify(newMembers));
-  memoryCache = { ...current, members: sanitizedMembers };
+  const sanitizedAttendance: AttendanceRecord[] = attendanceChanged
+    ? JSON.parse(JSON.stringify(currentAttendance))
+    : current.attendance;
+  memoryCache = { ...current, members: sanitizedMembers, attendance: sanitizedAttendance };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  await updateMainDoc({ members: sanitizedMembers });
+  await updateMainDoc(
+    attendanceChanged
+      ? { members: sanitizedMembers, attendance: sanitizedAttendance }
+      : { members: sanitizedMembers }
+  );
 };
 
 export const addMember = async (member: Member) => {
@@ -943,11 +1114,37 @@ export const updateMember = async (id: string, updates: Partial<Member>) => {
   if (!explicitUnassign) {
     members = ensureContinuousMemberAllocations(members).members;
   }
+
+  let nextAttendance = current.attendance;
+  let attendanceChanged = false;
+  if (
+    targetMember &&
+    updates.assignedChurch &&
+    targetMember.assignedChurch &&
+    updates.assignedChurch !== targetMember.assignedChurch
+  ) {
+    const rec = reconcileAttendanceOnChurchTransfer(
+      id,
+      targetMember.assignedChurch,
+      updates.assignedChurch,
+      updates.branchId || targetMember.branchId,
+      current.attendance || []
+    );
+    if (rec.changed) {
+      nextAttendance = JSON.parse(JSON.stringify(rec.attendance));
+      attendanceChanged = true;
+    }
+  }
+
   const sanitizedMembers: Member[] = JSON.parse(JSON.stringify(members));
-  memoryCache = { ...current, members: sanitizedMembers };
+  memoryCache = { ...current, members: sanitizedMembers, attendance: nextAttendance };
   saveLocalCache(memoryCache);
   notifySubscribers(memoryCache);
-  pendingUpdates = { ...pendingUpdates, members: sanitizedMembers };
+  pendingUpdates = {
+    ...pendingUpdates,
+    members: sanitizedMembers,
+    ...(attendanceChanged ? { attendance: nextAttendance } : {}),
+  };
   await flushPendingWrites();
 
   if (targetMember && updates.status && updates.status !== targetMember.status) {
@@ -1631,10 +1828,17 @@ export const importData = (_jsonData: string) => {
 
 export const verifyPasscode = async (name: string, passcode: string, isFast: boolean = false) => {
   try {
-    const data = memoryCache || (await loadData());
+    let data = memoryCache || loadLocalCache();
+    if (!data || (!isFast && typeof window !== "undefined" && navigator.onLine !== false)) {
+      try {
+        data = await loadData(!isFast);
+      } catch {
+        data = memoryCache || loadLocalCache() || parseAppDataDoc({});
+      }
+    }
     const cleanName = name.trim().toLowerCase();
 
-    const member = data.members.find(
+    const member = (data.members || []).find(
       (m) => m.name.trim().toLowerCase() === cleanName
     );
 

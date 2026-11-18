@@ -34,39 +34,18 @@ export const AppLogoSlot: React.FC<AppLogoSlotProps> = ({
     );
   }
 
-  // Refined modern CM emblem insignia
+  // Default to the new CM Ministry logo
   return (
     <div
       className={`inline-flex items-center justify-center relative ${className}`}
       style={{ width: size, height: size }}
       aria-label={alt}
     >
-      <svg
-        width={size}
-        height={size}
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        className="w-full h-full drop-shadow-sm"
-      >
-        <defs>
-          <linearGradient id="cmLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#4f46e5" />
-            <stop offset="100%" stopColor="#7c3aed" />
-          </linearGradient>
-        </defs>
-        <path
-          d="M12 2L3 6V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V6L12 2Z"
-          fill="url(#cmLogoGrad)"
-        />
-        <path
-          d="M12 7V17M8 11H16"
-          stroke="white"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      <img
+        src="/icon-192.svg"
+        alt={alt}
+        className="w-full h-full object-contain rounded-xl drop-shadow-sm"
+      />
     </div>
   );
 };

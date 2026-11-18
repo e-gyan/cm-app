@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
-import { subscribeToData, loadData, getInstantData, markNotificationRead, clearNotifications, recordActivityNotification } from "./services/storageService";
+import { subscribeToData, loadData, getInstantData, markNotificationRead, clearNotifications, recordActivityNotification, flushPendingWrites } from "./services/storageService";
 import { verifyPasscode } from "./services/storageService";
 import { AppData, Church, Member, MemberStatus, MemberType, Role, Notification as AppNotification } from "./types";
 import Dashboard from "./components/Dashboard";
@@ -305,16 +305,34 @@ const App: React.FC = () => {
 
       const handleVisibilityChange = async () => {
         if (document.visibilityState === "visible" && !isSyncing) {
-          const result = await Promise.resolve({ success: true });
-          if (result.success) {
+          if (navigator.onLine !== false) {
+            await flushPendingWrites();
+            await loadData(true);
             refreshData();
             setLastSynced(new Date());
             setSyncStatus("Cloud Synced");
+          } else {
+            setSyncStatus("Offline Mode (Saved Locally)");
           }
         }
       };
 
+      const handleOnline = async () => {
+        setSyncStatus("Syncing...");
+        await flushPendingWrites();
+        await loadData(true);
+        await refreshData();
+        setLastSynced(new Date());
+        setSyncStatus("Cloud Synced");
+      };
+
+      const handleOffline = () => {
+        setSyncStatus("Offline Mode (Saved Locally)");
+      };
+
       document.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener("online", handleOnline);
+      window.addEventListener("offline", handleOffline);
 
       return () => {
         clearInterval(interval);
@@ -322,6 +340,8 @@ const App: React.FC = () => {
           "visibilitychange",
           handleVisibilityChange,
         );
+        window.removeEventListener("online", handleOnline);
+        window.removeEventListener("offline", handleOffline);
       };
     }
   }, [currentUser]);
@@ -342,13 +362,19 @@ const App: React.FC = () => {
   const handleCloudSync = async () => {
     setIsSyncing(true);
     setSyncError(null);
+    if (typeof window !== "undefined" && navigator.onLine === false) {
+      setSyncStatus("Offline Mode (Saved Locally)");
+      setIsSyncing(false);
+      return;
+    }
     setSyncStatus("Syncing...");
-    const result = await Promise.resolve({ success: true });
-    if (result.success) {
-      await refreshData();
+    try {
+      await flushPendingWrites();
+      const fresh = await loadData(true);
+      setData(fresh);
       setLastSynced(new Date());
       setSyncStatus("Cloud Synced");
-    } else {
+    } catch {
       setSyncError("Sync failed");
       setSyncStatus("Sync Failed");
     }

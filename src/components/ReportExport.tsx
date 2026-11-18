@@ -52,6 +52,7 @@ import { getSundaysInYear } from "../constants";
 import {
   importData,
   updateMember,
+  computeChildYearlyAttendance,
 } from "../services/storageService";
 import {
   calculateChurchDivisions,
@@ -515,11 +516,11 @@ const ReportExport: React.FC<ReportExportProps> = ({
   }, [onUpdate]);
 
   const [activeTab, setActiveTab] = useState<
-    "WHATSAPP" | "PROMOTIONS" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL"
+    "WHATSAPP" | "DYNAMIC" | "PROMOTIONS" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL"
   >(() => {
     return (
       (sessionStorage.getItem("reports_activeTab") as
-        "WHATSAPP" | "PROMOTIONS" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL") || "WHATSAPP"
+        "WHATSAPP" | "DYNAMIC" | "PROMOTIONS" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL") || "WHATSAPP"
     );
   });
 
@@ -561,8 +562,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
   const isSuperAdmin = isSuperAdminUser(currentUser);
 
   const visibleTabs = useMemo(() => {
-    const all: { id: "WHATSAPP" | "PROMOTIONS" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL"; icon: any; label: string }[] = [
+    const all: { id: "WHATSAPP" | "DYNAMIC" | "PROMOTIONS" | "KPI" | "DIVISION" | "DATA" | "EXECUTIVE" | "ANNUAL"; icon: any; label: string }[] = [
       { id: "WHATSAPP", icon: MessageCircle, label: "Report" },
+      { id: "DYNAMIC", icon: Sparkles, label: "Dynamic Builder" },
       { id: "PROMOTIONS", icon: GraduationCap, label: "Due Soon" },
       { id: "KPI", icon: Target, label: "KPIs" },
       { id: "DIVISION", icon: Users, label: "Shepherd Division" },
@@ -574,6 +576,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
     return all.filter(
       (tab) =>
         tab.id === "PROMOTIONS" ||
+        tab.id === "DYNAMIC" ||
         hasRoleSubfeature(data, currentUser.role || "", "Reports", tab.id)
     );
   }, [data, currentUser.role, isSuperAdmin]);
@@ -910,7 +913,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
         const gender = m.gender === "MALE" ? "Male" : m.gender === "FEMALE" ? "Female" : "N/A";
         const parentContact = (m.parentPhone || m.phone || "").trim() || "N/A";
         const location = (m.address || "").trim() || "N/A";
-        out += `${idx + 1}. ${m.name} |${gender} | ${parentContact} | ${location}\n`;
+        out += `${idx + 1}. ${m.name} (${gender} | ${parentContact} | ${location})\n`;
       });
       return out + `\n`;
     };
@@ -1617,9 +1620,32 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
   // --- Render Functions ---
 
+  const isLeadershipViewer = useMemo(() => {
+    const r = currentUser.role || "";
+    return (
+      isAdmin ||
+      r === "ADMIN" ||
+      r === "SUPER_ADMIN" ||
+      r === "BRANCH_COORDINATOR" ||
+      r === "ZONAL_HEAD" ||
+      r === "DIRECTORATE_HEAD"
+    );
+  }, [currentUser.role, isAdmin]);
+
+  const shepherdOwnChurch = useMemo(() => {
+    if (currentUser.assignedChurch && currentUser.assignedChurch !== "All" && currentUser.assignedChurch !== "CM") {
+      return currentUser.assignedChurch;
+    }
+    if (activeChurch !== "All" && activeChurch !== "CM") {
+      return activeChurch;
+    }
+    return "UJ";
+  }, [currentUser.assignedChurch, activeChurch]);
+
   const renderDivisionView = () => {
-    const displayedChurches =
-      selectedDivisionChurch === "ALL"
+    const displayedChurches = !isLeadershipViewer
+      ? [shepherdOwnChurch]
+      : selectedDivisionChurch === "ALL"
         ? ["UJ", "LJ", "K", "I"]
         : [selectedDivisionChurch];
 
@@ -1634,48 +1660,54 @@ const ReportExport: React.FC<ReportExportProps> = ({
                   <Users size={20} className="text-indigo-200" />
                 </span>
                 <h3 className="text-xl font-bold">
-                  Equal Shepherd &nd Member Division
+                  {isLeadershipViewer ? "Shepherd & Member Division" : `My Shepherd Cohort (${shepherdOwnChurch} Church)`}
                 </h3>
               </div>
               <p className="text-indigo-200 text-xs md:text-sm">
-                Equal member allocation across active shepherds for UJ, LJ, K, and I churches (UJ Branch Head omitted).
+                {isLeadershipViewer
+                  ? "Balanced member allocation across active shepherds."
+                  : `Assigned members for ${currentUser.name} in ${shepherdOwnChurch} Church.`}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2 w-full md:w-auto">
-              <button
-                onClick={handleCopyDivisions}
-                className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all shadow-md ${copiedDivisionText ? "bg-green-500 text-white" : "bg-white text-indigo-900 hover:bg-indigo-50"}`}
-              >
-                {copiedDivisionText ? <CheckCircle size={15} /> : <Copy size={15} />}
-                {copiedDivisionText ? "Copied All!" : "Copy WhatsApp Report"}
-              </button>
-              <button
-                onClick={handleDownloadDivisionCSV}
-                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-700/60 hover:bg-indigo-700 text-white border border-indigo-500/30 rounded-xl font-bold text-xs transition-all shadow-md"
-              >
-                <Download size={15} />
-                Export CSV
-              </button>
-            </div>
+            {isLeadershipViewer && (
+              <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                <button
+                  onClick={handleCopyDivisions}
+                  className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all shadow-md ${copiedDivisionText ? "bg-green-500 text-white" : "bg-white text-indigo-900 hover:bg-indigo-50"}`}
+                >
+                  {copiedDivisionText ? <CheckCircle size={15} /> : <Copy size={15} />}
+                  {copiedDivisionText ? "Copied All!" : "Copy WhatsApp Report"}
+                </button>
+                <button
+                  onClick={handleDownloadDivisionCSV}
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-700/60 hover:bg-indigo-700 text-white border border-indigo-500/30 rounded-xl font-bold text-xs transition-all shadow-md"
+                >
+                  <Download size={15} />
+                  Export CSV
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Quick Church Filter Tabs */}
-          <div className="flex bg-black/20 p-1 rounded-xl gap-1 overflow-x-auto">
-            {["ALL", "UJ", "LJ", "K", "I"].map((c) => {
-              const div = divisions[c];
-              const countStr = div ? ` (${div.totalMembers}m / ${div.totalEligibleTeachers}s)` : "";
-              return (
-                <button
-                  key={c}
-                  onClick={() => setSelectedDivisionChurch(c)}
-                  className={`flex-1 min-w-[70px] py-2 px-3 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${selectedDivisionChurch === c ? "bg-white text-indigo-950 shadow-sm" : "text-indigo-200 hover:bg-white/10"}`}
-                >
-                  {c === "ALL" ? "All Churches" : CHURCH_NAMES[c] || c}
-                  {c !== "ALL" && countStr}
-                </button>
-              );
-            })}
-          </div>
+          {/* Quick Church Filter Tabs (Leadership Only) */}
+          {isLeadershipViewer && (
+            <div className="flex bg-black/20 p-1 rounded-xl gap-1 overflow-x-auto">
+              {["ALL", "UJ", "LJ", "K", "I"].map((c) => {
+                const div = divisions[c];
+                const countStr = div ? ` (${div.totalMembers}m / ${div.totalEligibleTeachers}s)` : "";
+                return (
+                  <button
+                    key={c}
+                    onClick={() => setSelectedDivisionChurch(c)}
+                    className={`flex-1 min-w-[70px] py-2 px-3 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${selectedDivisionChurch === c ? "bg-white text-indigo-950 shadow-sm" : "text-indigo-200 hover:bg-white/10"}`}
+                  >
+                    {c === "ALL" ? "All Churches" : CHURCH_NAMES[c] || c}
+                    {c !== "ALL" && countStr}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Church Breakdown Sections */}
@@ -1683,6 +1715,14 @@ const ReportExport: React.FC<ReportExportProps> = ({
           {displayedChurches.map((churchKey) => {
             const div = divisions[churchKey];
             if (!div) return null;
+
+            const visibleAssignments = isLeadershipViewer
+              ? div.assignments
+              : div.assignments.filter(
+                  (asg) =>
+                    asg.teacher.id === currentUser.id ||
+                    asg.teacher.name.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
+                );
 
             return (
               <div
@@ -1700,7 +1740,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
                         {div.churchName}
                       </h4>
                     </div>
-                    {churchKey === "UJ" && div.omittedTeachers.length > 0 && (
+                    {isLeadershipViewer && churchKey === "UJ" && div.omittedTeachers.length > 0 && (
                       <p className="text-xs text-amber-600 font-medium mt-1 flex items-center gap-1">
                         <Award size={12} />
                         Branch Head omitted from division:{" "}
@@ -1718,32 +1758,38 @@ const ReportExport: React.FC<ReportExportProps> = ({
                         Members
                       </span>
                       <span className="text-sm font-extrabold text-slate-700">
-                        {div.totalMembers}
+                        {isLeadershipViewer
+                          ? div.totalMembers
+                          : visibleAssignments.reduce((sum, a) => sum + a.count, 0)}
                       </span>
                     </div>
-                    <div className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-xl flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">
-                        Shepherds
-                      </span>
-                      <span className="text-sm font-extrabold text-purple-600">
-                        {div.totalEligibleTeachers}
-                      </span>
-                    </div>
-                    <div className="px-3 py-1.5 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-indigo-500 uppercase">
-                        Allocation
-                      </span>
-                      <span className="text-sm font-extrabold text-indigo-700">
-                        ~{div.membersPerTeacherAvg} / shepherd
-                      </span>
-                    </div>
+                    {isLeadershipViewer && (
+                      <>
+                        <div className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-xl flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">
+                            Shepherds
+                          </span>
+                          <span className="text-sm font-extrabold text-purple-600">
+                            {div.totalEligibleTeachers}
+                          </span>
+                        </div>
+                        <div className="px-3 py-1.5 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-indigo-500 uppercase">
+                            Allocation
+                          </span>
+                          <span className="text-sm font-extrabold text-indigo-700">
+                            ~{div.membersPerTeacherAvg} / shepherd
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
                 {/* Shepherds Assignment Grid */}
-                {div.assignments.length > 0 ? (
+                {visibleAssignments.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {div.assignments.map((asg, idx) => {
+                    {visibleAssignments.map((asg, idx) => {
                       const isCopied = copiedTeacherId === asg.teacher.name;
 
                       return (
@@ -1953,20 +1999,44 @@ const ReportExport: React.FC<ReportExportProps> = ({
   );
 
   // =========================================================================
-  // DUE SOON / CHURCH TRANSITION PROMOTIONS VIEW (I -> K, K -> LJ, LJ -> UJ, UJ -> Teens)
+  // DUE SOON & ATTENDANCE BEHIND VIEW (Scoped per Shepherd / Full for Leadership)
   // =========================================================================
   const [promotionChurchFilter, setPromotionChurchFilter] = useState<string>(
-    activeChurch !== "All" && activeChurch !== "CM" ? activeChurch : "ALL"
+    !isLeadershipViewer ? shepherdOwnChurch : activeChurch !== "All" && activeChurch !== "CM" ? activeChurch : "ALL"
   );
+  const [dueSoonSectionTab, setDueSoonSectionTab] = useState<"ALL" | "TRANSITIONS" | "BEHIND">("ALL");
   const [includeOverduePromotions, setIncludeOverduePromotions] = useState<boolean>(true);
   const [promotingMemberId, setPromotingMemberId] = useState<string | null>(null);
   const [copiedPromotionReport, setCopiedPromotionReport] = useState<boolean>(false);
 
   useEffect(() => {
-    if (activeChurch !== "All" && activeChurch !== "CM") {
+    if (!isLeadershipViewer) {
+      setPromotionChurchFilter(shepherdOwnChurch);
+    } else if (activeChurch !== "All" && activeChurch !== "CM") {
       setPromotionChurchFilter(activeChurch);
     }
-  }, [activeChurch]);
+  }, [activeChurch, isLeadershipViewer, shepherdOwnChurch]);
+
+  // Set of member IDs assigned to the logged-in shepherd (when not a leadership viewer)
+  const shepherdAssignedMemberIds = useMemo(() => {
+    if (isLeadershipViewer) return null;
+    const ids = new Set<string>();
+    (data.members || []).forEach((m) => {
+      if (m.assignedTeacherId === currentUser.id) ids.add(m.id);
+    });
+    const chDiv = divisions[shepherdOwnChurch];
+    if (chDiv) {
+      chDiv.assignments.forEach((asg) => {
+        if (
+          asg.teacher.id === currentUser.id ||
+          asg.teacher.name.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
+        ) {
+          asg.members.forEach((m) => ids.add(m.id));
+        }
+      });
+    }
+    return ids;
+  }, [isLeadershipViewer, data.members, divisions, shepherdOwnChurch, currentUser.id, currentUser.name]);
 
   const TRANSITION_RULES: Record<
     string,
@@ -1976,28 +2046,28 @@ const ReportExport: React.FC<ReportExportProps> = ({
       from: "I",
       to: "K",
       targetAge: 2,
-      label: "I Church → K Church (Turns 2)",
+      label: "I → K (Age 2)",
       badgeColor: "bg-pink-100 text-pink-700 border-pink-200",
     },
     K: {
       from: "K",
       to: "LJ",
       targetAge: 6,
-      label: "K Church → LJ Church (Turns 6)",
+      label: "K → LJ (Age 6)",
       badgeColor: "bg-amber-100 text-amber-700 border-amber-200",
     },
     LJ: {
       from: "LJ",
       to: "UJ",
       targetAge: 9,
-      label: "LJ Church → UJ Church (Turns 9)",
+      label: "LJ → UJ (Age 9)",
       badgeColor: "bg-blue-100 text-blue-700 border-blue-200",
     },
     UJ: {
       from: "UJ",
       to: "Teens",
       targetAge: 13,
-      label: "UJ Church → Teens Ministry (Turns 13)",
+      label: "UJ → Teens (Age 13)",
       badgeColor: "bg-purple-100 text-purple-700 border-purple-200",
     },
   };
@@ -2006,8 +2076,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const effectiveChurchScope =
-      activeChurch !== "All" && activeChurch !== "CM"
+    const effectiveChurchScope = !isLeadershipViewer
+      ? shepherdOwnChurch
+      : activeChurch !== "All" && activeChurch !== "CM"
         ? activeChurch
         : promotionChurchFilter;
 
@@ -2028,7 +2099,6 @@ const ReportExport: React.FC<ReportExportProps> = ({
     }> = [];
 
     (data.members || []).forEach((m) => {
-      // Only active children (exclude teachers/shepherds & graduated/archived)
       if (
         ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
         m.type === MemberType.TEACHER ||
@@ -2056,7 +2126,6 @@ const ReportExport: React.FC<ReportExportProps> = ({
       const dobDate = new Date(rawDob);
       if (isNaN(dobDate.getTime())) return;
 
-      // Exact date the child reaches the church age limit (targetAge birthday)
       const transitionDate = new Date(
         dobDate.getFullYear() + rule.targetAge,
         dobDate.getMonth(),
@@ -2067,7 +2136,6 @@ const ReportExport: React.FC<ReportExportProps> = ({
       const diffMs = transitionDate.getTime() - today.getTime();
       const daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
-      // Less than 3 months to church age limit (<= 92 days)
       const isWithinThreeMonths = daysRemaining >= 0 && daysRemaining <= 92;
       const isOverdue = daysRemaining < 0;
 
@@ -2075,7 +2143,6 @@ const ReportExport: React.FC<ReportExportProps> = ({
         return;
       }
 
-      // Compute current age text
       const ageDiffMs = today.getTime() - dobDate.getTime();
       const totalMonths = Math.max(0, Math.floor(ageDiffMs / (1000 * 60 * 60 * 24 * 30.4375)));
       const yrs = Math.floor(totalMonths / 12);
@@ -2084,22 +2151,20 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
       let monthsRemainingText = "";
       if (daysRemaining === 0) {
-        monthsRemainingText = "Turns " + rule.targetAge + " Today!";
+        monthsRemainingText = `Turns ${rule.targetAge} Today`;
       } else if (daysRemaining > 0) {
         if (daysRemaining <= 30) {
-          monthsRemainingText = `In ${daysRemaining} day${daysRemaining === 1 ? "" : "s"}`;
+          monthsRemainingText = `In ${daysRemaining}d`;
         } else {
           const approxMonths = (daysRemaining / 30.4375).toFixed(1);
-          monthsRemainingText = `In ~${approxMonths} mos (${daysRemaining}d)`;
+          monthsRemainingText = `In ~${approxMonths}m (${daysRemaining}d)`;
         }
       } else {
         const overdueDays = Math.abs(daysRemaining);
-        if (overdueDays <= 60) {
-          monthsRemainingText = `Due ${overdueDays}d ago`;
-        } else {
-          const overdueMos = Math.floor(overdueDays / 30.4375);
-          monthsRemainingText = `Due ${overdueMos}m ago`;
-        }
+        monthsRemainingText =
+          overdueDays <= 60
+            ? `Due ${overdueDays}d ago`
+            : `Due ${Math.floor(overdueDays / 30.4375)}m ago`;
       }
 
       candidates.push({
@@ -2123,7 +2188,6 @@ const ReportExport: React.FC<ReportExportProps> = ({
       });
     });
 
-    // Sort so children due soonest (0..92 days) appear first, followed by overdue
     candidates.sort((a, b) => {
       if (a.isWithinThreeMonths && !b.isWithinThreeMonths) return -1;
       if (!a.isWithinThreeMonths && b.isWithinThreeMonths) return 1;
@@ -2131,7 +2195,95 @@ const ReportExport: React.FC<ReportExportProps> = ({
     });
 
     return candidates;
-  }, [data.members, activeBranchId, data.settings?.organization, activeChurch, promotionChurchFilter, includeOverduePromotions]);
+  }, [
+    data.members,
+    activeBranchId,
+    data.settings?.organization,
+    activeChurch,
+    promotionChurchFilter,
+    includeOverduePromotions,
+    isLeadershipViewer,
+    shepherdOwnChurch,
+    shepherdAssignedMemberIds,
+  ]);
+
+  // Members whose attendance is greatly behind per church (< 50% since first record, or 0 attendance with active church sessions)
+  const membersBehindAttendanceList = useMemo(() => {
+    const effectiveChurchScope = !isLeadershipViewer
+      ? shepherdOwnChurch
+      : activeChurch !== "All" && activeChurch !== "CM"
+        ? activeChurch
+        : promotionChurchFilter;
+
+    const list: Array<{
+      member: Member;
+      church: string;
+      attended: number;
+      total: number;
+      rate: number;
+      firstRecordDate: string | null;
+      shepherdName: string;
+    }> = [];
+
+    (data.members || []).forEach((m) => {
+      if (m.type !== MemberType.MEMBER) return;
+      if (
+        ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
+        (m.role && m.role !== "NONE")
+      ) {
+        return;
+      }
+      if (m.status === MemberStatus.ARCHIVED || m.status === MemberStatus.TRANSFERRED || m.status === MemberStatus.VACATION) {
+        return;
+      }
+      if (!matchesScope(m, activeBranchId, data.settings?.organization, data.members)) {
+        return;
+      }
+
+      const memberChurch = m.assignedChurch || "";
+      if (!["I", "K", "LJ", "UJ"].includes(memberChurch)) return;
+      if (effectiveChurchScope !== "ALL" && memberChurch !== effectiveChurchScope) {
+        return;
+      }
+
+      const summary = computeChildYearlyAttendance(m, data.attendance, data.settings);
+      const isZeroWithChurchSessions =
+        !summary.firstRecordDate && summary.churchYearTotalSessions >= 3;
+      const isBehindSinceFirstRecord =
+        Boolean(summary.firstRecordDate) &&
+        summary.effectiveTotalSessions >= 3 &&
+        summary.attendanceRate < 50;
+
+      if (!isZeroWithChurchSessions && !isBehindSinceFirstRecord) return;
+
+      const shepherdObj = m.assignedTeacherId
+        ? data.members.find((s) => s.id === m.assignedTeacherId)
+        : undefined;
+
+      list.push({
+        member: m,
+        church: memberChurch,
+        attended: summary.attendedSessions,
+        total: summary.firstRecordDate ? summary.effectiveTotalSessions : summary.churchYearTotalSessions,
+        rate: summary.attendanceRate,
+        firstRecordDate: summary.firstRecordDate,
+        shepherdName: shepherdObj?.name || "Unassigned",
+      });
+    });
+
+    list.sort((a, b) => a.rate - b.rate || a.member.name.localeCompare(b.member.name));
+    return list;
+  }, [
+    data.members,
+    data.attendance,
+    data.settings,
+    activeBranchId,
+    activeChurch,
+    promotionChurchFilter,
+    isLeadershipViewer,
+    shepherdOwnChurch,
+    shepherdAssignedMemberIds,
+  ]);
 
   const handlePromoteChildNow = async (candidate: (typeof promotionsDueList)[0]) => {
     setPromotingMemberId(candidate.member.id);
@@ -2153,7 +2305,7 @@ const ReportExport: React.FC<ReportExportProps> = ({
         });
         setImportMsg({
           type: "success",
-          text: `${m.name} has been graduated from UJ to Teens Ministry!`,
+          text: `${m.name} graduated to Teens Ministry.`,
         });
       } else {
         await updateMember(m.id, {
@@ -2162,14 +2314,14 @@ const ReportExport: React.FC<ReportExportProps> = ({
         });
         setImportMsg({
           type: "success",
-          text: `${m.name} has been promoted from ${candidate.fromChurch} Church to ${candidate.toChurch} Church!`,
+          text: `${m.name} promoted from ${candidate.fromChurch} to ${candidate.toChurch}.`,
         });
       }
       setTimeout(() => setImportMsg(null), 4000);
-    } catch (err) {
+    } catch {
       setImportMsg({
         type: "error",
-        text: "Failed to promote child. Please try again.",
+        text: "Failed to promote child.",
       });
     } finally {
       setPromotingMemberId(null);
@@ -2177,38 +2329,37 @@ const ReportExport: React.FC<ReportExportProps> = ({
   };
 
   const generatePromotionsWhatsappText = () => {
-    const scopeTitle =
-      activeChurch !== "All" && activeChurch !== "CM"
+    const scopeTitle = !isLeadershipViewer
+      ? `${shepherdOwnChurch} CHURCH`
+      : activeChurch !== "All" && activeChurch !== "CM"
         ? `${activeChurch} CHURCH`
         : promotionChurchFilter !== "ALL"
           ? `${promotionChurchFilter} CHURCH`
           : "ALL CHURCHES";
 
-    let text = `*CHURCH TRANSITION / DUE SOON REPORT (${scopeTitle})*\n`;
-    text += `_Children < 3 Months to Next Church Age Limit_\n`;
+    let text = `*DUE SOON & ATTENDANCE WATCH (${scopeTitle})*\n`;
     text += `==============================\n\n`;
 
-    if (promotionsDueList.length === 0) {
-      text += `_No children currently within 3 months of church promotion._`;
-      return text;
-    }
-
-    const grouped: Record<string, typeof promotionsDueList> = {};
-    promotionsDueList.forEach((c) => {
-      const key = `${c.fromChurch}->${c.toChurch}`;
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(c);
-    });
-
-    Object.entries(grouped).forEach(([, list]) => {
-      if (list.length === 0) return;
-      text += `*${list[0].transitionLabel.toUpperCase()} (${list.length})*\n`;
-      list.forEach((item, idx) => {
-        const parentPhone = item.member.parentPhone || item.member.phone || "No Contact";
-        text += `${idx + 1}. *${item.member.name}* (${item.currentAgeText}) — ${item.monthsRemainingText} [Turns ${item.targetAge}: ${item.transitionDateStr}] | Parent: ${parentPhone}\n`;
+    if (promotionsDueList.length > 0 && dueSoonSectionTab !== "BEHIND") {
+      text += `*CHURCH TRANSITIONS (< 3 MONTHS) (${promotionsDueList.length})*\n`;
+      promotionsDueList.forEach((item, idx) => {
+        const parentPhone = item.member.parentPhone || item.member.phone || "N/A";
+        text += `${idx + 1}. *${item.member.name}* (${item.fromChurch} → ${item.toChurch} | ${item.currentAgeText}) — ${item.monthsRemainingText} | Contact: ${parentPhone}\n`;
       });
       text += `\n`;
-    });
+    }
+
+    if (membersBehindAttendanceList.length > 0 && dueSoonSectionTab !== "TRANSITIONS") {
+      text += `*ATTENDANCE BEHIND — MEMBERS (${membersBehindAttendanceList.length})*\n`;
+      membersBehindAttendanceList.forEach((item, idx) => {
+        const parentPhone = item.member.parentPhone || item.member.phone || "N/A";
+        text += `${idx + 1}. *${item.member.name}* [${item.church}] — ${item.attended}/${item.total} (${item.rate}%) | Contact: ${parentPhone}\n`;
+      });
+    }
+
+    if (promotionsDueList.length === 0 && membersBehindAttendanceList.length === 0) {
+      text += `_No upcoming transitions or behind-attendance members in this scope._`;
+    }
 
     return text.trim();
   };
@@ -2216,26 +2367,21 @@ const ReportExport: React.FC<ReportExportProps> = ({
   const renderPromotionsDueView = () => {
     const dueWithin3MosCount = promotionsDueList.filter((c) => c.isWithinThreeMonths).length;
     const overdueCount = promotionsDueList.filter((c) => c.isOverdue).length;
-    const isSingleChurchUser = activeChurch !== "All" && activeChurch !== "CM";
 
     return (
-      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-        {/* Banner */}
-        <div className="bg-gradient-to-r from-indigo-900 via-violet-900 to-purple-900 text-white p-6 rounded-3xl shadow-lg">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4">
+        {/* Concise Enterprise Header */}
+        <div className="bg-gradient-to-r from-indigo-900 to-slate-900 text-white p-5 rounded-3xl shadow-md">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 text-indigo-100 text-xs font-bold mb-2">
-                <GraduationCap size={14} /> Church Age Limit Tracker (&lt; 3 Months Notice)
-              </div>
-              <h3 className="text-xl md:text-2xl font-extrabold tracking-tight">
-                Children Due Soon for Church Transition
+              <h3 className="text-lg md:text-xl font-extrabold tracking-tight flex items-center gap-2">
+                <GraduationCap size={20} className="text-indigo-300" />
+                Due Soon &amp; Attendance Watch
               </h3>
-              <p className="text-indigo-200 text-xs md:text-sm mt-1">
-                Tracks children less than 3 months away from moving to the next church:{" "}
-                <span className="font-bold text-white">I → K (2 yrs)</span> •{" "}
-                <span className="font-bold text-white">K → LJ (6 yrs)</span> •{" "}
-                <span className="font-bold text-white">LJ → UJ (9 yrs)</span> •{" "}
-                <span className="font-bold text-white">UJ → Teens (13 yrs)</span>
+              <p className="text-indigo-200 text-xs mt-0.5">
+                {!isLeadershipViewer
+                  ? `${shepherdOwnChurch} Church — Transitions (< 3 months) & Attendance Watch`
+                  : "Upcoming church age transitions (< 3 months) and members behind in attendance."}
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -2245,193 +2391,1076 @@ const ReportExport: React.FC<ReportExportProps> = ({
                   setCopiedPromotionReport(true);
                   setTimeout(() => setCopiedPromotionReport(false), 2500);
                 }}
-                className="px-3.5 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all"
+                className="px-3 py-2 bg-white/15 hover:bg-white/25 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all"
               >
-                {copiedPromotionReport ? <CheckCircle size={15} /> : <Copy size={15} />}
-                {copiedPromotionReport ? "Copied!" : "Copy List"}
+                {copiedPromotionReport ? <CheckCircle size={14} /> : <Copy size={14} />}
+                {copiedPromotionReport ? "Copied" : "Copy"}
               </button>
               <button
                 onClick={() => {
                   const url = `https://wa.me/?text=${encodeURIComponent(generatePromotionsWhatsappText())}`;
                   window.open(url, "_blank");
                 }}
-                className="px-3.5 py-2.5 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md transition-all"
+                className="px-3 py-2 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
               >
-                <MessageCircle size={15} /> Share on WhatsApp
+                <MessageCircle size={14} /> WhatsApp
               </button>
             </div>
           </div>
 
-          {/* Summary KPI Pills */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-5">
-            <div className="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl border border-white/15">
-              <div className="text-[11px] uppercase font-bold text-amber-300">Due &lt; 3 Months</div>
-              <div className="text-2xl font-black mt-0.5">{dueWithin3MosCount}</div>
-              <div className="text-[10px] text-indigo-200">Upcoming within 92 days</div>
+          <div className="grid grid-cols-3 gap-2.5 mt-4">
+            <div className="bg-white/10 p-3 rounded-2xl border border-white/10">
+              <div className="text-[10px] uppercase font-bold text-amber-300">Due &lt; 3 Mos</div>
+              <div className="text-xl font-black mt-0.5">{dueWithin3MosCount}</div>
             </div>
-            <div className="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl border border-white/15">
-              <div className="text-[11px] uppercase font-bold text-pink-200">I → K (Age 2)</div>
-              <div className="text-2xl font-black mt-0.5">
-                {promotionsDueList.filter((c) => c.fromChurch === "I").length}
-              </div>
-              <div className="text-[10px] text-indigo-200">Infant to Kindergarten</div>
+            <div className="bg-white/10 p-3 rounded-2xl border border-white/10">
+              <div className="text-[10px] uppercase font-bold text-pink-200">Overdue Age</div>
+              <div className="text-xl font-black mt-0.5">{overdueCount}</div>
             </div>
-            <div className="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl border border-white/15">
-              <div className="text-[11px] uppercase font-bold text-amber-200">K → LJ (Age 6)</div>
-              <div className="text-2xl font-black mt-0.5">
-                {promotionsDueList.filter((c) => c.fromChurch === "K").length}
-              </div>
-              <div className="text-[10px] text-indigo-200">Kindergarten to Lower Jnr</div>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl border border-white/15">
-              <div className="text-[11px] uppercase font-bold text-blue-200">LJ → UJ (Age 9)</div>
-              <div className="text-2xl font-black mt-0.5">
-                {promotionsDueList.filter((c) => c.fromChurch === "LJ").length}
-              </div>
-              <div className="text-[10px] text-indigo-200">Lower Jnr to Upper Jnr</div>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl border border-white/15 col-span-2 md:col-span-1">
-              <div className="text-[11px] uppercase font-bold text-purple-200">UJ → Teens (Age 13)</div>
-              <div className="text-2xl font-black mt-0.5">
-                {promotionsDueList.filter((c) => c.fromChurch === "UJ").length}
-              </div>
-              <div className="text-[10px] text-indigo-200">Upper Jnr to Teens</div>
+            <div className="bg-white/10 p-3 rounded-2xl border border-white/10">
+              <div className="text-[10px] uppercase font-bold text-rose-300">Attendance Behind</div>
+              <div className="text-xl font-black mt-0.5">{membersBehindAttendanceList.length}</div>
             </div>
           </div>
         </div>
 
         {/* Filter Bar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
           <div className="flex flex-wrap items-center gap-1.5">
-            {isSingleChurchUser ? (
-              <span className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-extrabold">
-                Scoped to Your Church: {TRANSITION_RULES[activeChurch]?.label || `${activeChurch} Church`}
-              </span>
+            {isLeadershipViewer && (activeChurch === "All" || activeChurch === "CM") ? (
+              [
+                { id: "ALL", label: "All Churches" },
+                { id: "I", label: "I → K" },
+                { id: "K", label: "K → LJ" },
+                { id: "LJ", label: "LJ → UJ" },
+                { id: "UJ", label: "UJ → Teens" },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setPromotionChurchFilter(tab.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    promotionChurchFilter === tab.id
+                      ? "bg-indigo-600 text-white shadow-2xs"
+                      : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))
             ) : (
-              <>
-                {[
-                  { id: "ALL", label: "All Churches" },
-                  { id: "I", label: "I → K (2 yrs)" },
-                  { id: "K", label: "K → LJ (6 yrs)" },
-                  { id: "LJ", label: "LJ → UJ (9 yrs)" },
-                  { id: "UJ", label: "UJ → Teens (13 yrs)" },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setPromotionChurchFilter(tab.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                      promotionChurchFilter === tab.id
-                        ? "bg-indigo-600 text-white shadow-sm"
-                        : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </>
+              <span className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-extrabold">
+                {!isLeadershipViewer ? `${shepherdOwnChurch} Church` : `${activeChurch} Church`}
+              </span>
             )}
           </div>
 
-          <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none bg-white px-3 py-2 rounded-xl border border-slate-200">
-            <input
-              type="checkbox"
-              checked={includeOverduePromotions}
-              onChange={(e) => setIncludeOverduePromotions(e.target.checked)}
-              className="rounded text-indigo-600 focus:ring-indigo-500"
-            />
-            <span>Also Show Already Due ({overdueCount})</span>
-          </label>
-        </div>
-
-        {/* Candidate List */}
-        {promotionsDueList.length === 0 ? (
-          <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-10 text-center">
-            <GraduationCap size={36} className="mx-auto text-slate-300 mb-3" />
-            <h4 className="font-extrabold text-slate-700 text-base">
-              No Children Due Within 3 Months
-            </h4>
-            <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-              All children with recorded dates of birth in this church scope are more than 3 months away from their church age limit.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {promotionsDueList.map((item) => (
-              <div
-                key={item.member.id}
-                className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
-                  item.isWithinThreeMonths
-                    ? "bg-amber-50/50 border-amber-200 shadow-sm"
-                    : "bg-white border-slate-200"
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { id: "ALL", label: "All" },
+              { id: "TRANSITIONS", label: `Transitions (${promotionsDueList.length})` },
+              { id: "BEHIND", label: `Behind Attendance (${membersBehindAttendanceList.length})` },
+            ].map((sTab) => (
+              <button
+                key={sTab.id}
+                onClick={() => setDueSoonSectionTab(sTab.id as any)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  dueSoonSectionTab === sTab.id
+                    ? "bg-slate-800 text-white"
+                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
                 }`}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                      <span
-                        className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${item.badgeColor}`}
-                      >
-                        {item.fromChurch} → {item.toChurch}
-                      </span>
-                      <span
-                        className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                          item.isWithinThreeMonths
-                            ? "bg-amber-500 text-white"
-                            : "bg-rose-100 text-rose-700"
-                        }`}
-                      >
-                        {item.isWithinThreeMonths ? "Due < 3 Months" : "Already Reached Age Limit"}
-                      </span>
-                    </div>
-                    <h4 className="font-extrabold text-slate-800 text-sm md:text-base">
-                      {item.member.name}
-                    </h4>
-                    <div className="text-xs text-slate-500 font-medium mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span>Current Age: <strong className="text-slate-700">{item.currentAgeText}</strong></span>
-                      <span>•</span>
-                      <span>Turns {item.targetAge}: <strong className="text-indigo-700">{item.transitionDateStr}</strong></span>
-                    </div>
-                    {(item.member.householdName || item.member.parentPhone || item.member.phone) && (
-                      <div className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1.5">
-                        <Phone size={12} className="text-slate-400" />
-                        <span>
-                          {item.member.householdName ? `${item.member.householdName}: ` : "Parent Contact: "}
-                          <strong className="text-slate-700">
-                            {item.member.parentPhone || item.member.phone || "N/A"}
-                          </strong>
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <span className="inline-block text-xs font-extrabold text-indigo-900 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-xl">
-                      {item.monthsRemainingText}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="pt-2.5 border-t border-slate-200/70 flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    Target Move: <strong>{item.toChurch === "Teens" ? "Graduate to Teens" : `${item.toChurch} Church`}</strong>
-                  </span>
-                  <button
-                    onClick={() => handlePromoteChildNow(item)}
-                    disabled={promotingMemberId === item.member.id}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
-                  >
-                    <ArrowRight size={13} />
-                    {promotingMemberId === item.member.id
-                      ? "Moving..."
-                      : item.toChurch === "Teens"
-                        ? "Move to Teens"
-                        : `Move to ${item.toChurch}`}
-                  </button>
-                </div>
-              </div>
+                {sTab.label}
+              </button>
             ))}
+
+            {dueSoonSectionTab !== "BEHIND" && (
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer select-none bg-white px-2.5 py-1.5 rounded-xl border border-slate-200">
+                <input
+                  type="checkbox"
+                  checked={includeOverduePromotions}
+                  onChange={(e) => setIncludeOverduePromotions(e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>Include Overdue ({overdueCount})</span>
+              </label>
+            )}
+          </div>
+        </div>
+
+        {/* 1. Church Transitions Section */}
+        {dueSoonSectionTab !== "BEHIND" && (
+          <div className="space-y-3">
+            <h4 className="text-xs font-extrabold text-slate-600 uppercase tracking-wider px-1">
+              Due Soon for Church Transition ({promotionsDueList.length})
+            </h4>
+            {promotionsDueList.length === 0 ? (
+              <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-6 text-center text-xs text-slate-500 font-medium">
+                No children within 3 months of church age transition in this scope.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {promotionsDueList.map((item) => (
+                  <div
+                    key={item.member.id}
+                    className={`p-4 rounded-2xl border flex flex-col justify-between gap-3 ${
+                      item.isWithinThreeMonths
+                        ? "bg-amber-50/50 border-amber-200"
+                        : "bg-white border-slate-200"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${item.badgeColor}`}>
+                            {item.fromChurch} → {item.toChurch}
+                          </span>
+                          <span
+                            className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                              item.isWithinThreeMonths ? "bg-amber-500 text-white" : "bg-rose-100 text-rose-700"
+                            }`}
+                          >
+                            {item.isWithinThreeMonths ? "< 3 Months" : "Overdue"}
+                          </span>
+                        </div>
+                        <h4 className="font-extrabold text-slate-800 text-sm">
+                          {item.member.name}
+                        </h4>
+                        <div className="text-xs text-slate-500 font-medium mt-0.5">
+                          Age: <strong className="text-slate-700">{item.currentAgeText}</strong> • Turns {item.targetAge}:{" "}
+                          <strong className="text-indigo-700">{item.transitionDateStr}</strong>
+                        </div>
+                        {(item.member.parentPhone || item.member.phone) && (
+                          <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
+                            <Phone size={11} className="text-slate-400" />
+                            <strong className="text-slate-700">
+                              {item.member.parentPhone || item.member.phone}
+                            </strong>
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-xs font-extrabold text-indigo-900 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-xl shrink-0">
+                        {item.monthsRemainingText}
+                      </span>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-200/70 flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-slate-500 font-medium">
+                        Next: <strong>{item.toChurch === "Teens" ? "Teens" : `${item.toChurch} Church`}</strong>
+                      </span>
+                      <button
+                        onClick={() => handlePromoteChildNow(item)}
+                        disabled={promotingMemberId === item.member.id}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center gap-1 shadow-2xs transition-all"
+                      >
+                        <ArrowRight size={12} />
+                        {promotingMemberId === item.member.id ? "Moving..." : `Move to ${item.toChurch}`}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
+
+        {/* 2. Members Behind in Attendance Section */}
+        {dueSoonSectionTab !== "TRANSITIONS" && (
+          <div className="space-y-3 pt-2">
+            <h4 className="text-xs font-extrabold text-rose-700 uppercase tracking-wider px-1">
+              Members Behind in Attendance (&lt; 50%) ({membersBehindAttendanceList.length})
+            </h4>
+            {membersBehindAttendanceList.length === 0 ? (
+              <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-6 text-center text-xs text-slate-500 font-medium">
+                No members are critically behind in attendance in this scope.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {membersBehindAttendanceList.map((item) => {
+                  const phone = item.member.parentPhone || item.member.phone;
+                  return (
+                    <div
+                      key={item.member.id}
+                      className="p-3.5 rounded-2xl border border-rose-200 bg-rose-50/40 flex items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">
+                            {item.church} Church
+                          </span>
+                          {isLeadershipViewer && (
+                            <span className="text-[10px] font-bold text-slate-500 truncate">
+                              Shepherd: {item.shepherdName}
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="font-extrabold text-slate-800 text-sm truncate">
+                          {item.member.name}
+                        </h4>
+                        <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                          {item.firstRecordDate ? `First Record: ${item.firstRecordDate}` : "No attendance recorded this year"}
+                          {phone ? ` • Contact: ${phone}` : ""}
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <div className="text-sm font-black text-rose-700">
+                          {item.attended}/{item.total}
+                        </div>
+                        <div className="text-[10px] font-bold text-rose-600">
+                          {item.rate}%
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // =========================================================================
+  // INTELLIGENT DYNAMIC REPORT BUILDER (Live System Activity Bundler)
+  // =========================================================================
+  const [dynamicChurchFilter, setDynamicChurchFilter] = useState<string>(
+    !isLeadershipViewer ? shepherdOwnChurch : activeChurch !== "All" && activeChurch !== "CM" ? activeChurch : "ALL"
+  );
+  const [dynamicRangeMode, setDynamicRangeMode] = useState<
+    "SINGLE" | "WEEK" | "MONTH" | "QUARTER" | "YEAR" | "CUSTOM"
+  >("SINGLE");
+  const [dynamicCustomStart, setDynamicCustomStart] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().split("T")[0];
+  });
+  const [dynamicCustomEnd, setDynamicCustomEnd] = useState<string>(() => {
+    return new Date().toISOString().split("T")[0];
+  });
+  const [dynamicDetailLevel, setDynamicDetailLevel] = useState<"SUMMARY" | "DETAILED">("DETAILED");
+  const [dynamicSelectedModules, setDynamicSelectedModules] = useState<Set<string>>(
+    () =>
+      new Set([
+        "att_summary",
+        "first_timers",
+        "outreach_summary",
+        "prayer_summary",
+        "due_soon_transitions",
+        "behind_attendance",
+      ])
+  );
+  const [copiedDynamicReport, setCopiedDynamicReport] = useState(false);
+
+  useEffect(() => {
+    if (!isLeadershipViewer) {
+      setDynamicChurchFilter(shepherdOwnChurch);
+    } else if (activeChurch !== "All" && activeChurch !== "CM") {
+      setDynamicChurchFilter(activeChurch);
+    }
+  }, [activeChurch, isLeadershipViewer, shepherdOwnChurch]);
+
+  const toggleDynamicModule = (moduleId: string) => {
+    setDynamicSelectedModules((prev) => {
+      const next = new Set(prev);
+      if (next.has(moduleId)) next.delete(moduleId);
+      else next.add(moduleId);
+      return next;
+    });
+  };
+
+  const dynamicLiveSnapshot = useMemo(() => {
+    const scopeChurch = !isLeadershipViewer
+      ? shepherdOwnChurch
+      : activeChurch !== "All" && activeChurch !== "CM"
+        ? activeChurch
+        : dynamicChurchFilter;
+
+    const anchorDateStr = selectedDate || new Date().toISOString().split("T")[0];
+    const anchorDate = new Date(`${anchorDateStr}T12:00:00`);
+    const anchorYear = anchorDate.getFullYear();
+    const anchorMonth = anchorDate.getMonth(); // 0..11
+
+    let startStr = anchorDateStr;
+    let endStr = anchorDateStr;
+    let periodLabel = formatDateDDMMYYYY(anchorDateStr);
+
+    if (dynamicRangeMode === "WEEK") {
+      const wStart = new Date(anchorDate);
+      wStart.setDate(wStart.getDate() - 6);
+      startStr = wStart.toISOString().split("T")[0];
+      endStr = anchorDateStr;
+      periodLabel = `Week (${formatDateDDMMYYYY(startStr)} – ${formatDateDDMMYYYY(endStr)})`;
+    } else if (dynamicRangeMode === "MONTH") {
+      const mStart = `${anchorYear}-${String(anchorMonth + 1).padStart(2, "0")}-01`;
+      const lastDay = new Date(anchorYear, anchorMonth + 1, 0).getDate();
+      const mEnd = `${anchorYear}-${String(anchorMonth + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      startStr = mStart;
+      endStr = mEnd;
+      periodLabel = anchorDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    } else if (dynamicRangeMode === "QUARTER") {
+      const qIdx = Math.floor(anchorMonth / 3);
+      const qStartMonth = qIdx * 3 + 1;
+      const qEndMonth = qStartMonth + 2;
+      const lastDay = new Date(anchorYear, qEndMonth, 0).getDate();
+      startStr = `${anchorYear}-${String(qStartMonth).padStart(2, "0")}-01`;
+      endStr = `${anchorYear}-${String(qEndMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      periodLabel = `Q${qIdx + 1} ${anchorYear} (${formatDateDDMMYYYY(startStr)} – ${formatDateDDMMYYYY(endStr)})`;
+    } else if (dynamicRangeMode === "YEAR") {
+      startStr = `${anchorYear}-01-01`;
+      endStr = `${anchorYear}-12-31`;
+      periodLabel = `Year ${anchorYear}`;
+    } else if (dynamicRangeMode === "CUSTOM") {
+      const s = dynamicCustomStart || anchorDateStr;
+      const e = dynamicCustomEnd || anchorDateStr;
+      startStr = s <= e ? s : e;
+      endStr = s <= e ? e : s;
+      periodLabel = `${formatDateDDMMYYYY(startStr)} – ${formatDateDDMMYYYY(endStr)}`;
+    }
+
+    const isInPeriod = (dStr?: string) => {
+      if (!dStr) return false;
+      const clean = dStr.split("T")[0];
+      return clean >= startStr && clean <= endStr;
+    };
+
+    const scopedMembers = (data.members || []).filter((m) => {
+      if (m.status === MemberStatus.ARCHIVED || m.status === MemberStatus.TRANSFERRED) return false;
+      if (!matchesScope(m, activeBranchId, data.settings?.organization, data.members)) return false;
+      const mChurch = m.assignedChurch || "";
+      if (scopeChurch !== "ALL" && mChurch !== scopeChurch) return false;
+      return true;
+    });
+
+    const scopedChildren = scopedMembers.filter(
+      (m) =>
+        !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+        m.type !== MemberType.TEACHER &&
+        (!m.role || m.role === "NONE")
+    );
+
+    const periodAttendanceRecords = (data.attendance || []).filter((r) => {
+      if (!isInPeriod(r.date)) return false;
+      if (!matchesScope(r, activeBranchId, data.settings?.organization, data.members)) return false;
+      if (scopeChurch !== "ALL" && r.churchId !== scopeChurch) return false;
+      return true;
+    });
+
+    const uniqueDates = Array.from(new Set(periodAttendanceRecords.map((r) => r.date))).sort();
+    const presentCountByMember = new Map<string, number>();
+    const presentIds = new Set<string>();
+    const punctualIds = new Set<string>();
+    const serviceBreakdown = { JOY: 0, ENLARGEMENT: 0, SPECIAL: 0 };
+
+    // Track attendance per date for peak/average stats
+    const dateTotals = new Map<string, number>();
+    periodAttendanceRecords.forEach((r) => {
+      const dtCount = (r.presentMemberIds || []).length;
+      dateTotals.set(r.date, (dateTotals.get(r.date) || 0) + dtCount);
+      (r.presentMemberIds || []).forEach((id) => {
+        presentIds.add(id);
+        presentCountByMember.set(id, (presentCountByMember.get(id) || 0) + 1);
+        const svc = r.serviceMap?.[id] || "JOY";
+        if (svc === "ENLARGEMENT") serviceBreakdown.ENLARGEMENT++;
+        else if (svc === "SPECIAL") serviceBreakdown.SPECIAL++;
+        else serviceBreakdown.JOY++;
+      });
+      (r.punctualMemberIds || []).forEach((id) => punctualIds.add(id));
+    });
+
+    const totalCheckIns = Array.from(dateTotals.values()).reduce((a, b) => a + b, 0);
+    const avgPerSession =
+      uniqueDates.length > 0 ? Math.round(totalCheckIns / uniqueDates.length) : 0;
+    let peakSession = { date: "", count: 0 };
+    dateTotals.forEach((cnt, dt) => {
+      if (cnt > peakSession.count) peakSession = { date: dt, count: cnt };
+    });
+
+    const presentMembersAll = (data.members || []).filter((m) => presentIds.has(m.id));
+    const presentShepherds = presentMembersAll.filter(
+      (m) =>
+        ["Teacher", "Helper", "Volunteer"].includes(m.type) ||
+        m.type === MemberType.TEACHER ||
+        (m.role && m.role !== "NONE")
+    );
+    const presentChildren = presentMembersAll.filter(
+      (m) =>
+        !["Teacher", "Helper", "Volunteer"].includes(m.type) &&
+        m.type !== MemberType.TEACHER &&
+        (!m.role || m.role === "NONE")
+    );
+
+    const presentRegularMembers = presentChildren.filter((m) => m.type === MemberType.MEMBER);
+
+    // First timers in the period: either had their 1st attendance in the period or joined in the period
+    const presentFirstTimers = presentChildren.filter((m) => {
+      if (dynamicRangeMode === "SINGLE") return isFirstTimerOnDate(m, anchorDateStr);
+      return uniqueDates.some((dt) => isFirstTimerOnDate(m, dt));
+    });
+
+    const presentFnfs = presentChildren.filter(
+      (m) =>
+        !presentFirstTimers.some((ft) => ft.id === m.id) &&
+        (isFnfMember(m, data.settings) || m.type === MemberType.FNF)
+    );
+
+    // Top Consistent Children in the selected period
+    const topConsistentChildren = [...presentChildren]
+      .map((m) => ({
+        member: m,
+        count: presentCountByMember.get(m.id) || 0,
+      }))
+      .sort((a, b) => b.count - a.count || a.member.name.localeCompare(b.member.name))
+      .slice(0, 15);
+
+    // Outreach in period (for SINGLE date, include 7-day window ending on anchorDateStr)
+    const outreachEnd = endStr;
+    const outreachStart =
+      dynamicRangeMode === "SINGLE"
+        ? new Date(anchorDate.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+        : startStr;
+
+    const periodOutreach = (data.outreachSessions || []).filter((s) => {
+      if (!s.date || s.date < outreachStart || s.date > outreachEnd) return false;
+      if (!matchesScope(s as any, activeBranchId, data.settings?.organization, data.members)) return false;
+      return true;
+    });
+    const completedOutreach = periodOutreach.filter((s) => s.status === "COMPLETED");
+    const pendingOutreach = periodOutreach.filter((s) => s.status !== "COMPLETED");
+    const visitedChildrenCount = completedOutreach.reduce(
+      (sum, s) => sum + (s.visitedMemberIds?.length || 0),
+      0
+    );
+
+    // Prayer in period
+    const periodPrayers = (data.prayerSchedule || []).filter((p) => {
+      if (!p.date || p.date < outreachStart || p.date > outreachEnd) return false;
+      if (!matchesScope(p as any, activeBranchId, data.settings?.organization, data.members)) return false;
+      return true;
+    });
+    const completedPrayers = periodPrayers.filter((p) => p.isCompleted);
+    const pendingPrayers = periodPrayers.filter((p) => !p.isCompleted);
+    const totalPrayerMins = completedPrayers.reduce(
+      (sum, p) => sum + (Number(p.durationMins) > 0 ? Number(p.durationMins) : 30),
+      0
+    );
+
+    const dueSoonItems = promotionsDueList.filter(
+      (c) => scopeChurch === "ALL" || c.fromChurch === scopeChurch
+    );
+    const behindItems = membersBehindAttendanceList.filter(
+      (c) => scopeChurch === "ALL" || c.church === scopeChurch
+    );
+
+    const excusedBreakItems = scopedChildren
+      .map((m) => ({
+        member: m,
+        summary: computeChildYearlyAttendance(m, data.attendance, data.settings),
+      }))
+      .filter((x) => x.summary.hasVacationConfigured || x.summary.hasExcusedBreak);
+
+    // Birthdays matching period months
+    const startMonthNum = parseInt(startStr.split("-")[1] || "1", 10);
+    const endMonthNum = parseInt(endStr.split("-")[1] || "1", 10);
+    const periodBirthdays = scopedChildren.filter((m) => {
+      if (!m.birthDate) return false;
+      const mNum = parseInt(m.birthDate.split("-")[1] || "0", 10);
+      if (dynamicRangeMode === "YEAR") return mNum >= 1 && mNum <= 12;
+      if (startMonthNum <= endMonthNum) return mNum >= startMonthNum && mNum <= endMonthNum;
+      return mNum >= startMonthNum || mNum <= endMonthNum;
+    });
+
+    const missingContact = scopedChildren.filter((m) => !m.parentPhone && !m.phone);
+    const missingDob = scopedChildren.filter((m) => !m.birthDate);
+    const missingGender = scopedChildren.filter((m) => !m.gender);
+
+    return {
+      scopeChurch,
+      startStr,
+      endStr,
+      periodLabel,
+      sessionDatesCount: uniqueDates.length,
+      totalCheckIns,
+      avgPerSession,
+      peakSession,
+      presentCountByMember,
+      scopedChildren,
+      presentMembersAll,
+      presentShepherds,
+      presentChildren,
+      presentRegularMembers,
+      presentFirstTimers,
+      presentFnfs,
+      topConsistentChildren,
+      punctualCount: punctualIds.size,
+      serviceBreakdown,
+      completedOutreach,
+      pendingOutreach,
+      visitedChildrenCount,
+      completedPrayers,
+      pendingPrayers,
+      totalPrayerMins,
+      dueSoonItems,
+      behindItems,
+      excusedBreakItems,
+      periodBirthdays,
+      missingContact,
+      missingDob,
+      missingGender,
+    };
+  }, [
+    data.members,
+    data.attendance,
+    data.outreachSessions,
+    data.prayerSchedule,
+    data.settings,
+    activeBranchId,
+    activeChurch,
+    dynamicChurchFilter,
+    dynamicRangeMode,
+    dynamicCustomStart,
+    dynamicCustomEnd,
+    selectedDate,
+    isLeadershipViewer,
+    shepherdOwnChurch,
+    promotionsDueList,
+    membersBehindAttendanceList,
+  ]);
+
+  const generateDynamicBundledReportText = () => {
+    const snap = dynamicLiveSnapshot;
+    const isDetailed = dynamicDetailLevel === "DETAILED";
+    const isMultiSession = snap.sessionDatesCount > 1 || dynamicRangeMode !== "SINGLE";
+    const scopeTitle = snap.scopeChurch === "ALL" ? "ALL CHURCHES" : `${snap.scopeChurch} CHURCH`;
+
+    let out = `*DYNAMIC REPORT — ${scopeTitle}*\n`;
+    out += `Period: ${snap.periodLabel}\n`;
+    out += `==============================\n\n`;
+
+    if (dynamicSelectedModules.size === 0) {
+      return out + `_Select modules above to generate your report._`;
+    }
+
+    if (dynamicSelectedModules.has("att_summary")) {
+      out += `*ATTENDANCE OVERVIEW*\n`;
+      if (isMultiSession) {
+        out += `• Sessions Logged: ${snap.sessionDatesCount} | Total Check-Ins: ${snap.totalCheckIns} | Avg/Session: ${snap.avgPerSession}\n`;
+        if (snap.peakSession.date) {
+          out += `• Peak Session: ${formatDateDDMMYYYY(snap.peakSession.date)} (${snap.peakSession.count})\n`;
+        }
+      }
+      out += `• Unique Present: ${snap.presentMembersAll.length} (Children: ${snap.presentChildren.length} | Shepherds: ${snap.presentShepherds.length})\n`;
+      out += `• Categories: Members (${snap.presentRegularMembers.length}) | First Timers (${snap.presentFirstTimers.length}) | FNFs (${snap.presentFnfs.length})\n`;
+      out += `• Services: Joy (${snap.serviceBreakdown.JOY}) | Enlargement (${snap.serviceBreakdown.ENLARGEMENT}) | Special (${snap.serviceBreakdown.SPECIAL})\n\n`;
+    }
+
+    if (dynamicSelectedModules.has("present_members")) {
+      out += `*MEMBERS (${snap.presentRegularMembers.length})*\n`;
+      if (snap.presentRegularMembers.length === 0) {
+        out += `_None_\n\n`;
+      } else {
+        snap.presentRegularMembers.forEach((m, i) => {
+          const freq = snap.presentCountByMember.get(m.id) || 1;
+          const freqTag = isMultiSession && isDetailed ? ` (${freq}/${snap.sessionDatesCount})` : "";
+          out += `${i + 1}. ${m.name} [${m.assignedChurch || ""}]${freqTag}\n`;
+        });
+        out += `\n`;
+      }
+    }
+
+    if (dynamicSelectedModules.has("first_timers")) {
+      out += `*FIRST TIMERS (${snap.presentFirstTimers.length})*\n`;
+      if (snap.presentFirstTimers.length === 0) {
+        out += `_None_\n\n`;
+      } else {
+        snap.presentFirstTimers.forEach((m, i) => {
+          const g = m.gender === "MALE" ? "Male" : m.gender === "FEMALE" ? "Female" : "N/A";
+          const c = (m.parentPhone || m.phone || "").trim() || "N/A";
+          const loc = (m.address || "").trim() || "N/A";
+          out += `${i + 1}. ${m.name} (${g} | ${c} | ${loc})\n`;
+        });
+        out += `\n`;
+      }
+    }
+
+    if (dynamicSelectedModules.has("fnfs_roster")) {
+      out += `*FNFS (${snap.presentFnfs.length})*\n`;
+      if (snap.presentFnfs.length === 0) {
+        out += `_None_\n\n`;
+      } else {
+        snap.presentFnfs.forEach((m, i) => {
+          const freq = snap.presentCountByMember.get(m.id) || 1;
+          const freqTag = isMultiSession && isDetailed ? ` (${freq}x)` : "";
+          out += `${i + 1}. ${m.name} [${m.assignedChurch || ""}]${freqTag}\n`;
+        });
+        out += `\n`;
+      }
+    }
+
+    if (dynamicSelectedModules.has("top_consistent")) {
+      out += `*TOP CONSISTENT (${snap.topConsistentChildren.length})*\n`;
+      if (snap.topConsistentChildren.length === 0) {
+        out += `_None_\n\n`;
+      } else {
+        snap.topConsistentChildren.forEach((item, i) => {
+          out += `${i + 1}. ${item.member.name} [${item.member.assignedChurch || ""}] — ${item.count}/${Math.max(1, snap.sessionDatesCount)}\n`;
+        });
+        out += `\n`;
+      }
+    }
+
+    if (dynamicSelectedModules.has("shepherds_present")) {
+      out += `*SHEPHERDS & PUNCTUALITY (${snap.presentShepherds.length})*\n`;
+      out += `• Punctual Check-Ins: ${snap.punctualCount}\n`;
+      if (isDetailed) {
+        snap.presentShepherds.forEach((s, i) => {
+          const freq = snap.presentCountByMember.get(s.id) || 1;
+          out += `${i + 1}. ${s.name} [${s.assignedChurch || "CM"}]${isMultiSession ? ` (${freq}x)` : ""}\n`;
+        });
+      }
+      out += `\n`;
+    }
+
+    if (dynamicSelectedModules.has("outreach_summary")) {
+      out += `*OUTREACH & FOLLOW-UP*\n`;
+      out += `• Completed: ${snap.completedOutreach.length} (${snap.visitedChildrenCount} reached) | Pending: ${snap.pendingOutreach.length}\n\n`;
+    }
+
+    if (dynamicSelectedModules.has("prayer_summary")) {
+      out += `*PRAYER & INTERCESSION*\n`;
+      out += `• Completed: ${snap.completedPrayers.length} (${snap.totalPrayerMins} mins) | Pending: ${snap.pendingPrayers.length}\n\n`;
+    }
+
+    if (dynamicSelectedModules.has("due_soon_transitions")) {
+      out += `*DUE SOON (< 3 MOS) (${snap.dueSoonItems.length})*\n`;
+      if (snap.dueSoonItems.length === 0) {
+        out += `_None_\n\n`;
+      } else {
+        snap.dueSoonItems.forEach((item, i) => {
+          const phone = isDetailed ? ` | ${item.member.parentPhone || item.member.phone || "N/A"}` : "";
+          out += `${i + 1}. ${item.member.name} (${item.fromChurch} → ${item.toChurch} | ${item.currentAgeText}) — ${item.monthsRemainingText}${phone}\n`;
+        });
+        out += `\n`;
+      }
+    }
+
+    if (dynamicSelectedModules.has("behind_attendance")) {
+      out += `*ATTENDANCE BEHIND (< 50%) (${snap.behindItems.length})*\n`;
+      if (snap.behindItems.length === 0) {
+        out += `_None_\n\n`;
+      } else {
+        snap.behindItems.forEach((item, i) => {
+          const contact = isDetailed ? ` | ${item.member.parentPhone || item.member.phone || "N/A"}` : "";
+          out += `${i + 1}. ${item.member.name} [${item.church}] — ${item.attended}/${item.total} (${item.rate}%)${contact}\n`;
+        });
+        out += `\n`;
+      }
+    }
+
+    if (dynamicSelectedModules.has("excused_breaks")) {
+      out += `*EXCUSED BREAKS (${snap.excusedBreakItems.length})*\n`;
+      if (snap.excusedBreakItems.length === 0) {
+        out += `_None_\n\n`;
+      } else {
+        snap.excusedBreakItems.forEach((x, i) => {
+          out += `${i + 1}. ${x.member.name} [${x.member.assignedChurch || ""}] — ${x.summary.excusedSessions} paused (${x.summary.attendedSessions}/${x.summary.effectiveTotalSessions})\n`;
+        });
+        out += `\n`;
+      }
+    }
+
+    if (dynamicSelectedModules.has("shepherd_allocations")) {
+      out += `*ALLOCATIONS*\n`;
+      const targetChurches = snap.scopeChurch === "ALL" ? ["I", "K", "LJ", "UJ"] : [snap.scopeChurch];
+      targetChurches.forEach((ch) => {
+        const div = divisions[ch];
+        if (!div) return;
+        out += `• ${ch}: ${div.totalMembers} members / ${div.totalEligibleTeachers} shepherds (~${div.membersPerTeacherAvg} each)\n`;
+      });
+      out += `\n`;
+    }
+
+    if (dynamicSelectedModules.has("birthdays")) {
+      out += `*BIRTHDAYS (${snap.periodBirthdays.length})*\n`;
+      if (snap.periodBirthdays.length === 0) {
+        out += `_None_\n\n`;
+      } else {
+        snap.periodBirthdays.forEach((m, i) => {
+          out += `${i + 1}. ${m.name} [${m.assignedChurch || ""}] — ${m.birthDate}\n`;
+        });
+        out += `\n`;
+      }
+    }
+
+    if (dynamicSelectedModules.has("data_health")) {
+      out += `*DATA AUDIT*\n`;
+      out += `• Missing Contact: ${snap.missingContact.length} | Missing DOB: ${snap.missingDob.length} | Missing Gender: ${snap.missingGender.length}\n\n`;
+    }
+
+    return out.trim();
+  };
+
+  const renderDynamicBuilderView = () => {
+    const snap = dynamicLiveSnapshot;
+    const moduleCards = [
+      {
+        id: "att_summary",
+        title: "Attendance Overview",
+        desc: "Totals, categories, services, and peak session.",
+        badge: `${snap.presentMembersAll.length} unique`,
+      },
+      {
+        id: "first_timers",
+        title: "First Timers",
+        desc: "Name (Gender | Contact | Location).",
+        badge: `${snap.presentFirstTimers.length}`,
+      },
+      {
+        id: "present_members",
+        title: "Members Roster",
+        desc: "Attending members with session counts.",
+        badge: `${snap.presentRegularMembers.length}`,
+      },
+      {
+        id: "fnfs_roster",
+        title: "FNFs Roster",
+        desc: "Attending FNFs in selected period.",
+        badge: `${snap.presentFnfs.length}`,
+      },
+      {
+        id: "top_consistent",
+        title: "Top Consistent",
+        desc: "Highest attendance frequency in period.",
+        badge: `Top ${snap.topConsistentChildren.length}`,
+      },
+      {
+        id: "shepherds_present",
+        title: "Shepherds & Punctuality",
+        desc: "Attending shepherds and punctual check-ins.",
+        badge: `${snap.presentShepherds.length}`,
+      },
+      {
+        id: "outreach_summary",
+        title: "Outreach",
+        desc: "Completed and pending visits and calls.",
+        badge: `${snap.completedOutreach.length}/${snap.completedOutreach.length + snap.pendingOutreach.length}`,
+      },
+      {
+        id: "prayer_summary",
+        title: "Prayer",
+        desc: "Completed slots and total minutes.",
+        badge: `${snap.totalPrayerMins}m`,
+      },
+      {
+        id: "due_soon_transitions",
+        title: "Due Soon (< 3 Mos)",
+        desc: "Upcoming church age transitions.",
+        badge: `${snap.dueSoonItems.length}`,
+      },
+      {
+        id: "behind_attendance",
+        title: "Behind (< 50%)",
+        desc: "Members lagging in yearly attendance.",
+        badge: `${snap.behindItems.length}`,
+      },
+      {
+        id: "excused_breaks",
+        title: "Excused Breaks",
+        desc: "Members with paused vacation sessions.",
+        badge: `${snap.excusedBreakItems.length}`,
+      },
+      {
+        id: "shepherd_allocations",
+        title: "Allocations",
+        desc: "Member-to-shepherd ratios.",
+        badge: `Divisions`,
+      },
+      {
+        id: "birthdays",
+        title: "Birthdays",
+        desc: "Celebrants in the selected period.",
+        badge: `${snap.periodBirthdays.length}`,
+      },
+      {
+        id: "data_health",
+        title: "Data Audit",
+        desc: "Missing contact, DOB, or gender.",
+        badge: `${snap.missingContact.length + snap.missingDob.length}`,
+      },
+    ];
+
+    const applyPreset = (ids: string[]) => {
+      setDynamicSelectedModules(new Set(ids));
+    };
+
+    const handleDownloadDynamicTxt = () => {
+      const blob = new Blob([generateDynamicBundledReportText()], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `dynamic-report-${snap.startStr}-to-${snap.endStr}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    return (
+      <div className="space-y-4 animate-in fade-in slide-in-from-bottom-3">
+        {/* Header & Presets */}
+        <div className="bg-gradient-to-r from-indigo-900 to-slate-900 text-white p-5 rounded-3xl shadow-md">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg md:text-xl font-extrabold flex items-center gap-2">
+                <Sparkles size={19} className="text-amber-300" />
+                Dynamic Report Builder
+              </h3>
+              <p className="text-indigo-200 text-xs mt-0.5">
+                Choose a period, detail level, and modules to generate your report.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() =>
+                  applyPreset(["att_summary", "first_timers", "outreach_summary", "prayer_summary"])
+                }
+                className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-bold transition-all"
+              >
+                Service Pulse
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  applyPreset([
+                    "due_soon_transitions",
+                    "behind_attendance",
+                    "excused_breaks",
+                    "birthdays",
+                  ])
+                }
+                className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-bold transition-all"
+              >
+                Pastoral Care
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset(moduleCards.map((m) => m.id))}
+                className="px-2.5 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-xs font-bold transition-all"
+              >
+                All ({moduleCards.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset([])}
+                className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold transition-all"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Period, Date Range, Detail Mode & Church Scope Bar */}
+        <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* Period Pills */}
+            <div className="flex flex-wrap items-center gap-1">
+              {[
+                { id: "SINGLE", label: "Day" },
+                { id: "WEEK", label: "Week" },
+                { id: "MONTH", label: "This Month" },
+                { id: "QUARTER", label: "Quarter" },
+                { id: "YEAR", label: "Year" },
+                { id: "CUSTOM", label: "Custom Range" },
+              ].map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setDynamicRangeMode(p.id as any)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    dynamicRangeMode === p.id
+                      ? "bg-slate-900 text-white shadow-2xs"
+                      : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Detail Level Toggle */}
+            <div className="flex bg-white p-0.5 rounded-xl border border-slate-200 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setDynamicDetailLevel("SUMMARY")}
+                className={`px-2.5 py-1 rounded-lg transition-all ${
+                  dynamicDetailLevel === "SUMMARY"
+                    ? "bg-indigo-600 text-white"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Summary
+              </button>
+              <button
+                type="button"
+                onClick={() => setDynamicDetailLevel("DETAILED")}
+                className={`px-2.5 py-1 rounded-lg transition-all ${
+                  dynamicDetailLevel === "DETAILED"
+                    ? "bg-indigo-600 text-white"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Detailed
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-2 border-t border-slate-200/70">
+            {/* Date Pickers */}
+            {dynamicRangeMode === "CUSTOM" ? (
+              <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-600">
+                <span>From:</span>
+                <input
+                  type="date"
+                  value={dynamicCustomStart}
+                  onChange={(e) => setDynamicCustomStart(e.target.value)}
+                  className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl font-bold text-xs text-slate-800"
+                />
+                <span>To:</span>
+                <input
+                  type="date"
+                  value={dynamicCustomEnd}
+                  onChange={(e) => setDynamicCustomEnd(e.target.value)}
+                  className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl font-bold text-xs text-slate-800"
+                />
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Calendar size={15} className="text-slate-400" />
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl font-bold text-xs text-slate-800"
+                />
+                <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
+                  {snap.periodLabel} ({snap.sessionDatesCount} {snap.sessionDatesCount === 1 ? "session" : "sessions"})
+                </span>
+              </div>
+            )}
+
+            {/* Church Filter */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {isLeadershipViewer && (activeChurch === "All" || activeChurch === "CM") ? (
+                ["ALL", "I", "K", "LJ", "UJ"].map((ch) => (
+                  <button
+                    key={ch}
+                    type="button"
+                    onClick={() => setDynamicChurchFilter(ch)}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                      dynamicChurchFilter === ch
+                        ? "bg-indigo-600 text-white shadow-2xs"
+                        : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {ch === "ALL" ? "All Churches" : ch}
+                  </button>
+                ))
+              ) : (
+                <span className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-extrabold">
+                  {snap.scopeChurch} Church
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Toggleable Live System Modules Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          {moduleCards.map((mod) => {
+            const isSelected = dynamicSelectedModules.has(mod.id);
+            return (
+              <div
+                key={mod.id}
+                onClick={() => toggleDynamicModule(mod.id)}
+                className={`p-3 rounded-2xl border cursor-pointer select-none transition-all flex items-start justify-between gap-2 ${
+                  isSelected
+                    ? "bg-indigo-50/70 border-indigo-500 ring-1 ring-indigo-500 shadow-2xs"
+                    : "bg-white border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-extrabold text-xs text-slate-800">
+                      {mod.title}
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        isSelected
+                          ? "bg-indigo-600 text-white"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {mod.badge}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                    {mod.desc}
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => {}}
+                  className="mt-0.5 w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 pointer-events-none shrink-0"
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Bundled Output Preview */}
+        <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 font-mono text-xs text-slate-700 whitespace-pre-wrap h-72 overflow-y-auto shadow-inner">
+          {generateDynamicBundledReportText()}
+        </div>
+
+        {/* Export Actions */}
+        <div className="flex flex-wrap gap-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(generateDynamicBundledReportText());
+              setCopiedDynamicReport(true);
+              setTimeout(() => setCopiedDynamicReport(false), 2500);
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-xs sm:text-sm transition-all ${
+              copiedDynamicReport
+                ? "bg-green-600 text-white shadow-md"
+                : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            {copiedDynamicReport ? <CheckCircle size={16} /> : <Copy size={16} />}
+            <span>{copiedDynamicReport ? "Copied" : `Copy (${dynamicSelectedModules.size})`}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadDynamicTxt}
+            className="px-4 py-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all"
+          >
+            <Download size={16} />
+            <span>Export .txt</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const url = `https://wa.me/?text=${encodeURIComponent(generateDynamicBundledReportText())}`;
+              window.open(url, "_blank");
+            }}
+            className="flex-1 flex items-center justify-center gap-2 py-3 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition-all"
+          >
+            <MessageCircle size={16} />
+            <span>WhatsApp</span>
+          </button>
+        </div>
       </div>
     );
   };
@@ -3019,6 +4048,9 @@ const ReportExport: React.FC<ReportExportProps> = ({
 
         {/* 2. KPI VIEW */}
         {activeTab === "KPI" && renderKPIView()}
+
+        {/* 2A. DYNAMIC BUILDER VIEW */}
+        {activeTab === "DYNAMIC" && renderDynamicBuilderView()}
 
         {/* 2B. DUE SOON / PROMOTIONS VIEW */}
         {activeTab === "PROMOTIONS" && renderPromotionsDueView()}

@@ -143,8 +143,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const handleSync = async () => {
     setIsSyncing(true);
     try {
-      // Force sync when manually refreshed or on mount to ensure we see the latest data
-      await Promise.resolve(true);
+      // Force sync when online; fallback to local cache when offline
+      if (typeof window === "undefined" || navigator.onLine !== false) {
+        await loadData(true);
+      }
       refreshDataCount();
     } catch (e: any) {
       console.warn("Login background sync failed", e);
@@ -161,17 +163,14 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     const cleanName = sanitizeInput(name);
 
     try {
-      // Optimistic fast login using local data
+      // Optimistic fast login using local data (works both online & offline)
       let result = await verifyPasscode(cleanName, passcode, true);
 
-      // If local authentication fails, force fetch from cloud
-      // to ensure we have the absolute latest credentials (e.g. newly added users)
-      // and try again.
-      if (!result.success && result.message === "Invalid credentials.") {
-        await Promise.resolve(true);
-        result = await verifyPasscode(cleanName, passcode);
+      // If local authentication fails and user is online, refresh from cloud and retry
+      if (!result.success && result.message === "Invalid credentials." && (typeof window === "undefined" || navigator.onLine !== false)) {
+        await loadData(true);
+        result = await verifyPasscode(cleanName, passcode, false);
       } else if (!result.success) {
-        // e.g. Locked account, or access deactivated
         setError(result.message || "Login failed");
         setIsLoading(false);
         return;
@@ -250,14 +249,14 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
           <div className="max-w-sm mx-auto w-full">
             <div className="text-center mb-10">
-              <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm md:hidden">
-                <Users size={32} />
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-md overflow-hidden">
+                <AppLogoSlot size={64} />
               </div>
               <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
                 Welcome Back
               </h2>
               <p className="text-slate-500 mt-2 font-medium">
-                Please sign in to continue
+                Sign in to continue
               </p>
               
               
